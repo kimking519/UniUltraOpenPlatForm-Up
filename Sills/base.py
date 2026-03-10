@@ -42,10 +42,24 @@ def _is_wsl_windows_path(db_path):
     return False
 
 
+def _is_wsl_environment():
+    """检测是否在 WSL 环境中（无论路径在哪里）"""
+    if platform.system() == 'Linux':
+        try:
+            with open('/proc/version', 'r') as f:
+                version_info = f.read().lower()
+                if 'microsoft' in version_info or 'wsl' in version_info:
+                    return True
+        except (FileNotFoundError, PermissionError):
+            pass
+    return False
+
+
 def _get_journal_mode():
     """根据运行环境选择合适的 journal 模式"""
-    if _is_wsl_windows_path(DB_PATH):
-        print("[DB] 检测到 WSL 访问 Windows 文件系统，使用 DELETE 模式以避免 I/O 错误")
+    # WSL 环境统一使用 DELETE 模式，避免多进程并发 I/O 错误
+    if _is_wsl_environment():
+        print("[DB] 检测到 WSL 环境，使用 DELETE 模式以避免 I/O 错误")
         return "DELETE"
     return "WAL"
 
