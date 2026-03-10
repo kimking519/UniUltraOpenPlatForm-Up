@@ -420,10 +420,16 @@ def _generate_pi_excel(orders, template_dir, output_path):
     # 查找模板文件
     template_path = None
     if os.path.isdir(template_dir):
-        for f in os.listdir(template_dir):
-            if f.endswith(".xlsx") and not f.startswith("~"):
-                template_path = os.path.join(template_dir, f)
-                break
+        # 优先使用正确的模板（头部区域D8/D9是普通Cell，不是MergedCell）
+        preferred_template = "Proforma_Invoice_TAEJU_UNI2025110502_v2.xlsx"
+        preferred_path = os.path.join(template_dir, preferred_template)
+        if os.path.exists(preferred_path):
+            template_path = preferred_path
+        else:
+            for f in os.listdir(template_dir):
+                if f.endswith(".xlsx") and not f.startswith("~"):
+                    template_path = os.path.join(template_dir, f)
+                    break
 
     if not template_path or not os.path.exists(template_path):
         return False, f"模板文件不存在于 {template_dir}"
