@@ -62,6 +62,19 @@ def _get_output_base():
     return DEFAULT_OUTPUT_BASE
 
 
+def _safe_write_cell(ws, row, col, value):
+    """安全写入单元格 - 先取消合并再写入"""
+    # 检查该单元格是否在合并区域内
+    cell = ws.cell(row=row, column=col)
+    for merged_range in ws.merged_cells.ranges:
+        if (merged_range.min_row <= row <= merged_range.max_row and
+            merged_range.min_col <= col <= merged_range.max_col):
+            # 如果是合并单元格的一部分，先取消合并
+            ws.unmerge_cells(str(merged_range))
+            break
+    cell.value = value
+
+
 def get_orders_for_document(order_ids):
     """获取订单列表（用于生成CI/PI文档）"""
     if not order_ids:
@@ -418,15 +431,15 @@ def _generate_pi_excel(orders, template_dir, output_path):
     ws = wb.active
 
     # 填写头部信息
-    ws.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
-    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
+    _safe_write_cell(ws, 8, 4, now.strftime("UNI%Y%m%d%H"))
+    _safe_write_cell(ws, 9, 4, now.strftime("%Y-%m-%d"))
 
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
-    ws.cell(12, 3).value = cli_name_en
-    ws.cell(13, 3).value = first_order.get("contact_name", "") or ""
-    ws.cell(14, 3).value = first_order.get("email", "") or ""
-    ws.cell(15, 3).value = first_order.get("phone", "") or ""
-    ws.cell(16, 3).value = first_order.get("address", "") or ""
+    _safe_write_cell(ws, 12, 3, cli_name_en)
+    _safe_write_cell(ws, 13, 3, first_order.get("contact_name", "") or "")
+    _safe_write_cell(ws, 14, 3, first_order.get("email", "") or "")
+    _safe_write_cell(ws, 15, 3, first_order.get("phone", "") or "")
+    _safe_write_cell(ws, 16, 3, first_order.get("address", "") or "")
 
     # 数据行处理
     header_row = 18
@@ -494,48 +507,32 @@ def _generate_pi_excel(orders, template_dir, output_path):
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
-        # 先取消该行可能存在的合并单元格
-        merged_ranges_to_remove = []
-        for merged_range in ws.merged_cells.ranges:
-            if merged_range.min_row == row:
-                merged_ranges_to_remove.append(merged_range)
-        for mr in merged_ranges_to_remove:
-            ws.unmerge_cells(str(mr))
-
-        ws.cell(row, 1).value = idx + 1
-        ws.cell(row, 2).value = order.get("inquiry_mpn", "") or ""
-        ws.cell(row, 3).value = order.get("inquiry_brand", "") or ""
-        ws.cell(row, 4).value = order.get("date_code", "") or ""
+        _safe_write_cell(ws, row, 1, idx + 1)
+        _safe_write_cell(ws, row, 2, order.get("inquiry_mpn", "") or "")
+        _safe_write_cell(ws, row, 3, order.get("inquiry_brand", "") or "")
+        _safe_write_cell(ws, row, 4, order.get("date_code", "") or "")
 
         qty = order.get("quoted_qty") or order.get("inquiry_qty") or ""
-        ws.cell(row, 5).value = qty
+        _safe_write_cell(ws, row, 5, qty)
         if qty:
             ws.cell(row, 5).number_format = '#,##0'
 
-        ws.cell(row, 6).value = order.get("delivery_date", "") or ""
+        _safe_write_cell(ws, row, 6, order.get("delivery_date", "") or "")
 
         price_kwr = order.get("calculated_price_kwr", "") or ""
-        ws.cell(row, 7).value = price_kwr
+        _safe_write_cell(ws, row, 7, price_kwr)
         if price_kwr:
             ws.cell(row, 7).number_format = '#,##0'
 
         if qty and price_kwr:
-            ws.cell(row, 8).value = f"=G{row}*E{row}"
+            _safe_write_cell(ws, row, 8, f"=G{row}*E{row}")
             ws.cell(row, 8).number_format = '#,##0'
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
 
-    # 先取消可能存在的合并单元格，避免 MergedCell 写入错误
-    merged_ranges_to_remove = []
-    for merged_range in ws.merged_cells.ranges:
-        if merged_range.min_row == actual_total_row:
-            merged_ranges_to_remove.append(merged_range)
-    for mr in merged_ranges_to_remove:
-        ws.unmerge_cells(str(mr))
-
-    ws.cell(actual_total_row, 1).value = "Total Amount:"
-    ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    _safe_write_cell(ws, actual_total_row, 1, "Total Amount:")
+    _safe_write_cell(ws, actual_total_row, 8, f"=SUM(H{first_data_row}:H{last_data_row})")
     ws.cell(actual_total_row, 8).number_format = '#,##0'
 
     try:
@@ -635,12 +632,12 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
     # 填写头部信息 (根据SKILL.md的模板结构)
     # C5 = 客户公司全名
     cli_full_name = first_offer.get("cli_full_name", "") or first_offer.get("cli_name", "")
-    ws['C5'] = cli_full_name
+    _safe_write_cell(ws, 5, 3, cli_full_name)  # C5
 
     # 编号和日期
     quote_no = now.strftime("%Y%m%d%H%M")
-    ws['D6'] = f"제 {quote_no}호"
-    ws['D7'] = f"{now.year}년 {now.month}월 {now.day}일"
+    _safe_write_cell(ws, 6, 4, f"제 {quote_no}호")  # D6
+    _safe_write_cell(ws, 7, 4, f"{now.year}년 {now.month}월 {now.day}일")  # D7
 
     # 数据行处理 (假设数据从第15行开始，根据模板调整)
     first_data_row = 15
@@ -658,28 +655,20 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
     for idx, offer in enumerate(offers):
         row = first_data_row + idx
 
-        # 先取消该行可能存在的合并单元格
-        merged_ranges_to_remove = []
-        for merged_range in ws.merged_cells.ranges:
-            if merged_range.min_row == row:
-                merged_ranges_to_remove.append(merged_range)
-        for mr in merged_ranges_to_remove:
-            ws.unmerge_cells(str(mr))
-
         # No.
-        ws.cell(row=row, column=1).value = idx + 1
+        _safe_write_cell(ws, row, 1, idx + 1)
 
         # 모델명 (型号)
-        ws.cell(row=row, column=2).value = offer.get("inquiry_mpn", "") or ""
+        _safe_write_cell(ws, row, 2, offer.get("inquiry_mpn", "") or "")
 
         # 제공가능한 부품 (报价型号)
-        ws.cell(row=row, column=3).value = offer.get("quoted_mpn", "") or offer.get("inquiry_mpn", "") or ""
+        _safe_write_cell(ws, row, 3, offer.get("quoted_mpn", "") or offer.get("inquiry_mpn", "") or "")
 
         # 메이커 (品牌)
-        ws.cell(row=row, column=4).value = offer.get("inquiry_brand", "") or ""
+        _safe_write_cell(ws, row, 4, offer.get("inquiry_brand", "") or "")
 
         # 생산일자 (批次号)
-        ws.cell(row=row, column=5).value = offer.get("date_code", "") or ""
+        _safe_write_cell(ws, row, 5, offer.get("date_code", "") or "")
 
         # 수량(EA) (数量)
         qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or 0
@@ -687,7 +676,7 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
             qty = int(qty)
         except:
             qty = 0
-        ws.cell(row=row, column=6).value = qty
+        _safe_write_cell(ws, row, 6, qty)
         ws.cell(row=row, column=6).number_format = '#,##0'
         total_qty += qty
 
@@ -697,14 +686,14 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
             price_kwr = round(float(price_kwr) * exchange_rate_krw, 1)
         else:
             price_kwr = 0
-        ws.cell(row=row, column=7).value = price_kwr
+        _safe_write_cell(ws, row, 7, price_kwr)
         ws.cell(row=row, column=7).number_format = '#,##0'
 
         # 납기 (交期)
-        ws.cell(row=row, column=8).value = offer.get("delivery_date", "") or ""
+        _safe_write_cell(ws, row, 8, offer.get("delivery_date", "") or "")
 
         # 비고 (备注)
-        ws.cell(row=row, column=9).value = offer.get("remark", "") or ""
+        _safe_write_cell(ws, row, 9, offer.get("remark", "") or "")
 
         total_amount += price_kwr * qty
 
