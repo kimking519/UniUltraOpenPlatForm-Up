@@ -5,6 +5,7 @@ CI Generator - Commercial Invoice 生成模块
 """
 
 import os
+import platform
 from datetime import datetime
 from copy import copy
 
@@ -42,6 +43,23 @@ BORDER_MEDIUM = Border(
     top=Side(style='medium', color='1E3A5F'),
     bottom=Side(style='medium', color='1E3A5F')
 )
+
+
+def _get_default_output_base():
+    """获取默认输出目录 - 兼容 Windows 和 WSL2"""
+    if platform.system() == "Windows":
+        return r"E:\1_Business\1_Auto"
+    else:
+        # WSL2 或其他 Linux 系统
+        return "/mnt/e/1_Business/1_Auto"
+
+
+def _get_output_base():
+    """获取输出基础目录"""
+    output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
+    if output_base:
+        return output_base
+    return _get_default_output_base()
 
 
 def get_header_style():
@@ -346,9 +364,7 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if not output_base:
-        output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
-    if not output_base:
-        output_base = r"E:\1_Business\1_Auto"
+        output_base = _get_output_base()
 
     now = datetime.now()
     date_dir = now.strftime("%Y%m%d")

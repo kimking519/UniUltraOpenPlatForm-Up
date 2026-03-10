@@ -6,6 +6,7 @@ Document Generator - 统一的文档生成模块
 """
 
 import os
+import platform
 from datetime import datetime
 from copy import copy
 
@@ -50,8 +51,13 @@ BORDER_MEDIUM = Border(
 # 数据查询函数
 # ============================================================
 
-# 默认输出目录
-DEFAULT_OUTPUT_BASE = r"E:\1_Business\1_Auto"
+def _get_default_output_base():
+    """获取默认输出目录 - 兼容 Windows 和 WSL2"""
+    if platform.system() == "Windows":
+        return r"E:\1_Business\1_Auto"
+    else:
+        # WSL2 或其他 Linux 系统
+        return "/mnt/e/1_Business/1_Auto"
 
 
 def _get_output_base():
@@ -59,7 +65,7 @@ def _get_output_base():
     output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
     if output_base:
         return output_base
-    return DEFAULT_OUTPUT_BASE
+    return _get_default_output_base()
 
 
 def _safe_write_cell(ws, row, col, value):

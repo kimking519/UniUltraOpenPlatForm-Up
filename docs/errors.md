@@ -331,10 +331,41 @@ if not output_base:
 
 ---
 
+### Bug 4: 文档输出路径在 WSL2 下不兼容
+
+#### 问题描述
+在 WSL2 环境下运行时，文档生成失败，因为路径使用 Windows 格式 `E:\1_Business\1_Auto`，而 WSL2 需要 `/mnt/e/1_Business/1_Auto`。
+
+#### 根本原因
+路径硬编码为 Windows 格式：
+```python
+DEFAULT_OUTPUT_BASE = r"E:\1_Business\1_Auto"
+```
+
+#### 修复方案
+使用 `platform.system()` 动态检测操作系统：
+```python
+import platform
+
+def _get_default_output_base():
+    """获取默认输出目录 - 兼容 Windows 和 WSL2"""
+    if platform.system() == "Windows":
+        return r"E:\1_Business\1_Auto"
+    else:
+        # WSL2 或其他 Linux 系统
+        return "/mnt/e/1_Business/1_Auto"
+```
+
+#### 影响范围
+- `document_generator.py`
+- `ci_generator.py`
+
+---
+
 ### 检查清单
 
 修改文档生成相关代码时，请检查：
 - [ ] SQL 查询中的列名是否与表结构一致
 - [ ] 处理 Excel 模板时是否考虑了合并单元格
-- [ ] 输出路径是否使用统一的默认值 `E:\1_Business\1_Auto`
+- [ ] 输出路径是否使用 `_get_output_base()` 函数（兼容 Windows 和 WSL2）
 - [ ] 环境变量 `UNIULTRA_OUTPUT_DIR` 是否正确使用
