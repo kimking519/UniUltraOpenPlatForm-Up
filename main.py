@@ -1508,7 +1508,7 @@ async def api_order_generate_pi(request: Request, current_user: dict = Depends(l
             return {
                 "success": True,
                 "excel_path": result.get("excel_path", ""),
-                "pdf_path": "",
+                "pdf_path": result.get("pdf_path", ""),
                 "count": result.get("count", 0),
                 "cli_name": result.get("cli_name", ""),
                 "invoice_no": result.get("invoice_no", "")
