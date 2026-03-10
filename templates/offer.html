@@ -1,0 +1,976 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .page-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+    .page-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .filter-bar {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+    .filter-bar input,
+    .filter-bar select {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+    }
+    .filter-bar input[type="text"] {
+        width: 160px;
+    }
+    .filter-bar input[type="date"] {
+        width: 140px;
+    }
+    .filter-bar select {
+        width: 100px;
+    }
+    .filter-bar select[id="cli_id"] {
+        width: 140px;
+    }
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .filter-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    .data-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+</style>
+
+<div class="page-header">
+    <h1>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+        </svg>
+        报价订单
+    </h1>
+    {% if current_user.rule == '3' or current_user.rule == '0' %}
+    <div class="page-actions">
+        <button class="btn" onclick="generateKoquote()" style="background: linear-gradient(135deg, #F59E0B 0%, #FBBF24 100%); color: white;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            生成Excel报价单
+        </button>
+        <button class="btn btn-primary" onclick="batchToOrder()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+            </svg>
+            批量转销售订单
+        </button>
+        <button class="btn btn-success" onclick="exportSelectedOffers()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            导出 CSV
+        </button>
+        <button class="btn btn-ghost" onclick="toggleModal('importModal')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            批量导入
+        </button>
+        <button class="btn btn-primary" onclick="toggleModal('addModal')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            新增报价
+        </button>
+        {% if current_user.rule == '3' %}
+        <button class="btn btn-danger" onclick="batchDelete()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            批量删除
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+    <input type="text" id="search" placeholder="搜索型号、报价编号...">
+    <input type="date" id="start_date" title="开始日期">
+    <input type="date" id="end_date" title="结束日期">
+    <select id="cli_id">
+        <option value="">全部客户</option>
+        {% for cli in cli_list %}
+        <option value="{{ cli.cli_id }}">{{ cli.cli_name }}</option>
+        {% endfor %}
+    </select>
+    <select id="page_size">
+        <option value="20" {% if page_size==20 %}selected{% endif %}>20条/页</option>
+        <option value="50" {% if page_size==50 %}selected{% endif %}>50条/页</option>
+        <option value="100" {% if page_size==100 %}selected{% endif %}>100条/页</option>
+    </select>
+    <select id="is_transferred">
+        <option value="" {% if is_transferred=='' %}selected{% endif %}>全部</option>
+        <option value="未转" {% if is_transferred=='未转' %}selected{% endif %}>未转</option>
+        <option value="已转" {% if is_transferred=='已转' %}selected{% endif %}>已转</option>
+    </select>
+</div>
+
+<div class="data-card">
+    <div class="table-container" style="overflow-x: auto;">
+        <table class="data-table" style="min-width: 1800px; font-size: 0.85rem;">
+            <thead>
+                <tr>
+                    {% if current_user.rule == '3' %}
+                    <th style="width: 40px; min-width: 40px; text-align: center;"><input type="checkbox" id="selectAll"
+                            onclick="toggleAll(this)"></th>
+                    {% endif %}
+                    <th style="min-width: 120px;">日期</th>
+                    <th style="min-width: 120px;">报价编号</th>
+                    <th style="min-width: 100px;">客户名称</th>
+                    <th style="min-width: 120px;">需求编号</th>
+                    <th style="min-width: 130px;">询价型号</th>
+                    <th style="min-width: 130px;">报价型号</th>
+                    <th style="min-width: 80px;">需求品牌</th>
+                    <th style="min-width: 80px;">报价品牌</th>
+                    <th style="min-width: 70px;">需求数量(pcs)</th>
+                    <th style="min-width: 70px;">报价数量(pcs)</th>
+                    <th style="min-width: 70px;">成本价</th>
+                    <th style="min-width: 70px;">报价(RMB)</th>
+                    <th style="min-width: 80px;">报价(KWR)</th>
+                    <th style="min-width: 80px;">报价(USD)</th>
+                    <th style="min-width: 80px;">利润</th>
+                    <th style="min-width: 80px;">总利润</th>
+                    <th style="min-width: 120px;">供应商</th>
+                    <th style="min-width: 80px;">批号(DC)</th>
+                    <th style="min-width: 150px;">交期(LT)</th>
+                    <th style="min-width: 80px;">负责人</th>
+                    <th style="min-width: 80px;">已转</th>
+                    <th style="min-width: 350px;">拼接信息</th>
+                    <th style="min-width: 200px;">备注</th>
+                    {% if current_user.rule == '3' %}
+                    <th style="min-width: 80px; position: sticky; right: 0; background: white; z-index: 1;">操作</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in items %}
+                <tr>
+                    {% if current_user.rule == '3' %}
+                    <td style="text-align: center;"><input type="checkbox" class="row-checkbox"
+                            value="{{ row.offer_id }}"></td>
+                    {% endif %}
+                    <td>{{ row.offer_date }}</td>
+                    <td>{{ row.offer_id }}</td>
+                    <td>{{ row.cli_name }}</td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quote_id')"><span>{{ row.quote_id
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_mpn')"><span>{{ row.inquiry_mpn
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_mpn')"><span>{{ row.quoted_mpn
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_brand')"><span>{{
+                            row.inquiry_brand
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_brand')"><span>{{ row.quoted_brand
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_qty', 'number')"><span>{{
+                            row.inquiry_qty }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_qty', 'number')"><span>{{
+                            row.quoted_qty }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
+                            "%.2f"|format(row.cost_price_rmb or 0) }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'offer_price_rmb', 'number')"><span>{{
+                            "%.2f"|format(row.offer_price_rmb or 0) }}</span></td>
+                    <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_kwr', 'KWR', {{ row.price_kwr or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
+                            style="color:var(--primary);">{{ row.price_kwr }}</span></td>
+                    <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_usd', 'USD', {{ row.price_usd or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
+                            style="color:var(--primary);">{{ row.price_usd }}</span></td>
+                    <td><span style="color:#10b981; font-weight:500;">{{ row.profit }}</span></td>
+                    <td><span style="color:#10b981; font-weight:bold;">{{ row.total_profit }}</span></td>
+
+                    {% if current_user.rule == '3' or current_user.rule == '0' %}
+                    <td
+                        ondblclick="makeEditableSelect(this, '{{ row.offer_id }}', 'vendor_id', '{{ row.vendor_id }}', vendorOptions)">
+                        <span>{{ row.vendor_name }}</span>
+                    </td>
+                    {% else %}
+                    <td>{{ row.vendor_name }}</td>
+                    {% endif %}
+
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'date_code')"><span>{{ row.date_code
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'delivery_date')"><span>{{
+                            row.delivery_date }}</span></td>
+                    <td>{{ row.emp_name }}</td>
+                    <td ondblclick="makeTransferredEditable(this, '{{ row.offer_id }}', '{{ row.is_transferred }}')">
+                        <span
+                            class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
+                            {{ row.is_transferred }}
+                        </span>
+                    </td>
+                    <td style="font-size: 0.85rem; color: var(--secondary); background: #f8fafc;">{{
+                        row.combined_offer_info }}</td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'remark')" style="white-space: pre-line;">
+                        <span>{{ row.remark }}</span>
+                    </td>
+
+                    {% if current_user.rule == '3' %}
+                    <td style="position: sticky; right: 0; background: white; z-index: 1;">
+                        <div style="display: flex; gap: 0.3rem;">
+                            <button class="btn" style="color: #10b981; padding: 2px 8px;"
+                                onclick="convertToOrder('{{ row.offer_id }}')">转订单</button>
+                            <button class="btn" style="color: red; padding: 2px 8px;"
+                                onclick="deleteOffer('{{ row.offer_id }}')">删除</button>
+                        </div>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="20" style="text-align: center; color: var(--secondary); padding: 2rem;">暂无报价记录，请添加新报价。
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div
+        style="padding: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: var(--secondary); font-size: 0.9rem;">共 {{ total }} 条记录</span>
+        <div style="display: flex; gap: 0.5rem;">
+            {% if page > 1 %}
+            <a href="/offer?page={{ page - 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}&is_transferred={{ is_transferred }}"
+                class="btn"
+                style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">上一页</a>
+            {% endif %}
+            <span style="padding: 0.3rem 0.8rem; background: var(--primary); color: white; border-radius: 4px;">{{ page
+                }} / {{ total_pages if total_pages > 0 else 1 }}</span>
+            {% if page < total_pages %} <a
+                href="/offer?page={{ page + 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}&is_transferred={{ is_transferred }}"
+                class="btn"
+                style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">
+                下一页</a>
+                {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 700px; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 style="margin: 0;">新增报价</h3>
+            <button class="btn" onclick="toggleModal('addModal')" style="padding: 0.2rem 0.5rem;">&times;</button>
+        </div>
+
+        <!-- Smart Inherit Section -->
+        <div
+            style="margin-bottom: 1rem; padding: 1rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
+            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">智能带入需求 (选填)</p>
+            <div style="display: flex; gap: 0.5rem;">
+                <input type="text" id="quoteIdInput" placeholder="输入需求编号 (如 Q2025...)"
+                    style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                <button type="button" class="btn btn-primary" onclick="loadQuoteData()">加载需求数据</button>
+            </div>
+            <p id="inheritMsg"
+                style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
+        </div>
+
+        <form action="/offer/add" method="post" style="display: flex; flex-direction: column; gap: 1rem;">
+            <input type="hidden" name="quote_id" id="formQuoteId">
+
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价型号 (Inquiry MPN)*</label>
+                    <input type="text" name="inquiry_mpn" id="formInquiryMpn" required
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价型号 (Quoted MPN)</label>
+                    <input type="text" name="quoted_mpn" id="formQuotedMpn"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价品牌</label>
+                    <input type="text" name="inquiry_brand" id="formInquiryBrand"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价品牌</label>
+                    <input type="text" name="quoted_brand"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价数量</label>
+                    <input type="number" name="inquiry_qty" id="formInquiryQty" value="0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">实际数量</label>
+                    <input type="number" name="actual_qty" id="formActualQty" value="0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价数量</label>
+                    <input type="number" name="quoted_qty" id="formQuotedQty" value="0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">成本价(¥)</label>
+                    <input type="number" step="0.01" name="cost_price_rmb" value="0.0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价(¥)</label>
+                    <input type="number" step="0.01" name="offer_price_rmb" value="0.0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">供应商</label>
+                    <select name="vendor_id"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                        <option value="">-- 请选择供应商 --</option>
+                        {% for v in vendor_list %}
+                        <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">批号 (DC)</label>
+                    <input type="text" name="date_code"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期 (LT)</label>
+                    <input type="text" name="delivery_date"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价语句</label>
+                <input type="text" name="offer_statement"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">备注</label>
+                <textarea name="remark"
+                    style="width: 100%; height: 50px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+                <button type="button" class="btn" onclick="toggleModal('addModal')">取消</button>
+                <button type="submit" class="btn btn-primary">提交</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 90%; max-width: 600px;">
+        <h3 style="margin-bottom: 1.5rem;">批量导入报价表数据</h3>
+
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--light); border-radius: 4px;">
+            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式一：上传 CSV 文件 (推荐)</p>
+            <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
+                1. 点击这里 <a href="/static/template_offer.csv" download
+                    style="color: var(--primary); font-weight: 600;">下载 Excel 标准模板 (CSV格式)</a><br>
+                2. 在 Excel 中用该模板录入数据并保存<br>
+                3. 上传保存的模板文件
+            </p>
+            <form action="/offer/import/csv" method="post" enctype="multipart/form-data"
+                style="display: flex; gap: 1rem; align-items: center;">
+                <input type="file" name="csv_file" accept=".csv" required
+                    style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                <button type="submit" class="btn btn-primary">上传并导入</button>
+            </form>
+        </div>
+
+        <div style="padding: 1rem; border: 1px solid var(--border); border-radius: 4px;">
+            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式二：粘贴文本导入</p>
+            <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
+                格式要求与模板一致：<br>需求编号,询价型号,报价型号,询价品牌,报价品牌,询价数量,实际数量,报价数量,成本价,报价,供应商编号,货期,交期,报价语句,备注<br>
+                (注: 需求和供应商编号请先确认存在系统中，比如: Q20250101,STM..,..)
+            </p>
+            <form action="/offer/import" method="post">
+                <textarea name="batch_text" rows="8" placeholder=""
+                    style="width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1rem; font-family: monospace;"></textarea>
+                <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                    <button type="button" class="btn" onclick="toggleModal('importModal')">取消</button>
+                    <button type="submit" class="btn btn-primary" style="background: var(--text);">文本导入</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const vendorOptions = `
+        <option value="">--择供应商--</option>
+        {% for v in vendor_list %}
+        <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
+        {% endfor %}
+    `;
+
+    function loadQuoteData() {
+        const qid = document.getElementById('quoteIdInput').value.trim();
+        if (!qid) return;
+
+        fetch(`/api/quote/info?id=${qid}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.data) {
+                    const q = data.data;
+                    document.getElementById('formQuoteId').value = q.quote_id;
+                    document.getElementById('formInquiryMpn').value = q.inquiry_mpn || '';
+                    document.getElementById('formQuotedMpn').value = q.quoted_mpn || '';
+                    document.getElementById('formInquiryBrand').value = q.inquiry_brand || '';
+                    document.getElementById('formInquiryQty').value = q.inquiry_qty || 0;
+                    document.getElementById('formActualQty').value = q.inquiry_qty || 0;
+                    document.getElementById('formQuotedQty').value = q.inquiry_qty || 0;
+                    document.getElementById('inheritMsg').innerHTML = `<span style="color: green;">✓ 成功带入需求: ${q.inquiry_mpn} (${q.cli_name || '未知客户'})</span>`;
+                } else {
+                    document.getElementById('inheritMsg').innerHTML = `<span style="color: red;">✗ 找不到该需求编号</span>`;
+                }
+            })
+            .catch(err => {
+                document.getElementById('inheritMsg').innerHTML = `<span style="color: red;">✗ 网络请求失败</span>`;
+            });
+    }
+
+    // Auto load if passed in URL
+    window.addEventListener('load', () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('source_quote')) {
+            document.getElementById('quoteIdInput').value = params.get('source_quote');
+            toggleModal('addModal');
+            loadQuoteData();
+        }
+    });
+
+    function toggleModal(id) {
+        const modal = document.getElementById(id);
+        modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function makeEditable(td, offer_id, field, inputType = 'text') {
+        if (td.querySelector('input')) return;
+        const isSpan = td.querySelector('span') !== null;
+        const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
+        td.innerHTML = `<input type="${inputType}" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+        const input = td.querySelector('input');
+        input.focus();
+
+        input.onblur = () => saveEdit(td, offer_id, field, input.value, originalValue);
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') td.innerHTML = `<span>${originalValue}</span>`;
+        };
+    }
+
+    // 编辑价格字段（KWR/USD），完成后自动计算 RMB
+    async function makeEditablePrice(td, offer_id, field, currency, currentValue, currentRmb) {
+        if (td.querySelector('input')) return;
+
+        // 获取最新汇率
+        let exchangeRate = currency === 'KWR' ? 180.0 : 7.0;
+        try {
+            const res = await fetch('/api/exchange/rates');
+            const rateData = await res.json();
+            if (rateData.success) {
+                exchangeRate = currency === 'KWR' ? rateData.krw : rateData.usd;
+            }
+        } catch (e) {
+            console.error('Failed to get exchange rate:', e);
+        }
+
+        const originalValue = currentValue;
+        td.innerHTML = `<input type="number" step="0.01" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+        const input = td.querySelector('input');
+        input.focus();
+
+        const savePrice = async (newValue) => {
+            if (newValue === originalValue) {
+                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                return;
+            }
+
+            // 保存 KWR/USD
+            const formData = new FormData();
+            formData.append('offer_id', offer_id);
+            formData.append('field', field);
+            formData.append('value', newValue);
+
+            try {
+                const res = await fetch('/api/offer/update', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // 计算新的 RMB 价格
+                    // KWR: 1 RMB = 180 KRW → RMB = KWR / 180
+                    // USD: 1 USD = 7 RMB → RMB = USD * 7
+                    const newPrice = parseFloat(newValue);
+                    let newRmb = 0;
+                    if (currency === 'KWR') {
+                        // KRW 汇率 > 10，表示 1 RMB = ? KRW
+                        newRmb = newPrice / exchangeRate;
+                    } else {
+                        // USD 汇率 < 10，表示 1 USD = ? RMB
+                        newRmb = newPrice * exchangeRate;
+                    }
+                    newRmb = Math.round(newRmb * 100) / 100;
+
+                    // 更新 RMB 价格
+                    const rmbFormData = new FormData();
+                    rmbFormData.append('offer_id', offer_id);
+                    rmbFormData.append('field', 'offer_price_rmb');
+                    rmbFormData.append('value', newRmb.toFixed(2));
+
+                    await fetch('/api/offer/update', {
+                        method: 'POST',
+                        body: rmbFormData
+                    });
+
+                    td.innerHTML = `<span style="color:var(--primary);">${newValue}</span>`;
+
+                    // 刷新页面显示最新数据
+                    setTimeout(() => window.location.reload(), 500);
+                } else {
+                    alert('更新失败：' + data.message);
+                    td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                alert('请求失败，请稍后重试');
+                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+            }
+        };
+
+        input.onblur = () => savePrice(input.value);
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') {
+                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+            }
+        };
+    }
+
+    function makeEditableSelect(td, id, field, originalId, optionsHtml) {
+        if (td.querySelector('select')) return;
+        const originalText = td.querySelector('span').innerText;
+        td.innerHTML = `<select style="width: 100%; padding: 4px; box-sizing: border-box;">${optionsHtml}</select>`;
+        const select = td.querySelector('select');
+        select.value = originalId;
+        select.focus();
+
+        select.onblur = () => {
+            if (select.value !== originalId) {
+                saveEdit(td, id, field, select.value, originalText, select.options[select.selectedIndex].text);
+            } else {
+                td.innerHTML = `<span>${originalText}</span>`;
+            }
+        };
+        select.onkeydown = (e) => {
+            if (e.key === 'Escape') td.innerHTML = `<span>${originalText}</span>`;
+        };
+    }
+
+    function saveEdit(td, offer_id, field, newValue, originalValue, newText = null) {
+        if (newValue === originalValue) {
+            td.innerHTML = `<span>${originalValue}</span>`;
+            return;
+        }
+        const formData = new FormData();
+        formData.append('offer_id', offer_id);
+        formData.append('field', field);
+        formData.append('value', newValue);
+
+        fetch('/api/offer/update', {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const display = newText !== null ? newText : newValue;
+                    td.innerHTML = `<span style="color: green;">${display}</span>`;
+                    setTimeout(() => td.innerHTML = `<span>${display}</span>`, 1000);
+                } else {
+                    alert('更新失败: ' + data.message);
+                    td.innerHTML = `<span>${originalValue}</span>`;
+                }
+            });
+    }
+
+    function batchSendEmail() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要发送邮件的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价单批量模拟发送邮件吗？`)) return;
+
+        // 递归或并行发送逻辑
+        let successCount = 0;
+        let failCount = 0;
+        const promises = selected.map(id => {
+            return fetch('/api/offer/send_email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            }).then(res => res.json())
+                .then(data => { if (data.success) successCount++; else failCount++; });
+        });
+
+        Promise.all(promises).then(() => {
+            alert(`批量处理完成：成功 ${successCount} 条，失败 ${failCount} 条。`);
+        });
+    }
+
+    function sendOfferEmail(id) {
+        if (!confirm('确定要发送（模拟）报价邮件吗？')) return;
+        fetch('/api/offer/send_email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) alert(data.message);
+                else alert('发送失败: ' + data.message);
+            });
+    }
+
+    function convertToOrder(offer_id) {
+        if (confirm(`确定要将报价 ${offer_id} 转为销售订单吗？`)) {
+            fetch('/api/offer/batch_to_order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [offer_id] })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.href = '/order';
+                } else {
+                    alert('转换失败：' + data.message);
+                }
+            });
+        }
+    }
+
+    function deleteOffer(offer_id) {
+        if (confirm(`确定要删除报价 ${offer_id} 吗？`)) {
+            const formData = new FormData();
+            formData.append('offer_id', offer_id);
+            fetch('/api/offer/delete', { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('删除失败: ' + data.message);
+                });
+        }
+    }
+
+    function toggleAll(source) {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(cb => cb.checked = source.checked);
+    }
+
+    function batchDelete() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要删除的记录');
+            return;
+        }
+        if (confirm(`确定要删除选中的 ${selected.length} 条记录吗？`)) {
+            fetch('/api/offer/batch_delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('批量删除失败: ' + data.message);
+                });
+        }
+    }
+
+    async function batchToOrder() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要转换的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要把选中的 ${selected.length} 条报价转为销售订单吗？`)) return;
+
+        try {
+            const response = await fetch('/api/offer/batch_to_order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(data.message);
+                window.location.href = '/order';
+            } else {
+                alert('转换失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    async function exportSelectedOffers() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要导出的报价记录');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/offer/export_csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                // 1. 复制到剪贴板
+                if (data.clipboard) {
+                    try {
+                        await navigator.clipboard.writeText(data.clipboard);
+                    } catch (err) {
+                        console.error('Failed to copy text: ', err);
+                    }
+                }
+
+                // 2. 下载 CSV 文件
+                if (data.csv_content) {
+                    const blob = new Blob(['\ufeff' + data.csv_content], { type: 'text/csv;charset=utf-8;' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = data.filename || '报价卡片.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                }
+
+                alert("导出成功，报价内容已复制到剪贴板，CSV 文件已下载。可直接粘贴使用！");
+            } else {
+                alert('导出失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    async function generateKoquote() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要生成报价单的记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价生成Excel报价单吗？`)) return;
+
+        try {
+            const response = await fetch('/api/offer/generate_koquote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ offer_ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ 报价单生成成功！\n文件路径: ${data.file_path}\n报价条数: ${data.count}\n客户: ${data.cli_name}`);
+            } else {
+                alert('生成失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    function makeTransferredEditable(element, id, currentValue) {
+        if (element.querySelector('select')) return;
+
+        const select = document.createElement('select');
+        select.style.width = '100%';
+        select.style.padding = '2px';
+
+        const options = ['未转', '已转'];
+        options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.text = opt;
+            if (opt === currentValue) option.selected = true;
+            select.appendChild(option);
+        });
+
+        const span = element.querySelector('span');
+        element.innerHTML = '';
+        element.appendChild(select);
+        select.focus();
+
+        const updateValue = () => {
+            const newValue = select.value;
+            if (newValue === currentValue) {
+                element.innerHTML = '';
+                element.appendChild(span);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('offer_id', id);
+            formData.append('field', 'is_transferred');
+            formData.append('value', newValue);
+
+            fetch('/api/offer/update', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        span.textContent = newValue;
+                        span.className = `badge ${newValue === '已转' ? 'badge-success' : 'badge-warning'}`;
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    } else {
+                        alert('更新失败: ' + data.message);
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    }
+                });
+        };
+
+        select.onblur = updateValue;
+        select.onchange = updateValue;
+    }
+
+    // 页面加载时从服务器获取筛选条件并恢复
+    window.addEventListener('DOMContentLoaded', () => {
+        // 从页面数据中恢复筛选条件（由后端从 session 读取）
+        const search = "{{ search }}";
+        const start_date = "{{ start_date }}";
+        const end_date = "{{ end_date }}";
+        const cli_id = "{{ cli_id }}";
+        const is_transferred = "{{ is_transferred }}";
+        const page_size = "{{ page_size }}";
+
+        // 设置表单值
+        if (search) document.getElementById('search').value = search;
+        if (start_date) document.getElementById('start_date').value = start_date;
+        if (end_date) document.getElementById('end_date').value = end_date;
+        if (cli_id) document.getElementById('cli_id').value = cli_id;
+        if (is_transferred) document.getElementById('is_transferred').value = is_transferred;
+        if (page_size) document.getElementById('page_size').value = page_size;
+
+        // 为所有筛选控件添加 change 事件，自动提交
+        ['search', 'start_date', 'end_date', 'cli_id', 'is_transferred', 'page_size'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', () => applyFilters());
+                // 搜索框支持回车
+                if (id === 'search') {
+                    el.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') applyFilters();
+                    });
+                }
+            }
+        });
+    });
+
+    // 应用筛选条件，跳转到指定页
+    function applyFilters(page = 1) {
+        const search = encodeURIComponent(document.getElementById('search').value);
+        const start_date = document.getElementById('start_date').value;
+        const end_date = document.getElementById('end_date').value;
+        const cli_id = document.getElementById('cli_id').value;
+        const is_transferred = document.getElementById('is_transferred').value;
+        const page_size = document.getElementById('page_size').value;
+
+        // 始终传递 is_transferred 参数（即使是空值）
+        let url = `/offer?page=${page}&page_size=${page_size}&is_transferred=${encodeURIComponent(is_transferred)}`;
+        if (search) url += `&search=${search}`;
+        if (start_date) url += `&start_date=${start_date}`;
+        if (end_date) url += `&end_date=${end_date}`;
+        if (cli_id) url += `&cli_id=${cli_id}`;
+
+        window.location.href = url;
+    }
+</script>
+{% endblock %}

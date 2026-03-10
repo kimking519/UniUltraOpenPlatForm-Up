@@ -1,0 +1,1694 @@
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response, Cookie, File, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+import asyncio
+import threading
+from Sills.base import init_db, get_db_connection, get_exchange_rates
+from Sills.db_daily import get_daily_list, add_daily, update_daily
+from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
+from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
+from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
+from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, delete_quote, update_quote, batch_delete_quote, batch_copy_quote, batch_add_quotes
+from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
+from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer
+from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
+
+from typing import Optional
+import uvicorn
+import shutil
+import os
+import platform
+import io
+import json
+import base64
+import urllib.request
+import urllib.error
+from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import openpyxl
+
+app = FastAPI()
+
+# 内部服务API密钥（用于skill调用绕过认证）
+INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "dev-local-key")
+
+# 开发模式：跳过认证校验（生产环境设为False）
+SKIP_AUTH = os.environ.get("SKIP_AUTH", "true").lower() == "true"
+
+# Add session middleware
+app.add_middleware(SessionMiddleware, secret_key="uni_platform_secret_key_2026")
+
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
+    # 启动自动备份定时任务
+    start_auto_backup()
+
+def get_backup_root():
+    """获取备份根目录"""
+    is_windows = platform.system() == "Windows"
+    return r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else "/home/kim/workspace/DbBackup"
+
+def do_backup():
+    """执行备份操作（内部函数，无权限检查）"""
+    backup_root = get_backup_root()
+    date_str = datetime.now().strftime("%Y%m%d%H%M")
+    backup_dir = os.path.join(backup_root, f"backup_{date_str}")
+
+    # If exists, delete and recreate
+    if os.path.exists(backup_dir):
+        shutil.rmtree(backup_dir)
+    os.makedirs(backup_dir, exist_ok=True)
+
+    # Copy all .db files from project root
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    db_files = [f for f in os.listdir(project_root) if f.endswith(".db")]
+
+    for db_file in db_files:
+        src = os.path.join(project_root, db_file)
+        dst = os.path.join(backup_dir, db_file)
+        shutil.copy2(src, dst)
+
+    # Copy static directory
+    static_src = os.path.join(project_root, "static")
+    if os.path.exists(static_src):
+        static_dst = os.path.join(backup_dir, "static")
+        shutil.copytree(static_src, static_dst)
+
+    return len(db_files), backup_dir
+
+def auto_backup_task():
+    """自动备份定时任务"""
+    while True:
+        try:
+            count, backup_dir = do_backup()
+            print(f"[自动备份] 成功备份 {count} 个数据库文件到 {backup_dir}")
+        except Exception as e:
+            print(f"[自动备份] 失败: {str(e)}")
+        # 每30分钟执行一次
+        threading.Event().wait(1800)
+
+def start_auto_backup():
+    """启动自动备份线程"""
+    backup_thread = threading.Thread(target=auto_backup_task, daemon=True)
+    backup_thread.start()
+    print("[系统] 自动备份服务已启动，每30分钟执行一次")
+    # 启动时立即执行一次备份
+    try:
+        count, backup_dir = do_backup()
+        print(f"[启动备份] 成功备份 {count} 个数据库文件到 {backup_dir}")
+    except Exception as e:
+        print(f"[启动备份] 失败: {str(e)}")
+
+async def get_current_user(request: Request, emp_id: str = Cookie(None), rule: str = Cookie(None), account: str = Cookie(None)):
+    # 0. 开发模式：跳过认证
+    if SKIP_AUTH:
+        return {"emp_id": "000", "rule": "3", "account": "Dev-Mode"}
+
+    # 1. 检查内部服务API密钥（优先）- 用于skill调用
+    internal_key = request.headers.get("X-Internal-API-Key")
+    if internal_key == INTERNAL_API_KEY:
+        return {"emp_id": "000", "rule": "3", "account": "Internal-Service"}
+
+    # 2. 正常Cookie认证流程
+    if not emp_id or not rule:
+        return None
+    return {"emp_id": emp_id, "rule": rule, "account": account}
+
+async def login_required(current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(status_code=303, headers={"Location": "/login"})
+    return current_user
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request, current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+        
+    with get_db_connection() as conn:
+        cli_count = conn.execute("SELECT COUNT(*) FROM uni_cli").fetchone()[0]
+        emp_count = conn.execute("SELECT COUNT(*) FROM uni_emp").fetchone()[0]
+        order_sum = conn.execute("SELECT IFNULL(SUM(paid_amount), 0) FROM uni_order").fetchone()[0]
+        
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, 
+        "active_page": "dashboard",
+        "current_user": current_user,
+        "stats": {
+            "cli_count": cli_count,
+            "emp_count": emp_count,
+            "order_sum": order_sum
+        }
+    })
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, error: str = "", account: str = ""):
+    return templates.TemplateResponse("login.html", {"request": request, "error": error, "account": account})
+
+@app.post("/login")
+async def login(response: Response, account: str = Form(...), password: str = Form(...)):
+    if account == "Admin" and password == "uni519":
+        # System init backdoor, just in case
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie(key="emp_id", value="000")
+        response.set_cookie(key="account", value="Admin")
+        response.set_cookie(key="rule", value="3")
+        return response
+
+    ok, user, msg = verify_login(account, password)
+    if not ok:
+        # Redirect back to login with error message and retained account
+        return RedirectResponse(url=f"/login?error={msg}&account={account}", status_code=303)
+    
+    # Check if first time login (password is default 12345)
+    from Sills.db_emp import hash_password
+    if user['password'] == hash_password('12345'):
+        response = RedirectResponse(url="/change_password", status_code=303)
+        response.set_cookie(key="emp_id", value=user['emp_id'])
+        response.set_cookie(key="account", value=user['account'])
+        response.set_cookie(key="rule", value=user['rule'])
+        return response
+
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(key="emp_id", value=str(user['emp_id']))
+    response.set_cookie(key="account", value=str(user['account']))
+    response.set_cookie(key="rule", value=str(user['rule']))
+    return response
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie("emp_id")
+    response.delete_cookie("rule")
+    response.delete_cookie("account")
+    return response
+
+@app.get("/change_password", response_class=HTMLResponse)
+async def change_pwd_page(request: Request, current_user: dict = Depends(get_current_user), error: str = ""):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    return templates.TemplateResponse("change_pwd.html", {"request": request, "current_user": current_user, "error": error})
+
+@app.post("/change_password")
+async def change_pwd_post(new_password: str = Form(...), confirm_password: str = Form(...), current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    if new_password == '12345':
+        return RedirectResponse(url="/change_password?error=新密码不能为12345", status_code=303)
+    if new_password != confirm_password:
+        return RedirectResponse(url="/change_password?error=两次输入的密码不一致", status_code=303)
+        
+    change_password(current_user['emp_id'], new_password)
+    return RedirectResponse(url="/", status_code=303)
+
+# Placeholder routes for modules 1-8
+@app.get("/daily", response_class=HTMLResponse)
+async def daily_page(request: Request, page: int = 1, current_user: dict = Depends(login_required)):
+    items, total = get_daily_list(page=page)
+    return templates.TemplateResponse("daily.html", {
+        "request": request, 
+        "active_page": "daily",
+        "current_user": current_user,
+        "items": items,
+        "total": total,
+        "page": page
+    })
+
+@app.post("/daily/add")
+async def daily_add(currency_code: int = Form(...), exchange_rate: float = Form(...), current_user: dict = Depends(login_required)):
+    from datetime import datetime
+    record_date = datetime.now().strftime('%Y-%m-%d')
+    success, msg = add_daily(record_date, currency_code, exchange_rate)
+    return RedirectResponse(url="/daily", status_code=303)
+
+@app.post("/api/daily/update")
+async def daily_update_api(id: int = Form(...), exchange_rate: float = Form(...), current_user: dict = Depends(login_required)):
+    success, msg = update_daily(id, exchange_rate)
+    return {"success": success, "message": msg}
+
+@app.get("/emp", response_class=HTMLResponse)
+async def emp_page(request: Request, page: int = 1, search: str = "", current_user: dict = Depends(login_required)):
+    items, total = get_emp_list(page=page, search=search)
+    return templates.TemplateResponse("emp.html", {
+        "request": request, 
+        "active_page": "emp",
+        "current_user": current_user,
+        "items": items,
+        "total": total,
+        "page": page,
+        "search": search
+    })
+
+@app.post("/emp/add")
+async def emp_add(
+    emp_name: str = Form(...), department: str = Form(""), position: str = Form(""),
+    contact: str = Form(""), account: str = Form(...), hire_date: str = Form(...),
+    rule: str = Form("1"), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/emp", status_code=303)
+        
+    data = {
+        "emp_name": emp_name, "department": department, "position": position,
+        "contact": contact, "account": account, "password": "12345",
+        "hire_date": hire_date,
+        "rule": rule, "remark": remark
+    }
+    success, msg = add_employee(data)
+    return RedirectResponse(url="/emp", status_code=303)
+
+@app.post("/emp/import")
+async def emp_import(import_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/emp", status_code=303)
+    success_count, errors = batch_import_text(import_text)
+    return RedirectResponse(url=f"/emp?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/emp/import/csv")
+async def emp_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/emp", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_text(text)
+    return RedirectResponse(url=f"/emp?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/api/emp/update")
+async def emp_update_api(emp_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    # Only allow certain fields
+    allowed_fields = ['emp_name', 'account', 'password', 'department', 'position', 'rule', 'contact', 'hire_date', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": "非法字段"}
+    
+    success, msg = update_employee(emp_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/emp/delete")
+async def emp_delete_api(emp_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    success, msg = delete_employee(emp_id)
+    return {"success": success, "message": msg}
+
+from Sills.base import get_paginated_list
+
+@app.get("/vendor", response_class=HTMLResponse)
+async def vendor_page(request: Request, page: int = 1, search: str = "", current_user: dict = Depends(login_required)):
+    search_kwargs = {"vendor_name": search} if search else None
+    result = get_paginated_list("uni_vendor", page=page, search_kwargs=search_kwargs)
+    return templates.TemplateResponse("vendor.html", {
+        "request": request, "active_page": "vendor", "current_user": current_user,
+        "items": result["items"], "total_pages": result["total_pages"], 
+        "page": page, "search": search, "active_page": "vendor"
+    })
+
+@app.post("/vendor/add")
+async def vendor_add(
+    vendor_name: str = Form(...), address: str = Form(""), qq: str = Form(""),
+    wechat: str = Form(""), email: str = Form(""), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/vendor", status_code=303)
+    data = {
+        "vendor_name": vendor_name, "address": address, "qq": qq,
+        "wechat": wechat, "email": email, "remark": remark
+    }
+    add_vendor(data)
+    return RedirectResponse(url="/vendor", status_code=303)
+
+@app.post("/vendor/import")
+async def vendor_import(import_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/vendor", status_code=303)
+    success_count, errors = batch_import_vendor_text(import_text)
+    return RedirectResponse(url=f"/vendor?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/vendor/import/csv")
+async def vendor_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/vendor", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_vendor_text(text)
+    return RedirectResponse(url=f"/vendor?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/api/vendor/update")
+async def vendor_update_api(vendor_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    allowed_fields = ['vendor_name', 'address', 'qq', 'wechat', 'email', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": "非法字段"}
+    success, msg = update_vendor(vendor_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/vendor/delete")
+async def vendor_delete_api(vendor_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    success, msg = delete_vendor(vendor_id)
+    return {"success": success, "message": msg}
+
+@app.get("/cli", response_class=HTMLResponse)
+async def cli_page(request: Request, page: int = 1, search: str = "", current_user: dict = Depends(login_required)):
+    search_kwargs = {"cli_name": search} if search else None
+    result = get_paginated_list("uni_cli", page=page, search_kwargs=search_kwargs)
+    
+    # Needs employees for dropdown
+    employees, _ = get_emp_list(page=1, page_size=1000)
+    
+    return templates.TemplateResponse("cli.html", {
+        "request": request, "active_page": "cli", "current_user": current_user,
+        "items": result["items"], "total_pages": result["total_pages"], 
+        "page": page, "search": search, "employees": employees
+    })
+
+@app.post("/cli/add")
+async def cli_add(
+    cli_name: str = Form(...), region: str = Form("韩国"), credit_level: str = Form("A"),
+    margin_rate: float = Form(10.0), emp_id: str = Form(...), website: str = Form(""),
+    payment_terms: str = Form(""), email: str = Form(""), phone: str = Form(""),
+    remark: str = Form(""), current_user: dict = Depends(login_required)
+):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/cli", status_code=303)
+    data = {
+        "cli_name": cli_name, "region": region, "credit_level": credit_level,
+        "margin_rate": margin_rate, "emp_id": emp_id, "website": website,
+        "payment_terms": payment_terms, "email": email, "phone": phone, "remark": remark
+    }
+    add_cli(data)
+    return RedirectResponse(url="/cli", status_code=303)
+
+@app.post("/cli/import")
+async def cli_import(import_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/cli", status_code=303)
+    success_count, errors = batch_import_cli_text(import_text)
+    return RedirectResponse(url=f"/cli?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/cli/import/csv")
+async def cli_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/cli", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    if '\n' in text:
+        text = text.split('\n', 1)[1] # skip header
+    success_count, errors = batch_import_cli_text(text)
+    return RedirectResponse(url=f"/cli?import_success={success_count}&errors={len(errors)}", status_code=303)
+
+@app.post("/api/order/update")
+async def order_update_api(order_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无修改权限"}
+
+    allowed_fields = ['order_no', 'order_date', 'inquiry_mpn', 'inquiry_brand', 'price_rmb', 'price_kwr', 'price_usd', 'cost_price_rmb', 'paid_amount', 'return_status', 'remark', 'is_transferred']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+
+    if field in ['price_rmb', 'price_kwr', 'price_usd', 'cost_price_rmb', 'paid_amount']:
+        try:
+            val = float(value)
+
+            # 当修改price_rmb时，自动计算price_kwr和price_usd
+            if field == 'price_rmb':
+                from Sills.base import get_exchange_rates
+                krw_rate, usd_rate = get_exchange_rates()
+
+                # 汇率含义: 1 RMB = X 外币
+                # price_kwr = price_rmb * krw_rate (韩元)
+                # price_usd = price_rmb * usd_rate (美元)
+                price_kwr = round(val * krw_rate, 1) if krw_rate else 0
+                price_usd = round(val * usd_rate, 2) if usd_rate else 0
+
+                # 同时更新三个价格字段
+                success, msg = update_order(order_id, {
+                    'price_rmb': val,
+                    'price_kwr': price_kwr,
+                    'price_usd': price_usd
+                })
+                return {"success": success, "message": msg, "price_kwr": price_kwr, "price_usd": price_usd}
+
+            success, msg = update_order(order_id, {field: val})
+            return {"success": success, "message": msg}
+        except:
+            return {"success": False, "message": "必须是数字"}
+            
+    success, msg = update_order(order_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/order/update_status")
+async def order_update_status_api(order_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    from Sills.db_order import update_order_status
+    success, msg = update_order_status(order_id, field, value)
+    return {"success": success, "message": msg}
+
+@app.post("/api/cli/update")
+async def cli_update_api(cli_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    allowed_fields = ['cli_name', 'cli_full_name', 'cli_name_en', 'contact_name', 'address', 'region', 'credit_level', 'margin_rate', 'emp_id', 'website', 'payment_terms', 'email', 'phone', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": "非法字段"}
+    
+    if field == 'margin_rate':
+        try: 
+            val = float(value)
+            success, msg = update_cli(cli_id, {field: val})
+            return {"success": success, "message": msg}
+        except: 
+            return {"success": False, "message": "利润率必须是数字"}
+        
+    success, msg = update_cli(cli_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/cli/delete")
+async def cli_delete_api(cli_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    success, msg = delete_cli(cli_id)
+    return {"success": success, "message": msg}
+
+# ---------------- Quote Module ----------------
+@app.get("/quote", response_class=HTMLResponse)
+async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", status: str = "", is_transferred: str = ""):
+    # 从 session 获取筛选条件
+    session = request.session
+    # 检查 URL 中是否有筛选参数（包括空值）
+    has_params = any(k in request.query_params for k in ['search', 'start_date', 'end_date', 'cli_id', 'status', 'is_transferred'])
+
+    if not has_params:
+        # 首次访问或无参数，从 session 读取
+        search = session.get("quote_search", "")
+        start_date = session.get("quote_start_date", "")
+        end_date = session.get("quote_end_date", "")
+        cli_id = session.get("quote_cli_id", "")
+        status = session.get("quote_status", "")
+        is_transferred = session.get("quote_is_transferred", "")
+    else:
+        # 有参数时（包括空值），保存到 session
+        session["quote_search"] = search
+        session["quote_start_date"] = start_date
+        session["quote_end_date"] = end_date
+        session["quote_cli_id"] = cli_id
+        session["quote_status"] = status
+        session["quote_is_transferred"] = is_transferred
+
+    results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, status=status, is_transferred=is_transferred)
+    total_pages = (total + page_size - 1) // page_size
+    cli_list, _ = get_cli_list(page=1, page_size=1000)
+    return templates.TemplateResponse("quote.html", {
+        "request": request,
+        "active_page": "quote",
+        "current_user": current_user,
+        "items": results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "search": search,
+        "start_date": start_date,
+        "end_date": end_date,
+        "cli_id": cli_id,
+        "status": status,
+        "is_transferred": is_transferred,
+        "cli_list": cli_list
+    })
+
+@app.post("/quote/add")
+async def quote_add(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/quote", status_code=303)
+    form = await request.form()
+    data = dict(form)
+    ok, msg = add_quote(data)
+    import urllib.parse
+    msg_param = urllib.parse.quote(msg)
+    success = 1 if ok else 0
+    return RedirectResponse(url=f"/quote?msg={msg_param}&success={success}", status_code=303)
+
+@app.post("/quote/import")
+async def quote_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/quote", status_code=303)
+    success_count, errors = batch_import_quote_text(batch_text)
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/quote/import/csv")
+async def quote_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/quote", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    # Pass full text to sill
+    success_count, errors = batch_import_quote_text(text)
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/api/quote/update")
+async def quote_update_api(quote_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无修改权限"}
+        
+    allowed_fields = ['cli_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'inquiry_qty', 'actual_qty', 'target_price_rmb', 'cost_price_rmb', 'date_code', 'delivery_date', 'status', 'is_transferred', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+
+    if field in ['inquiry_qty', 'actual_qty', 'target_price_rmb', 'cost_price_rmb']:
+        try:
+            val = float(value) if 'price' in field else int(value)
+            success, msg = update_quote(quote_id, {field: val})
+            return {"success": success, "message": msg}
+        except:
+            return {"success": False, "message": "必须是数字"}
+            
+    success, msg = update_quote(quote_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/quote/delete")
+async def quote_delete_api(quote_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    success, msg = delete_quote(quote_id)
+    return {"success": success, "message": msg}
+
+@app.post("/api/quote/batch_delete")
+async def quote_batch_delete_api(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    success, msg = batch_delete_quote(ids)
+    return {"success": success, "message": msg}
+
+@app.post("/api/quote/batch_copy")
+async def quote_batch_copy_api(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限复制需求"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    success, msg = batch_copy_quote(ids)
+    return {"success": success, "message": msg}
+
+@app.post("/api/quote/batch_add")
+async def quote_batch_add_api(request: Request):
+    """批量添加询价记录 - 供 skill 调用，使用内部 API Key 认证"""
+    # 检查内部 API Key
+    internal_key = request.headers.get("X-Internal-API-Key")
+    if internal_key != INTERNAL_API_KEY:
+        return {"success": False, "message": "无权限访问"}
+
+    try:
+        data = await request.json()
+        items = data.get("items", [])
+
+        if not items:
+            return {"success": False, "message": "缺少 items 参数"}
+
+        success_count, errors, created_ids = batch_add_quotes(items)
+
+        return {
+            "success": True,
+            "message": f"成功添加 {success_count} 条记录",
+            "success_count": success_count,
+            "error_count": len(errors),
+            "errors": errors,
+            "created_ids": created_ids
+        }
+    except Exception as e:
+        return {"success": False, "message": f"批量添加失败: {str(e)}"}
+
+@app.get("/api/quote/info")
+async def get_quote_info_api(id: str, current_user: dict = Depends(login_required)):
+    from Sills.base import get_db_connection
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT q.*, c.cli_name FROM uni_quote q LEFT JOIN uni_cli c ON q.cli_id = c.cli_id WHERE q.quote_id = ?", (id,)).fetchone()
+        if row:
+            return {"success": True, "data": dict(row)}
+        return {"success": False, "message": "未找到"}
+
+@app.post("/api/quote/export_offer_csv")
+async def quote_export_offer_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids:
+        return {"success": False, "message": "未选择任何记录进行导出"}
+
+    from Sills.base import get_db_connection
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        quotes = conn.execute(f"""
+            SELECT q.*, c.cli_name
+            FROM uni_quote q
+            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            WHERE q.quote_id IN ({placeholders})
+        """, ids).fetchall()
+
+    import io, csv
+    output = io.StringIO()
+    output.write('\ufeff')
+    writer = csv.writer(output)
+    # 字段顺序与页面显示一致
+    writer.writerow(['需求日期','需求编号','客户名称','询价型号','报价型号','询价品牌','需求数量','目标价','成本价','批号','交期','状态','已转','备注'])
+
+    for q in quotes:
+        q_dict = dict(q)
+        writer.writerow([
+            q_dict.get('quote_date', ''),
+            q_dict.get('quote_id', ''),
+            q_dict.get('cli_name', ''),
+            q_dict.get('inquiry_mpn', ''),
+            q_dict.get('quoted_mpn', ''),
+            q_dict.get('inquiry_brand', ''),
+            q_dict.get('inquiry_qty', 0),
+            q_dict.get('target_price_rmb', 0.0),
+            q_dict.get('cost_price_rmb', 0.0),
+            q_dict.get('date_code', ''),
+            q_dict.get('delivery_date', ''),
+            q_dict.get('status', ''),
+            q_dict.get('is_transferred', ''),
+            q_dict.get('remark', '')
+        ])
+
+    return {"success": True, "csv_content": output.getvalue()}
+
+# ---------------- Offer Module ----------------
+@app.get("/offer", response_class=HTMLResponse)
+async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_transferred: str = ""):
+    # 从 session 获取筛选条件
+    session = request.session
+    # 检查 URL 中是否有筛选参数（包括空值）
+    has_params = any(k in request.query_params for k in ['search', 'start_date', 'end_date', 'cli_id', 'is_transferred'])
+
+    if not has_params:
+        # 首次访问或无参数，从 session 读取
+        search = session.get("offer_search", "")
+        start_date = session.get("offer_start_date", "")
+        end_date = session.get("offer_end_date", "")
+        cli_id = session.get("offer_cli_id", "")
+        is_transferred = session.get("offer_is_transferred", "未转")
+        page_size = session.get("offer_page_size", 20)
+    else:
+        # 有参数（包括空值），保存到 session
+        session["offer_search"] = search
+        session["offer_start_date"] = start_date
+        session["offer_end_date"] = end_date
+        session["offer_cli_id"] = cli_id
+        session["offer_is_transferred"] = is_transferred
+        session["offer_page_size"] = page_size
+
+    # is_transferred 空字符串表示"全部"，直接传递给查询层处理
+    # 首次访问时 session 默认为"未转"，用户选择"全部"后 session 保存空字符串
+    query_is_transferred = is_transferred
+    results, total = get_offer_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, is_transferred=query_is_transferred)
+    total_pages = (total + page_size - 1) // page_size
+    from Sills.base import get_paginated_list
+    vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
+    vendor_list = vendor_data['items']
+    cli_data = get_paginated_list('uni_cli', page=1, page_size=1000)
+    cli_list = cli_data['items']
+    return templates.TemplateResponse("offer.html", {
+        "request": request,
+        "active_page": "offer",
+        "current_user": current_user,
+        "items": results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "search": search,
+        "start_date": start_date,
+        "end_date": end_date,
+        "cli_id": cli_id,
+        "is_transferred": is_transferred,
+        "vendor_list": vendor_list,
+        "cli_list": cli_list
+    })
+
+@app.post("/offer/add")
+async def offer_add_route(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/offer", status_code=303)
+    form = await request.form()
+    data = dict(form)
+    data['emp_id'] = current_user['emp_id']
+    
+    # 自动报价逻辑：如果报价为 0 且指定了需求，则联动客户利润率
+    if (not data.get('offer_price_rmb') or float(data.get('offer_price_rmb')) == 0) and data.get('quote_id'):
+        from Sills.base import get_db_connection
+        with get_db_connection() as conn:
+            clip = conn.execute("""
+                SELECT c.margin_rate, q.cost_price_rmb 
+                FROM uni_quote q 
+                JOIN uni_cli c ON q.cli_id = c.cli_id 
+                WHERE q.quote_id = ?
+            """, (data['quote_id'],)).fetchone()
+            if clip and clip['cost_price_rmb']:
+                margin = float(clip['margin_rate'] or 10.0)
+                cost = float(clip['cost_price_rmb'])
+                data['offer_price_rmb'] = round(cost * (1 + margin / 100.0), 2)
+                if not data.get('cost_price_rmb') or float(data.get('cost_price_rmb')) == 0:
+                    data['cost_price_rmb'] = cost
+
+    ok, msg = add_offer(data)
+    import urllib.parse
+    msg_param = urllib.parse.quote(msg)
+    success = 1 if ok else 0
+    return RedirectResponse(url=f"/offer?msg={msg_param}&success={success}", status_code=303)
+
+@app.post("/offer/import")
+async def offer_import_text(batch_text: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/offer", status_code=303)
+    success_count, errors = batch_import_offer_text(batch_text, current_user['emp_id'])
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/offer/import/csv")
+async def offer_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return RedirectResponse(url="/offer", status_code=303)
+    content = await csv_file.read()
+    try:
+        text = content.decode('utf-8-sig').strip()
+    except UnicodeDecodeError:
+        text = content.decode('gbk', errors='replace').strip()
+        
+    # Pass full text to sill
+    success_count, errors = batch_import_offer_text(text, current_user['emp_id'])
+    err_msg = ""
+    if errors:
+        import urllib.parse
+        err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/offer?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.get("/api/exchange/rates")
+async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
+    """获取最新汇率（KRW 和 USD）"""
+    from Sills.base import get_exchange_rates
+    krw, usd = get_exchange_rates()
+    return {"success": True, "krw": krw, "usd": usd}
+
+@app.post("/api/offer/update")
+async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无修改权限"}
+        
+    allowed_fields = ['quote_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'quoted_brand',
+                      'inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb',
+                      'price_kwr', 'price_usd', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'is_transferred', 'remark']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+        
+    if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 'price_kwr', 'price_usd']:
+        try:
+            val = float(value) if 'price' in field else int(value)
+            success, msg = update_offer(offer_id, {field: val})
+            return {"success": success, "message": msg}
+        except:
+            return {"success": False, "message": "必须是数字"}
+            
+    success, msg = update_offer(offer_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/offer/delete")
+async def offer_delete_api(offer_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    success, msg = delete_offer(offer_id)
+    return {"success": success, "message": msg}
+
+@app.post("/api/offer/batch_delete")
+async def offer_batch_delete_api(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    success, msg = batch_delete_offer(ids)
+    return {"success": success, "message": msg}
+
+@app.post("/api/offer/batch_send_email")
+async def offer_batch_send_email_api(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids:
+        return {"success": False, "message": "未选择任何记录"}
+
+    # 1. Fetch Data
+    from Sills.base import get_db_connection
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        # Get KRW rate for calculation
+        try:
+            rate_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+            krw_rate = float(rate_row[0]) if rate_row else 180.0
+        except: krw_rate = 180.0
+
+        query = f"""
+            SELECT o.*, v.vendor_name, c.cli_name
+            FROM uni_offer o
+            LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            WHERE o.offer_id IN ({placeholders})
+        """
+        rows = conn.execute(query, ids).fetchall()
+    
+    if not rows:
+        return {"success": False, "message": "记录不存在"}
+
+    # 2. Generate Excel and Body
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Batch Offers"
+    # Headers exactly as requested: Model, Brand, QTY(pcs), Price(KWR), DC, L/T, Remark
+    headers = ['Model', 'Brand', 'QTY(pcs)', 'Price(KWR)', 'DC', 'L/T', 'Remark']
+    ws.append(headers)
+    
+    email_body_sections = []
+    
+    for row_data in rows:
+        r = dict(row_data)
+        # Handle KRW price if missing
+        pkwr = r.get('price_kwr')
+        if not pkwr:
+            try: pkwr = round(float(r['offer_price_rmb'] or 0) * krw_rate, 1)
+            except: pkwr = 0.0
+            
+        # Format for Excel
+        ws.append([
+            r['quoted_mpn'] or r['inquiry_mpn'], r['quoted_brand'] or r['inquiry_brand'],
+            r['quoted_qty'], pkwr, r['date_code'], r['delivery_date'], r['remark']
+        ])
+        
+        # Format for Email Body (Template requested)
+        email_body_sections.append(f"""================
+Model：{r['quoted_mpn'] or r['inquiry_mpn']}
+Brand：{r['quoted_brand'] or r['inquiry_brand']}
+Amount(pcs)：{r['quoted_qty']}
+Price(KRW)：{pkwr}
+DC:{r['date_code']}
+LeadTime：{r['delivery_date']}
+Remark: {r['remark']}
+================ """ )
+
+    full_body_for_email = "您好，这是批量导出的报价信息，请查收附件：\n\n" + "\n\n".join(email_body_sections)
+    full_body_for_clipboard = "\n\n".join(email_body_sections)
+    
+    excel_file = io.BytesIO()
+    wb.save(excel_file)
+    excel_file.seek(0)
+    
+    # 3. MIME
+    message = MIMEMultipart()
+    message['To'] = 'joy@unicornsemi.com'
+    message['Subject'] = f"批量报价汇总 - {len(rows)}条记录"
+    message.attach(MIMEText(full_body_for_email, 'plain'))
+    
+    part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    part.set_payload(excel_file.read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', f'attachment; filename="batch_offers_{datetime.now().strftime("%Y%m%d%H%M%S")}.xlsx"')
+    message.attach(part)
+    
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode('utf-8')
+    
+    # 4. Gmail Skill (Maton Gateway)
+    maton_key = "AIzaSyCgZbWmrE266eSmCynikDsoddpt_ERCbvs"
+    try:
+        url = 'https://gateway.maton.ai/google-mail/gmail/v1/users/me/messages/send'
+        payload = json.dumps({'raw': raw_message}).encode('utf-8')
+        
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            method='POST'
+        )
+        req.add_header('Authorization', f'Bearer {maton_key}')
+        req.add_header('Content-Type', 'application/json')
+        
+        opener = urllib.request.build_opener()
+        try:
+            with opener.open(req, timeout=30) as response:
+                resp_body = response.read().decode('utf-8')
+                # Prepare base64 for frontend download
+                excel_b64 = base64.b64encode(excel_file.getvalue()).decode('utf-8')
+                return {
+                    "success": True, 
+                    "message": f"成功发送 {len(rows)} 条报价到 joy@unicornsemi.com",
+                    "clipboard": full_body_for_clipboard,
+                    "excel_b64": excel_b64,
+                    "filename": f"batch_offers_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+                }
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8')
+            return {"success": False, "message": f"邮件发送失败 (HTTP {e.code}): {err_body}"}
+    except Exception as e:
+        return {"success": False, "message": f"邮件发送失败: {str(e)}"}
+
+@app.post("/api/offer/export_csv")
+async def offer_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids:
+        return {"success": False, "message": "未选择任何记录进行导出"}
+
+    from Sills.base import get_db_connection, get_exchange_rates
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        query = f"""
+            SELECT o.*, v.vendor_name, e.emp_name, c.cli_name
+            FROM uni_offer o
+            LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
+            LEFT JOIN uni_emp e ON o.emp_id = e.emp_id
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            WHERE o.offer_id IN ({placeholders})
+        """
+        rows = conn.execute(query, ids).fetchall()
+
+    # 获取汇率
+    krw_rate, usd_rate = get_exchange_rates()
+
+    # CSV 头部 - 与页面展示一致
+    headers = ['日期', '报价编号', '客户名称', '需求编号', '询价型号', '报价型号', '需求品牌', '报价品牌',
+               '需求数量(pcs)', '报价数量(pcs)', '成本价', '报价(RMB)', '报价(KWR)', '报价(USD)',
+               '利润', '总利润', '供应商', '批号(DC)', '交期(LT)', '负责人', '已转', '备注']
+
+    csv_lines = [','.join(headers)]
+
+    for row_data in rows:
+        r = dict(row_data)
+
+        # 计算价格
+        offer_price_rmb = float(r.get('offer_price_rmb') or 0)
+        cost_price_rmb = float(r.get('cost_price_rmb') or 0)
+        quoted_qty = int(r.get('quoted_qty') or 0)
+
+        # KWR 价格
+        pkwr = r.get('price_kwr')
+        if not pkwr or float(pkwr) == 0:
+            if krw_rate > 10:
+                pkwr = round(offer_price_rmb * krw_rate, 1)
+            else:
+                pkwr = round(offer_price_rmb / krw_rate, 1) if krw_rate else 0
+
+        # USD 价格
+        pusd = r.get('price_usd')
+        if not pusd or float(pusd) == 0:
+            if usd_rate > 10:
+                pusd = round(offer_price_rmb * usd_rate, 2)
+            else:
+                pusd = round(offer_price_rmb / usd_rate, 2) if usd_rate else 0
+
+        # 利润计算
+        profit = round(offer_price_rmb - cost_price_rmb, 3)
+        total_profit = int(round(profit * quoted_qty, 0))
+
+        # 构建CSV行
+        line = [
+            r.get('offer_date', ''),
+            r.get('offer_id', ''),
+            r.get('cli_name', ''),
+            r.get('quote_id', ''),
+            r.get('inquiry_mpn', ''),
+            r.get('quoted_mpn', ''),
+            r.get('inquiry_brand', ''),
+            r.get('quoted_brand', ''),
+            r.get('inquiry_qty', 0),
+            r.get('quoted_qty', 0),
+            f"{cost_price_rmb:.2f}",
+            f"{offer_price_rmb:.2f}",
+            pkwr,
+            pusd,
+            profit,
+            total_profit,
+            r.get('vendor_name', ''),
+            r.get('date_code', ''),
+            r.get('delivery_date', ''),
+            r.get('emp_name', ''),
+            r.get('is_transferred', '未转'),
+            (r.get('remark') or '').replace('\n', ' ').replace(',', '，')
+        ]
+        csv_lines.append(','.join([str(v) for v in line]))
+
+    csv_content = '\n'.join(csv_lines)
+
+    # 生成剪贴板内容（报价模板格式）
+    clipboard_sections = []
+    for row_data in rows:
+        r = dict(row_data)
+        offer_price_rmb = float(r.get('offer_price_rmb') or 0)
+        quoted_qty = int(r.get('quoted_qty') or 0)
+
+        # KWR 价格
+        pkwr = r.get('price_kwr')
+        if not pkwr or float(pkwr) == 0:
+            if krw_rate > 10:
+                pkwr = round(offer_price_rmb * krw_rate, 1)
+            else:
+                pkwr = round(offer_price_rmb / krw_rate, 1) if krw_rate else 0
+
+        clipboard_sections.append(f"""================
+Model：{r.get('quoted_mpn') or r.get('inquiry_mpn')}
+Brand：{r.get('quoted_brand') or r.get('inquiry_brand')}
+Amount(pcs)：{r.get('quoted_qty')}
+Price(KRW)：{pkwr}
+DC：{r.get('date_code')}
+LeadTime：{r.get('delivery_date')}
+Remark: {r.get('remark')}
+================ """)
+
+    clipboard_content = "\n\n".join(clipboard_sections)
+
+    return {
+        "success": True,
+        "csv_content": csv_content,
+        "clipboard": clipboard_content,
+        "filename": f"报价卡片_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+    }
+
+@app.post("/api/offer/generate_koquote")
+async def offer_generate_koquote(request: Request, current_user: dict = Depends(login_required)):
+    """生成韩文Excel报价单"""
+    from Sills.document_generator import generate_koquote
+
+    data = await request.json()
+    offer_ids = data.get("offer_ids", [])
+    if not offer_ids:
+        return {"success": False, "message": "未选择任何报价记录"}
+
+    try:
+        success, result = generate_koquote(offer_ids)
+
+        if success:
+            return {
+                "success": True,
+                "file_path": result.get("excel_path", ""),
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "message": "生成超时，请稍后重试"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+@app.get("/order", response_class=HTMLResponse)
+async def order_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = "", is_finished: str = "", is_transferred: str = ""):
+    # 日期默认不选择，保持为空
+    # is_finished 为空表示"全部状态"，不做强制设置
+    results, total = get_order_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date, is_finished=is_finished, is_transferred=is_transferred)
+    total_pages = (total + page_size - 1) // page_size
+    from Sills.db_cli import get_cli_list
+    from Sills.base import get_paginated_list
+    cli_list, _ = get_cli_list(page=1, page_size=1000)
+    vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
+    vendor_list = vendor_data['items']
+    return templates.TemplateResponse("order.html", {
+        "request": request, "active_page": "order", "current_user": current_user,
+        "items": results, "total": total, "page": page, "page_size": page_size,
+        "total_pages": total_pages, "search": search, "cli_id": cli_id,
+        "start_date": start_date, "end_date": end_date, "cli_list": cli_list,
+        "vendor_list": vendor_list,
+        "is_finished": is_finished,
+        "is_transferred": request.query_params.get("is_transferred", "")
+    })
+
+@app.post("/order/add")
+async def order_add_route(
+    cli_id: str = Form(...), offer_id: str = Form(None), 
+    order_id: str = Form(None), order_date: str = Form(None),
+    inquiry_mpn: str = Form(None), inquiry_brand: str = Form(None),
+    is_finished: int = Form(0), is_paid: int = Form(0), 
+    paid_amount: float = Form(0.0), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    data = {
+        "cli_id": cli_id, "offer_id": offer_id, "order_id": order_id, "order_date": order_date,
+        "inquiry_mpn": inquiry_mpn, "inquiry_brand": inquiry_brand,
+        "is_finished": is_finished, "is_paid": is_paid, 
+        "paid_amount": paid_amount, "remark": remark
+    }
+    ok, msg = add_order(data)
+    import urllib.parse
+    return RedirectResponse(url=f"/order?msg={urllib.parse.quote(msg)}&success={1 if ok else 0}", status_code=303)
+
+@app.post("/order/import")
+async def order_import_text(batch_text: str = Form(None), csv_file: UploadFile = File(None), cli_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if batch_text:
+        text = batch_text
+    elif csv_file:
+        content = await csv_file.read()
+        try:
+            text = content.decode('utf-8-sig').strip()
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='replace').strip()
+    else:
+        return RedirectResponse(url="/order?msg=未提供导入内容&success=0", status_code=303)
+        
+    success_count, errors = batch_import_order(text, cli_id)
+    import urllib.parse
+    err_msg = ""
+    if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/order?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/api/order/update_status")
+async def api_order_update_status(order_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = update_order_status(order_id, field, value)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/update")
+async def api_order_update(order_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if field in ['paid_amount']:
+        try: value = float(value)
+        except: return {"success": False, "message": "必须是数字"}
+    
+    allowed_fields = ['order_no', 'order_date', 'cli_id', 'offer_id', 'inquiry_mpn', 'inquiry_brand', 'price_rmb', 'price_kwr', 'price_usd', 'cost_price_rmb', 'is_finished', 'is_paid', 'paid_amount', 'return_status', 'remark', 'is_transferred']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+
+    ok, msg = update_order(order_id, {field: value})
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/delete")
+async def api_order_delete(order_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
+    ok, msg = delete_order(order_id)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/batch_delete")
+async def api_order_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    ok, msg = batch_delete_order(ids)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order/export_csv")
+async def order_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids: return {"success": False, "message": "未选择记录"}
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        orders = conn.execute(f"""
+            SELECT ord.*, c.cli_name,
+                   off.inquiry_qty, off.quoted_qty, off.date_code, off.delivery_date,
+                   v.vendor_name
+            FROM uni_order ord
+            LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id
+            LEFT JOIN uni_offer off ON ord.offer_id = off.offer_id
+            LEFT JOIN uni_vendor v ON off.vendor_id = v.vendor_id
+            WHERE ord.order_id IN ({placeholders})
+        """, ids).fetchall()
+
+    krw_rate, usd_rate = get_exchange_rates()
+
+    import io, csv
+    output = io.StringIO(); output.write('\ufeff')
+    writer = csv.writer(output)
+    # 与页面显示字段一致
+    writer.writerow(['订单日期','订单编号','客户','报价编号','报价型号','品牌','报价(RMB)','报价(KWR)','报价(USD)','成本(RMB)','利润','需求数量(pcs)','报价数量(pcs)','供应商','批号(DC)','货期','退货状态','完结','付款','已付金额','已转','备注'])
+
+    for r in orders:
+        d = dict(r)
+        price_rmb = float(d.get('price_rmb') or 0)
+        cost_rmb = float(d.get('cost_price_rmb') or 0)
+        qty = int(d.get('quoted_qty') or 0)
+        profit = round(price_rmb - cost_rmb, 3)
+
+        # KWR/USD 计算
+        price_kwr = d.get('price_kwr')
+        price_usd = d.get('price_usd')
+        if not price_kwr:
+            if krw_rate > 10: price_kwr = round(price_rmb * krw_rate, 1)
+            else: price_kwr = round(price_rmb / krw_rate, 1) if krw_rate else 0
+        if not price_usd:
+            if usd_rate > 10: price_usd = round(price_rmb * usd_rate, 2)
+            else: price_usd = round(price_rmb / usd_rate, 2) if usd_rate else 0
+
+        writer.writerow([
+            d.get('order_date', ''),
+            d.get('order_no') or d.get('order_id', ''),
+            d.get('cli_name', ''),
+            d.get('offer_id') or '',
+            d.get('inquiry_mpn') or '',
+            d.get('inquiry_brand') or '',
+            f"{price_rmb:.2f}",
+            price_kwr,
+            price_usd,
+            f"{cost_rmb:.2f}",
+            profit,
+            d.get('inquiry_qty') or '',
+            d.get('quoted_qty') or '',
+            d.get('vendor_name') or '',
+            d.get('date_code') or '',
+            d.get('delivery_date') or '',
+            d.get('return_status', '正常'),
+            '已完结' if d.get('is_finished') == 1 else '未完结',
+            '已付款' if d.get('is_paid') == 1 else '未付款',
+            d.get('paid_amount', 0),
+            d.get('is_transferred', '未转'),
+            d.get('remark') or ''
+        ])
+    return {"success": True, "csv_content": output.getvalue()}
+
+@app.get("/buy", response_class=HTMLResponse)
+async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_shipped: str = ""):
+    # 日期默认不选择，保持为空
+    # is_shipped 为空表示"全部状态"，不做强制设置
+    results, total = get_buy_list(page=page, page_size=page_size, search_kw=search, order_id=order_id, start_date=start_date, end_date=end_date, cli_id=cli_id, is_shipped=is_shipped)
+    total_pages = (total + page_size - 1) // page_size
+    with get_db_connection() as conn:
+        vendors = conn.execute("SELECT vendor_id, vendor_name, address FROM uni_vendor").fetchall()
+        orders = conn.execute("SELECT order_id, order_no FROM uni_order").fetchall()
+        clis = conn.execute("SELECT cli_id, cli_name FROM uni_cli").fetchall()
+        vendor_addresses = {str(v['vendor_id']): (v['address'] or "") for v in vendors}
+    return templates.TemplateResponse("buy.html", {
+        "request": request, "active_page": "buy", "current_user": current_user,
+        "items": results, "total": total, "page": page, "page_size": page_size,
+        "total_pages": total_pages, "search": search, "order_id": order_id,
+        "start_date": start_date, "end_date": end_date, "cli_id": cli_id,
+        "vendor_list": vendors, "order_list": orders, "cli_list": clis,
+        "is_shipped": is_shipped, "vendor_addresses": vendor_addresses
+    })
+
+@app.post("/buy/import")
+async def buy_import_text(batch_text: str = Form(None), csv_file: UploadFile = File(None), current_user: dict = Depends(login_required)):
+    if batch_text:
+        text = batch_text
+    elif csv_file:
+        content = await csv_file.read()
+        try:
+            text = content.decode('utf-8-sig').strip()
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='replace').strip()
+    else:
+        return RedirectResponse(url="/buy?import_success=0&errors=1&msg=未提供导入内容", status_code=303)
+        
+    success_count, errors = batch_import_buy(text)
+    import urllib.parse
+    err_msg = ""
+    if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/buy?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/buy/add")
+async def buy_add_route(
+    order_id: str = Form(...), vendor_id: str = Form(...),
+    buy_mpn: str = Form(...), buy_brand: str = Form(""),
+    buy_price_rmb: float = Form(...), buy_qty: int = Form(...),
+    sales_price_rmb: float = Form(0.0), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    data = {
+        "order_id": order_id, "vendor_id": vendor_id,
+        "buy_mpn": buy_mpn, "buy_brand": buy_brand,
+        "buy_price_rmb": buy_price_rmb, "buy_qty": buy_qty,
+        "sales_price_rmb": sales_price_rmb, "remark": remark
+    }
+    ok, msg = add_buy(data)
+    import urllib.parse
+    msg_param = urllib.parse.quote(msg)
+    success = 1 if ok else 0
+    return RedirectResponse(url=f"/buy?msg={msg_param}&success={success}", status_code=303)
+
+@app.post("/api/buy/update_node")
+async def api_buy_update_node(buy_id: str = Form(...), field: str = Form(...), value: int = Form(...), current_user: dict = Depends(login_required)):
+    from Sills.db_buy import update_buy_node
+    ok, msg = update_buy_node(buy_id, field, value)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/update")
+async def api_buy_update(buy_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无权限"}
+    allowed_fields = ['order_id', 'vendor_id', 'buy_mpn', 'buy_brand', 'buy_price_rmb', 'buy_qty', 'sales_price_rmb', 'remark', 'price_kwr', 'price_usd']
+    if field not in allowed_fields:
+        return {"success": False, "message": f"非法字段: {field}"}
+    from Sills.db_buy import update_buy
+    success, msg = update_buy(buy_id, {field: value})
+    return {"success": success, "message": msg}
+
+@app.post("/api/buy/delete")
+async def api_buy_delete(buy_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    from Sills.db_buy import delete_buy
+    ok, msg = delete_buy(buy_id)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/batch_delete")
+async def api_buy_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    ok, msg = batch_delete_buy(ids)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/buy/export_csv")
+async def buy_export_csv(request: Request, current_user: dict = Depends(login_required)):
+    data = await request.json()
+    ids = data.get("ids", [])
+    if not ids: return {"success": False, "message": "未选择记录"}
+    placeholders = ','.join(['?'] * len(ids))
+    with get_db_connection() as conn:
+        buys = conn.execute(f"""
+            SELECT b.*, v.vendor_name, v.address as vendor_address, ord.order_no,
+                   c.cli_id, c.cli_name, off.date_code, off.delivery_date
+            FROM uni_buy b
+            LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id
+            LEFT JOIN uni_order ord ON b.order_id = ord.order_id
+            LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id
+            LEFT JOIN uni_offer off ON ord.offer_id = off.offer_id
+            WHERE b.buy_id IN ({placeholders})
+        """, ids).fetchall()
+
+    krw_rate, usd_rate = get_exchange_rates()
+
+    import io, csv
+    output = io.StringIO(); output.write('\ufeff')
+    writer = csv.writer(output)
+    # 与页面显示字段一致
+    writer.writerow(['日期','采购编号','对应销售单','客户ID','客户名称','供应商','供应商地址','型号','品牌','批号(DC)','货期','采购单价(RMB)','销售报价(RMB)','采购单价(KWR)','采购单价(USD)','数量','总额(RMB)','货源确认','下单确认','入库确认','发货确认','备注'])
+
+    for r in buys:
+        d = dict(r)
+        buy_price = float(d.get('buy_price_rmb') or 0)
+
+        # KWR/USD 计算
+        price_kwr = d.get('price_kwr')
+        price_usd = d.get('price_usd')
+        if not price_kwr or float(price_kwr or 0) == 0:
+            if krw_rate > 10: price_kwr = round(buy_price * krw_rate, 1)
+            else: price_kwr = round(buy_price / krw_rate, 1) if krw_rate else 0
+        if not price_usd or float(price_usd or 0) == 0:
+            if usd_rate > 10: price_usd = round(buy_price * usd_rate, 2)
+            else: price_usd = round(buy_price / usd_rate, 2) if usd_rate else 0
+
+        writer.writerow([
+            d.get('buy_date', ''),
+            d.get('buy_id', ''),
+            d.get('order_no') or '',
+            d.get('cli_id') or '',
+            d.get('cli_name') or '',
+            d.get('vendor_name') or '',
+            d.get('vendor_address') or '',
+            d.get('buy_mpn') or '',
+            d.get('buy_brand') or '',
+            d.get('date_code') or '',
+            d.get('delivery_date') or '',
+            f"{buy_price:.2f}",
+            f"{float(d.get('sales_price_rmb') or 0):.2f}",
+            price_kwr,
+            price_usd,
+            d.get('buy_qty') or 0,
+            d.get('total_amount') or 0,
+            '是' if d.get('is_source_confirmed') == 1 else '否',
+            '是' if d.get('is_ordered') == 1 else '否',
+            '是' if d.get('is_instock') == 1 else '否',
+            '是' if d.get('is_shipped') == 1 else '否',
+            d.get('remark') or ''
+        ])
+    return {"success": True, "csv_content": output.getvalue()}
+# --- New Workflow API endpoints ---
+
+@app.post("/api/quote/batch_to_offer")
+async def api_quote_batch_to_offer(data: dict, current_user: dict = Depends(login_required)):
+    ids = data.get('ids', [])
+    if not ids: return {"success": False, "message": "未选中记录"}
+    try:
+        ok, msg = batch_convert_from_quote(ids, current_user['emp_id'])
+        return {"success": ok, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/offer/batch_to_order")
+async def api_offer_batch_to_order(data: dict, current_user: dict = Depends(login_required)):
+    ids = data.get('ids', [])
+    cli_id = data.get('cli_id')
+    if not ids: return {"success": False, "message": "未选中记录"}
+    try:
+        ok, msg = batch_convert_from_offer(ids, cli_id)
+        return {"success": ok, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/order/batch_to_buy")
+async def api_order_batch_to_buy(data: dict, current_user: dict = Depends(login_required)):
+    ids = data.get('ids', [])
+    if not ids: return {"success": False, "message": "未选中记录"}
+    try:
+        ok, msg = batch_convert_from_order(ids)
+        return {"success": ok, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/order/generate_pi")
+async def api_order_generate_pi(request: Request, current_user: dict = Depends(login_required)):
+    """生成PI文件"""
+    from Sills.document_generator import generate_pi
+
+    data = await request.json()
+    order_ids = data.get("order_ids", [])
+    if not order_ids:
+        return {"success": False, "message": "未选择任何订单"}
+
+    try:
+        success, result = generate_pi(order_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "pdf_path": "",
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
+@app.post("/api/order/generate_ci_kr")
+async def api_order_generate_ci_kr(request: Request, current_user: dict = Depends(login_required)):
+    """生成CI-KR文件"""
+    from Sills.ci_generator import generate_ci_kr
+
+    data = await request.json()
+    order_ids = data.get("order_ids", [])
+    if not order_ids:
+        return {"success": False, "message": "未选择任何订单"}
+
+    try:
+        success, result = generate_ci_kr(order_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "pdf_path": "",
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
+@app.post("/api/order/generate_ci_us")
+async def api_order_generate_ci_us(request: Request, current_user: dict = Depends(login_required)):
+    """生成CI-US文件（美元版）"""
+    from Sills.document_generator import generate_ci_us
+
+    data = await request.json()
+    order_ids = data.get("order_ids", [])
+    if not order_ids:
+        return {"success": False, "message": "未选择任何订单"}
+
+    try:
+        success, result = generate_ci_us(order_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "pdf_path": "",
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return RedirectResponse(url="/", status_code=303)
+
+    # Get backup path info - 根据系统选择路径
+    is_windows = platform.system() == "Windows"
+    backup_root = r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else "/home/kim/workspace/DbBackup"
+
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "active_page": "settings",
+        "current_user": current_user,
+        "backup_path": backup_root
+    })
+
+@app.post("/api/backup")
+async def api_backup(current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可执行备份"}
+
+    try:
+        count, backup_dir = do_backup()
+        return {"success": True, "message": f"备份成功！已备份 {count} 个数据库文件和 static 目录到 {backup_dir}"}
+    except Exception as e:
+        return {"success": False, "message": f"备份失败: {str(e)}"}
+
+@app.get("/api/backup/list")
+async def api_backup_list(current_user: dict = Depends(login_required)):
+    """获取备份目录列表"""
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可执行"}
+
+    try:
+        backup_root = get_backup_root()
+        if not os.path.exists(backup_root):
+            return {"success": True, "backups": []}
+
+        backups = []
+        for item in os.listdir(backup_root):
+            try:
+                item_path = os.path.join(backup_root, item)
+                if os.path.isdir(item_path) and item.startswith("backup_"):
+                    # 获取目录修改时间
+                    mtime = os.path.getmtime(item_path)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    # 获取目录大小
+                    total_size = 0
+                    for f in os.listdir(item_path):
+                        fpath = os.path.join(item_path, f)
+                        if os.path.isfile(fpath):
+                            total_size += os.path.getsize(fpath)
+                    backups.append({
+                        "name": item,
+                        "path": item_path,
+                        "mtime": mtime_str,
+                        "size": f"{total_size / 1024:.1f} KB"
+                    })
+            except Exception as e:
+                print(f"处理备份目录 {item} 时出错: {str(e)}")
+                continue
+
+        # 按修改时间降序排序
+        backups.sort(key=lambda x: x['mtime'], reverse=True)
+        return {"success": True, "backups": backups}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "message": f"获取备份列表失败: {str(e)}"}
+
+@app.post("/api/backup/restore")
+async def api_backup_restore(backup_path: str = Form(...), current_user: dict = Depends(login_required)):
+    """从备份目录恢复数据库"""
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可执行恢复"}
+
+    try:
+        if not os.path.exists(backup_path):
+            return {"success": False, "message": f"备份目录不存在: {backup_path}"}
+
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        restored_count = 0
+
+        # 关闭所有数据库连接
+        from Sills.base import clear_cache, close_all_connections
+        close_all_connections()
+        clear_cache()
+
+        # 恢复所有 .db 文件
+        for db_file in os.listdir(backup_path):
+            if db_file.endswith(".db"):
+                src = os.path.join(backup_path, db_file)
+                dst = os.path.join(project_root, db_file)
+                # 删除目标文件（包括 WAL 和 SHM 文件）
+                if os.path.exists(dst):
+                    os.remove(dst)
+                wal_file = dst + "-wal"
+                shm_file = dst + "-shm"
+                if os.path.exists(wal_file):
+                    os.remove(wal_file)
+                if os.path.exists(shm_file):
+                    os.remove(shm_file)
+                # 复制备份文件
+                shutil.copy2(src, dst)
+                restored_count += 1
+
+        if restored_count == 0:
+            return {"success": False, "message": "备份目录中没有找到数据库文件"}
+
+        # 再次清除缓存
+        clear_cache()
+
+        return {"success": True, "message": f"恢复成功！已恢复 {restored_count} 个数据库文件（请刷新页面）"}
+    except Exception as e:
+        return {"success": False, "message": f"恢复失败: {str(e)}"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8000)

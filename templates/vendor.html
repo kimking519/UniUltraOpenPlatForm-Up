@@ -1,0 +1,277 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .page-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+    .page-actions {
+        display: flex;
+        gap: 0.75rem;
+    }
+    .search-bar {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 1rem;
+    }
+    .search-bar input {
+        flex: 1;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+    }
+    .data-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+</style>
+
+<div class="page-header">
+    <h1>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+        </svg>
+        供应商管理
+    </h1>
+    {% if current_user.rule == '3' or current_user.rule == '0' %}
+    <div class="page-actions">
+        <button class="btn btn-ghost" onclick="toggleModal('importModal')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            批量导入
+        </button>
+        <button class="btn btn-primary" onclick="toggleModal('addModal')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            新增供应商
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Search Bar -->
+<div class="search-bar">
+    <form action="/vendor" method="get" style="display: flex; gap: 1rem; width: 100%;">
+        <input type="text" name="search" value="{{ search }}" placeholder="搜索名称或代码...">
+        <button type="submit" class="btn btn-primary">搜索</button>
+    </form>
+</div>
+
+<div class="data-card">
+    <div class="table-container" style="overflow-x: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>供应商编号</th>
+                    <th>名称</th>
+                    <th>合并地址</th>
+                    <th>QQ</th>
+                    <th>微信</th>
+                    <th>邮箱</th>
+                    <th>备注</th>
+                    {% if current_user.rule == '3' or current_user.rule == '0' %}
+                    <th>操作</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+            {% for item in items %}
+            <tr>
+                <td style="font-weight: 700;">{{ item.vendor_id }}</td>
+                <td {% if current_user.rule=='3' or current_user.rule=='0'
+                    %}ondblclick="makeEditable(this, '{{ item.vendor_id }}', 'vendor_name')" {% endif %}>{{
+                    item.vendor_name }}</td>
+                <td {% if current_user.rule=='3' or current_user.rule=='0'
+                    %}ondblclick="makeEditable(this, '{{ item.vendor_id }}', 'address')" {% endif %}>{{ item.address }}
+                </td>
+                <td {% if current_user.rule=='3' or current_user.rule=='0'
+                    %}ondblclick="makeEditable(this, '{{ item.vendor_id }}', 'qq')" {% endif %}>{{ item.qq }}</td>
+                <td {% if current_user.rule=='3' or current_user.rule=='0'
+                    %}ondblclick="makeEditable(this, '{{ item.vendor_id }}', 'wechat')" {% endif %}>{{ item.wechat }}
+                </td>
+                <td {% if current_user.rule=='3' or current_user.rule=='0'
+                    %}ondblclick="makeEditable(this, '{{ item.vendor_id }}', 'email')" {% endif %}>{{ item.email }}</td>
+                <td {% if current_user.rule=='3' or current_user.rule=='0'
+                    %}ondblclick="makeEditable(this, '{{ item.vendor_id }}', 'remark')" {% endif %}>{{ item.remark }}
+                </td>
+                {% if current_user.rule == '3' or current_user.rule == '0' %}
+                <td>
+                    <button class="btn"
+                        style="padding: 0.3rem 0.6rem; font-size: 0.8rem; background: #ef4444; color: white;"
+                        onclick="deleteVendor('{{ item.vendor_id }}')">删除</button>
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            {% if not items %}
+            <tr>
+                <td colspan="{% if current_user.rule == '3' or current_user.rule == '0' %}8{% else %}7{% endif %}"
+                    style="text-align: center; color: var(--secondary);">暂无数据</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div style="display: flex; justify-content: center; gap: 0.5rem; padding: 1rem;">
+        {% for p in range(1, total_pages + 1) %}
+        <a href="/vendor?page={{ p }}&search={{ search }}" class="btn {% if p == active_page %}btn-primary{% endif %}"
+            style="text-decoration: none; padding: 0.5rem 1rem; border: 1px solid var(--border);">{{ p }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 500px;">
+        <h3>新增供应商</h3>
+        <form action="/vendor/add" method="post" style="display: grid; gap: 1rem; margin-top: 1rem;">
+            <input type="text" name="vendor_name" placeholder="供应商名称*" required style="padding: 0.5rem;">
+            <input type="text" name="address" placeholder="公司详细地址" style="padding: 0.5rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <input type="text" name="qq" placeholder="QQ" style="padding: 0.5rem;">
+                <input type="text" name="wechat" placeholder="微信" style="padding: 0.5rem;">
+            </div>
+            <input type="email" name="email" placeholder="邮箱" style="padding: 0.5rem;">
+            <textarea name="remark" placeholder="备注" style="padding: 0.5rem; height: 60px;"></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+                <button type="button" class="btn" onclick="toggleModal('addModal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 600px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3>批量导入供应商</h3>
+            <a href="/static/template_vendor.csv" download class="btn"
+                style="background: var(--light); color: var(--primary); text-decoration: none; font-size: 0.8rem; padding: 0.3rem 0.6rem;">下载CSV模板</a>
+        </div>
+
+        <div
+            style="margin-bottom: 1.5rem; padding: 1rem; border: 1px dashed var(--border); border-radius: 8px; background: #f8fafc;">
+            <p style="font-size: 0.9rem; margin-bottom: 0.5rem; font-weight: bold;">方式一：上传 CSV 文件</p>
+            <form action="/vendor/import/csv" method="post" enctype="multipart/form-data"
+                style="display: flex; gap: 1rem; align-items: center;">
+                <input type="file" name="csv_file" accept=".csv" required style="flex: 1;">
+                <button type="submit" class="btn btn-primary" style="padding: 0.3rem 1rem;">上传导入</button>
+            </form>
+        </div>
+
+        <p style="font-size: 0.9rem; font-weight: bold; margin-bottom: 0.5rem;">方式二：文本粘帖</p>
+        <p style="font-size: 0.8rem; color: var(--secondary); margin-bottom: 0.5rem;">
+            格式：名称,地址,QQ,微信,邮箱,备注 (每行一个，逗号分隔)
+        </p>
+        <form action="/vendor/import" method="post">
+            <textarea name="import_text" placeholder="公司A,深圳市南山区...,123456,wxid_xxx,admin@a.com,备注信息..."
+                style="width: 100%; height: 120px; padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 4px;"></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                <button type="button" class="btn" onclick="toggleModal('importModal')">取消</button>
+                <button type="submit" class="btn btn-primary">粘贴导入</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function toggleModal(id) {
+        const modal = document.getElementById(id);
+        modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function makeEditable(td, vendor_id, field) {
+        if (td.querySelector('input')) return;
+        const isSpan = td.querySelector('span') !== null;
+        const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
+        td.innerHTML = `<input type="text" value="${originalValue}" style="width: 100%; min-width: 80px; padding: 4px; box-sizing: border-box;">`;
+        const input = td.querySelector('input');
+        input.focus();
+
+        input.onblur = function () {
+            const newValue = input.value.trim();
+            if (newValue === originalValue) {
+                td.innerHTML = isSpan ? `<span style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${originalValue}</span>` : originalValue;
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('vendor_id', vendor_id);
+            formData.append('field', field);
+            formData.append('value', newValue);
+
+            fetch('/api/vendor/update', {
+                method: 'POST',
+                body: formData
+            }).then(res => res.json()).then(data => {
+                if (data.success) {
+                    td.innerHTML = isSpan ? `<span style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${newValue}</span>` : newValue;
+                    td.style.backgroundColor = '#dcfce7';
+                    setTimeout(() => td.style.backgroundColor = 'transparent', 1000);
+                } else {
+                    alert('更新失败: ' + data.message);
+                    td.innerHTML = isSpan ? `<span style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${originalValue}</span>` : originalValue;
+                }
+            });
+        };
+
+        input.onkeydown = function (e) {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') {
+                td.innerHTML = isSpan ? `<span style="background: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">${originalValue}</span>` : originalValue;
+            }
+        };
+    }
+
+    function deleteVendor(vendor_id) {
+        if (confirm(`确定要删除供应商 ${vendor_id} 吗？`)) {
+            const formData = new FormData();
+            formData.append('vendor_id', vendor_id);
+            fetch('/api/vendor/delete', {
+                method: 'POST',
+                body: formData
+            }).then(res => res.json()).then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('删除失败: ' + data.message);
+                }
+            });
+        }
+    }
+</script>
+{% endblock %}

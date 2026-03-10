@@ -1,0 +1,603 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .page-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+    .page-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+    .filter-bar {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+    .filter-bar input,
+    .filter-bar select {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+    }
+    .filter-bar input[type="text"] {
+        width: 160px;
+    }
+    .filter-bar input[type="date"] {
+        width: 140px;
+    }
+    .filter-bar select {
+        width: 100px;
+    }
+    .filter-bar select[id="filter_cli"] {
+        width: 140px;
+    }
+    .filter-bar select[id="filter_order"] {
+        width: 180px;
+    }
+    .filter-bar .btn {
+        flex-shrink: 0;
+    }
+    .data-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+</style>
+
+<div class="page-header">
+    <h1>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        采购管理
+    </h1>
+    <div class="page-actions">
+        <button class="btn btn-primary" onclick="showAddModal()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            新增采购记录
+        </button>
+        <button class="btn btn-ghost" onclick="showImportModal()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            批量导入
+        </button>
+        <button class="btn btn-success" onclick="batchExport()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            批量导出 CSV
+        </button>
+        <button class="btn btn-danger" onclick="batchDelete()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            批量删除
+        </button>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <select id="filter_cli" onchange="applyFilter()">
+        <option value="">全部客户</option>
+        {% for c in cli_list %}
+        <option value="{{ c.cli_id }}" {% if cli_id==c.cli_id %}selected{% endif %}>{{ c.cli_name }}</option>
+        {% endfor %}
+    </select>
+    <select id="filter_order" onchange="applyFilter()">
+        <option value="">全部订单</option>
+        {% for o in order_list %}
+        <option value="{{ o.order_id }}" {% if order_id==o.order_id %}selected{% endif %}>{{ o.order_no }} ({{ o.order_id }})</option>
+        {% endfor %}
+    </select>
+    <select id="filter_shipped" onchange="applyFilter()">
+        <option value="">全部状态</option>
+        <option value="0" {% if is_shipped=='0' %}selected{% endif %}>未发货</option>
+        <option value="1" {% if is_shipped=='1' %}selected{% endif %}>已发货</option>
+    </select>
+    <input type="date" id="start_date" value="{{ start_date }}">
+    <input type="date" id="end_date" value="{{ end_date }}">
+    <input type="text" id="search_input" value="{{ search }}" placeholder="采购单/型号/供应商...">
+    <button class="btn btn-primary" onclick="applyFilter()">查询</button>
+</div>
+
+<div class="data-card">
+    <div class="table-container" style="overflow-x: auto;">
+        <table class="data-table" style="font-size: 0.85rem;">
+            <thead>
+                <tr>
+                    <th style="width: 40px;"><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
+                    <th style="min-width: 120px;">日期</th>
+                    <th>采购编号</th>
+                    <th>对应销售单</th>
+                    <th>客户 ID</th>
+                    <th>客户名称</th>
+                    <th>供应商</th>
+                    <th>供应商地址</th>
+                    <th>型号</th>
+                    <th>品牌</th>
+                    <th>批号(DC)</th>
+                    <th>货期</th>
+                    <th>采购单价(RMB)</th>
+                <th>销售报价(RMB)</th>
+                <th>采购单价(KWR)</th>
+                <th>采购单价(USD)</th>
+                <th>数量</th>
+                <th>总额 (RMB)</th>
+                <th>业务流程节点</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr data-id="{{ item.buy_id }}">
+                <td><input type="checkbox" class="row-checkbox" value="{{ item.buy_id }}"></td>
+                <td>{{ item.buy_date }}</td>
+                <td>{{ item.buy_id }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'order_id')">{{ item.order_no }}</td>
+                <td>{{ item.cli_id }}</td>
+                <td>{{ item.cli_name }}</td>
+                <td style="min-width: 140px;">
+                    <select onchange="updateVendorChange('{{ item.buy_id }}', this.value)"
+                        style="width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px;">
+                        <option value="">--未选择--</option>
+                        {% for v in vendor_list %}
+                        <option value="{{ v.vendor_id }}" {% if v.vendor_id==item.vendor_id %}selected{% endif %}>{{
+                            v.vendor_name }}</option>
+                        {% endfor %}
+                    </select>
+                </td>
+                <td id="addr-{{ item.buy_id }}" style="font-size: 0.75rem; color: #666; max-width: 200px;">{{
+                    item.vendor_address }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_mpn')"
+                    style="cursor: pointer; color: var(--primary);">{{ item.buy_mpn }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_brand')"
+                    style="cursor: pointer; color: var(--primary);">{{ item.buy_brand }}</td>
+                <td>{{ item.date_code or '' }}</td>
+                <td>{{ item.delivery_date or '' }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_price_rmb')"
+                    style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ "%.2f"|format(item.buy_price_rmb or 0) }}</td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'sales_price_rmb')"
+                    style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ "%.2f"|format(item.sales_price_rmb or 0) }}</td>
+                <td ondblclick="editBuyPrice(this, '{{ item.buy_id }}', 'price_kwr', 'KWR', {{ item.price_kwr or 0 }}, {{ item.buy_price_rmb or 0 }})"
+                    style="cursor: pointer;"><span style="color:var(--primary);">{{ item.price_kwr }}</span></td>
+                <td ondblclick="editBuyPrice(this, '{{ item.buy_id }}', 'price_usd', 'USD', {{ item.price_usd or 0 }}, {{ item.buy_price_rmb or 0 }})"
+                    style="cursor: pointer;"><span style="color:var(--primary);">{{ item.price_usd }}</span></td>
+                <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_qty')"
+                    style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.buy_qty }}</td>
+                <td style="font-weight: 700;">{{ item.total_amount }}</td>
+                <td>
+                    <div class="status-nodes">
+                        <div class="node {% if item.is_source_confirmed == 1 or item.is_source_confirmed == '1' %}active{% endif %}"
+                            title="货源确认">
+                            <input type="checkbox" {% if item.is_source_confirmed==1 or item.is_source_confirmed=='1'
+                                %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_source_confirmed', this.checked)">
+                            <span>货源</span>
+                        </div>
+                        <div class="node {% if item.is_ordered == 1 or item.is_ordered == '1' %}active{% endif %}"
+                            title="下单确认">
+                            <input type="checkbox" {% if item.is_ordered==1 or item.is_ordered=='1' %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_ordered', this.checked)">
+                            <span>下单</span>
+                        </div>
+                        <div class="node {% if item.is_instock == 1 or item.is_instock == '1' %}active{% endif %}"
+                            title="入库确认">
+                            <input type="checkbox" {% if item.is_instock==1 or item.is_instock=='1' %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_instock', this.checked)">
+                            <span>入库</span>
+                        </div>
+                        <div class="node {% if item.is_shipped == 1 or item.is_shipped == '1' %}active{% endif %}"
+                            title="发货确认">
+                            <input type="checkbox" {% if item.is_shipped==1 or item.is_shipped=='1' %}checked{% endif %}
+                                onchange="toggleNode('{{ item.buy_id }}', 'is_shipped', this.checked)">
+                            <span>发货</span>
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <button class="btn" style="color: red; padding: 2px 8px;"
+                        onclick="deleteBuy('{{ item.buy_id }}')">删除</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center;">
+    {% if page is defined and page > 1 %}
+    <a href="/buy?page={{ page-1 }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_shipped={{ is_shipped }}"
+        class="btn">上一页</a>
+    {% endif %}
+    <span>第 {{ page if page is defined else 1 }} / {{ total_pages if total_pages is defined else 1 }} 页 (共 {{ total if
+        total is defined else 0 }} 条)</span>
+    {% if page is defined and total_pages is defined and page < total_pages %} <a
+        href="/buy?page={{ page+1 }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_shipped={{ is_shipped }}"
+        class="btn">下一页</a>
+        {% endif %}
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="modal"
+    style="display:none; position: fixed; z-index: 1010; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); overflow-y: auto;">
+    <div class="modal-content card" style="width: 500px; margin: 5% auto; padding: 2rem;">
+        <h3>新增采购记录</h3>
+        <form action="/buy/add" method="post" id="buyForm"
+            style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+            <div style="grid-column: span 2;">
+                <label>对应销售订单</label><br>
+                <select name="order_id" required style="width: 100%; padding: 0.5rem;">
+                    {% for o in order_list %}
+                    <option value="{{ o.order_id }}">{{ o.order_no }} ({{ o.order_id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="grid-column: span 2;">
+                <label>供应商</label><br>
+                <select name="vendor_id" required onchange="updateModalAddress(this.value)"
+                    style="width: 100%; padding: 0.5rem;">
+                    <option value="">--请选择--</option>
+                    {% for v in vendor_list %}
+                    <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
+                    {% endfor %}
+                </select>
+                <div id="modal_vendor_addr" style="font-size: 0.75rem; color: #666; margin-top: 4px; min-height: 1rem;">
+                </div>
+            </div>
+            <div>
+                <label>采购型号</label><br>
+                <input type="text" name="buy_mpn" required style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>品牌</label><br>
+                <input type="text" name="buy_brand" style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>采购单价 (RMB)</label><br>
+                <input type="number" step="0.0001" name="buy_price_rmb" id="in_price" oninput="calcTotal()" required
+                    style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>采购数量</label><br>
+                <input type="number" name="buy_qty" id="in_qty" oninput="calcTotal()" required
+                    style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div>
+                <label>采购总额</label><br>
+                <input type="text" id="out_total" readonly style="width: 100%; padding: 0.5rem; background: #f1f1f1;">
+            </div>
+            <div>
+                <label>销售价 (RMB)</label><br>
+                <input type="number" step="0.0001" name="sales_price_rmb" style="width: 100%; padding: 0.5rem;">
+            </div>
+            <div style="grid-column: span 2;">
+                <label>备注</label><br>
+                <textarea name="remark" style="width: 100%; padding: 0.5rem;"></textarea>
+            </div>
+            <div style="grid-column: span 2; display: flex; gap: 1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary">提交</button>
+                <button type="button" class="btn" onclick="hideAddModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" class="modal"
+    style="display:none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);">
+    <div class="modal-content card" style="width: 600px; margin: 10% auto; padding: 2rem;">
+        <h3>批量导入采购记录</h3>
+        <form action="/buy/import" method="post" enctype="multipart/form-data" style="margin-top: 1rem;">
+            <p style="font-size: 0.8rem; color: #666; margin-bottom: 0.5rem;">支持直接上传从【销售订单】模块导出的 CSV 文件</p>
+            <div
+                style="margin-bottom: 1rem; padding: 1rem; border: 1px dashed #ccc; background: #fafafa; border-radius: 4px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 0.5rem;">选择文件 (推荐)</label>
+                <input type="file" name="csv_file" accept=".csv" style="width: 100%;">
+            </div>
+            <p style="font-size: 0.8rem; color: #666; margin-bottom: 0.5rem;">或直接粘贴文本内容：(映射规则：订单编号(第1列), 型号(第5列),
+                品牌(第6列), 备注(第10列))</p>
+            <textarea name="batch_text" placeholder="销售订单编号,日期,客户,报价编号,型号,品牌,完结状态,付款状态,已付金额,备注"
+                style="width: 100%; height: 150px; padding: 0.5rem;"></textarea>
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary">开始导入</button>
+                <button type="button" class="btn" onclick="hideImportModal()">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function showAddModal() { document.getElementById('addModal').style.display = 'block'; }
+    function hideAddModal() { document.getElementById('addModal').style.display = 'none'; }
+    function showImportModal() { document.getElementById('importModal').style.display = 'block'; }
+    function hideImportModal() { document.getElementById('importModal').style.display = 'none'; }
+
+    const vendorAddresses = {{ vendor_addresses | tojson | safe }};
+
+    function updateModalAddress(vid) {
+        document.getElementById('modal_vendor_addr').innerText = vendorAddresses[vid] || "";
+    }
+
+    async function updateVendorChange(buyId, vid) {
+        // Update local address display immediately
+        const addrCell = document.getElementById(`addr-${buyId}`);
+        if (addrCell) addrCell.innerText = vendorAddresses[vid] || "";
+
+        // Send to backend
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', 'vendor_id');
+        formData.append('value', vid);
+
+        try {
+            const resp = await fetch('/api/buy/update', { method: 'POST', body: formData });
+            const res = await resp.json();
+            if (!res.success) alert(res.message);
+            else window.location.reload(); // Reload to confirm change and sync UI
+        } catch (e) {
+            console.error(e);
+            alert("更新失败，请检查网络或后端。");
+        }
+    }
+
+    function applyFilter() {
+        const cli = document.getElementById('filter_cli').value;
+        const ord = document.getElementById('filter_order').value;
+        const shipped = document.getElementById('filter_shipped').value;
+        const search = document.getElementById('search_input').value;
+        const start = document.getElementById('start_date').value;
+        const end = document.getElementById('end_date').value;
+        window.location.href = `/buy?order_id=${ord}&cli_id=${cli}&is_shipped=${shipped}&search=${search}&start_date=${start}&end_date=${end}`;
+    }
+
+    function toggleSelectAll(checked) {
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = checked);
+    }
+
+    function getSelectedIds() {
+        return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+    }
+
+    async function batchDelete() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) return alert('请选择要删除的记录');
+        if (!confirm(`确定删除选中的 ${ids.length} 个采购记录吗？`)) return;
+
+        const resp = await fetch('/api/buy/batch_delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+
+    async function batchExport() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) return alert('请选择要导出的记录');
+
+        const resp = await fetch('/api/buy/export_csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        const res = await resp.json();
+        if (res.success) {
+            const blob = new Blob([res.csv_content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", `buy_export_${new Date().getTime()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else alert(res.message);
+    }
+
+    function calcTotal() {
+        const p = parseFloat(document.getElementById('in_price').value) || 0;
+        const q = parseInt(document.getElementById('in_qty').value) || 0;
+        document.getElementById('out_total').value = (p * q).toFixed(2);
+    }
+
+    async function toggleNode(buyId, field, value) {
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', field);
+        formData.append('value', value ? 1 : 0);
+
+        const resp = await fetch('/api/buy/update_node', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (!res.success) alert(res.message);
+        else {
+            const row = document.querySelector(`tr[data-id="${buyId}"]`);
+            if (row) {
+                const nodeDiv = row.querySelector(`input[onchange*="${field}"]`).parentElement;
+                if (value) nodeDiv.classList.add('active');
+                else nodeDiv.classList.remove('active');
+            }
+        }
+    }
+
+    async function editField(td, buyId, field) {
+        const fieldMap = {
+            'order_id': '销售订单',
+            'buy_mpn': '采购型号',
+            'buy_brand': '采购品牌',
+            'buy_price_rmb': '采购单价(RMB)',
+            'sales_price_rmb': '销售建议报价(RMB)',
+            'buy_qty': '数量',
+            'total_amount': '总额',
+            'remark': '备注'
+        };
+        const label = fieldMap[field] || field;
+        const currentVal = td.innerText.trim();
+        const newVal = prompt(`修改 ${label}:`, currentVal);
+        if (newVal === null || newVal === currentVal) return;
+
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', field);
+        formData.append('value', newVal);
+
+        const resp = await fetch('/api/buy/update', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+
+    // 编辑采购单价(KWR/USD)，同时更新采购单价(RMB)
+    async function editBuyPrice(td, buyId, field, currency, currentValue, currentRmb) {
+        if (td.querySelector('input')) return;
+
+        // 获取最新汇率
+        let exchangeRate = currency === 'KWR' ? 180.0 : 7.0;
+        try {
+            const res = await fetch('/api/exchange/rates');
+            const rateData = await res.json();
+            if (rateData.success) {
+                exchangeRate = currency === 'KWR' ? rateData.krw : rateData.usd;
+            }
+        } catch (e) {
+            console.error('Failed to get exchange rate:', e);
+        }
+
+        const originalValue = currentValue;
+        td.innerHTML = `<input type="number" step="0.01" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+        const input = td.querySelector('input');
+        input.focus();
+
+        const savePrice = async (newValue) => {
+            if (newValue === originalValue) {
+                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                return;
+            }
+
+            // 保存 KWR/USD
+            const formData = new FormData();
+            formData.append('buy_id', buyId);
+            formData.append('field', field);
+            formData.append('value', newValue);
+
+            try {
+                const res = await fetch('/api/buy/update', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // 计算新的 RMB 价格
+                    const newPrice = parseFloat(newValue);
+                    let newRmb = 0;
+                    if (currency === 'KWR') {
+                        // KRW 汇率 > 10，表示 1 RMB = ? KRW
+                        newRmb = newPrice / exchangeRate;
+                    } else {
+                        // USD 汇率 < 10，表示 1 USD = ? RMB (直接乘)
+                        // USD 汇率 > 10，表示 1 RMB = ? USD (除以)
+                        if (exchangeRate > 10) {
+                            newRmb = newPrice / exchangeRate;
+                        } else {
+                            newRmb = newPrice * exchangeRate;
+                        }
+                    }
+
+                    // 更新采购单价(RMB)
+                    const rmbFormData = new FormData();
+                    rmbFormData.append('buy_id', buyId);
+                    rmbFormData.append('field', 'buy_price_rmb');
+                    rmbFormData.append('value', newRmb.toFixed(2));
+
+                    await fetch('/api/buy/update', {
+                        method: 'POST',
+                        body: rmbFormData
+                    });
+
+                    td.innerHTML = `<span style="color:var(--primary);">${newValue}</span>`;
+                    window.location.reload();
+                } else {
+                    alert('更新失败: ' + data.message);
+                    td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                }
+            } catch (e) {
+                alert('请求失败: ' + e.message);
+                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+            }
+        };
+
+        input.onblur = () => savePrice(input.value);
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') {
+                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+            }
+        };
+    }
+
+    async function updateRowField(buyId, field, value) {
+        const formData = new FormData();
+        formData.append('buy_id', buyId);
+        formData.append('field', field);
+        formData.append('value', value);
+
+        const resp = await fetch('/api/buy/update', { method: 'POST', body: formData });
+        const res = await resp.json();
+        if (res.success) window.location.reload();
+        else alert(res.message);
+    }
+
+    async function deleteBuy(buyId) {
+        if (!confirm('确定删除采购记录 ' + buyId + ' 吗？')) return;
+        try {
+            const formData = new FormData();
+            formData.append('buy_id', buyId);
+            const resp = await fetch('/api/buy/delete', { method: 'POST', body: formData });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error("服务器错误: " + text.substring(0, 100));
+            }
+            const res = await resp.json();
+            if (res.success) window.location.reload();
+            else alert(res.message);
+        } catch (e) {
+            console.error(e);
+            alert("删除失败: " + e.message);
+        }
+    }
+</script>
+{% endblock %}

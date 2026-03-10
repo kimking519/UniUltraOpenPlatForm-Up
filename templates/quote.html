@@ -1,0 +1,994 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .page-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+
+    .page-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .filter-bar {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+
+    .filter-bar input,
+    .filter-bar select {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+    }
+
+    .filter-bar input[type="text"] {
+        width: 160px;
+    }
+
+    .filter-bar input[type="date"] {
+        width: 140px;
+    }
+
+    .filter-bar select {
+        width: 100px;
+    }
+
+    .filter-bar select[id="cli_id"] {
+        width: 140px;
+    }
+
+    .filter-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .filter-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .data-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.85rem;
+    }
+
+    .data-table th {
+        background: linear-gradient(180deg, var(--bg-glass) 0%, rgba(241, 245, 249, 0.5) 100%);
+        padding: 0.875rem 1rem;
+        text-align: left;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        border-bottom: var(--border);
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .data-table td {
+        padding: 0.875rem 1rem;
+        border-bottom: var(--border-light);
+    }
+
+    .data-table tbody tr:hover {
+        background: rgba(99, 102, 241, 0.04);
+    }
+
+    [data-theme="dark"] .data-table tbody tr:hover {
+        background: rgba(99, 102, 241, 0.08);
+    }
+
+    .sticky-action {
+        position: sticky;
+        right: 0;
+        background: var(--card-bg);
+        box-shadow: -4px 0 8px rgba(0, 0, 0, 0.05);
+    }
+
+    [data-theme="dark"] .sticky-action {
+        background: rgba(30, 41, 59, 0.95);
+        box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+</style>
+
+<div class="page-header">
+    <h1>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        需求管理
+    </h1>
+    {% if current_user.rule == '3' or current_user.rule == '0' %}
+    <div class="page-actions">
+        <button class="btn btn-primary" onclick="batchToOffer()" data-tooltip="批量转报价单">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            批量转报价
+        </button>
+        <button class="btn btn-success" onclick="exportSelectedToOfferCsv()" data-tooltip="导出选中为报价表.csv">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            导出CSV
+        </button>
+        <button class="btn" onclick="batchCopy()" style="background: linear-gradient(135deg, #A855F7 0%, #C084FC 100%); color: white;" data-tooltip="批量复制">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            批量复制
+        </button>
+        <button class="btn btn-primary" onclick="toggleModal('addModal')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            新增需求
+        </button>
+        <button class="btn btn-ghost" onclick="toggleModal('importModal')" data-tooltip="批量导入">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            批量导入
+        </button>
+        {% if current_user.rule == '3' %}
+        <button class="btn btn-danger" onclick="batchDelete()" data-tooltip="批量删除">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            批量删除
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+    <input type="text" id="search" placeholder="搜索型号、客户、需求编号...">
+    <input type="date" id="start_date" title="开始日期">
+    <input type="date" id="end_date" title="结束日期">
+    <select id="cli_id">
+        <option value="">全部客户</option>
+        {% for cli in cli_list %}
+        <option value="{{ cli.cli_id }}">{{ cli.cli_name }}</option>
+        {% endfor %}
+    </select>
+    <select id="status">
+        <option value="">全部状态</option>
+        <option value="询价中">询价中</option>
+        <option value="缺货">缺货</option>
+        <option value="已报价">已报价</option>
+    </select>
+    <select id="is_transferred">
+        <option value="">全部</option>
+        <option value="未转">未转</option>
+        <option value="已转">已转</option>
+    </select>
+</div>
+
+<div class="data-card">
+    <div class="table-container" style="overflow-x: auto;">
+        <table class="data-table" style="min-width: 1500px;">
+            <thead>
+                <tr>
+                    {% if current_user.rule == '3' %}
+                    <th style="width: 40px; min-width: 40px; text-align: center;"><input type="checkbox" id="selectAll"
+                            onclick="toggleAll(this)"></th>
+                    {% endif %}
+                    <th style="min-width: 120px;">需求日期</th>
+                    <th style="min-width: 140px;">需求编号</th>
+                    <th style="min-width: 120px;">客户名称</th>
+                    <th style="min-width: 150px;">询价型号</th>
+                    <th style="min-width: 150px;">报价型号</th>
+                    <th style="min-width: 100px;">询价品牌</th>
+                    <th style="min-width: 80px;">需求数量</th>
+                    <th style="min-width: 80px;">报价数量</th>
+                    <th style="min-width: 100px;">目标价(¥)</th>
+                    <th style="min-width: 100px;">成本价(¥)</th>
+                    <th style="min-width: 100px;">批号</th>
+                    <th style="min-width: 100px;">交期</th>
+                    <th style="min-width: 100px;">状态</th>
+                    <th style="min-width: 80px;">已转</th>
+                    <th style="min-width: 250px;">需求组合信息</th>
+                    <th style="min-width: 150px;">备注</th>
+                    {% if current_user.rule == '3' %}
+                    <th class="sticky-action" style="min-width: 100px;">操作</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in items %}
+                <tr>
+                    {% if current_user.rule == '3' %}
+                    <td style="text-align: center;"><input type="checkbox" class="row-checkbox"
+                            value="{{ row.quote_id }}"></td>
+                    {% endif %}
+                    <td>{{ row.quote_date }}</td>
+                    <td>{{ row.quote_id }}</td>
+
+                    {% if current_user.rule == '3' or current_user.rule == '0' %}
+                    <td ondblclick="makeEditableSelect(this, '{{ row.quote_id }}', 'cli_id', '{{ row.cli_id }}')">
+                        <span>{{ row.cli_name }}</span>
+                    </td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'inquiry_mpn')"><span>{{ row.inquiry_mpn
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'quoted_mpn')"><span>{{ row.quoted_mpn
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'inquiry_brand')"><span>{{
+                            row.inquiry_brand }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'inquiry_qty', 'number')"><span>{{
+                            row.inquiry_qty }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'actual_qty', 'number')"><span>{{
+                            row.actual_qty }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'target_price_rmb', 'number')"><span>{{
+                            row.target_price_rmb }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'cost_price_rmb', 'number')"><span>{{
+                            row.cost_price_rmb }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'date_code')"><span>{{ row.date_code
+                            }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'delivery_date')"><span>{{
+                            row.delivery_date }}</span></td>
+                    <td ondblclick="makeStatusEditable(this, '{{ row.quote_id }}', '{{ row.status }}')">
+                        <span
+                            class="badge {% if row.status == '已报价' %}badge-success{% elif row.status == '缺货' %}badge-warning{% else %}badge-info{% endif %}">
+                            {{ row.status }}
+                        </span>
+                    </td>
+                    <td ondblclick="makeTransferredEditable(this, '{{ row.quote_id }}', '{{ row.is_transferred }}')">
+                        <span
+                            class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
+                            {{ row.is_transferred }}
+                        </span>
+                    </td>
+                    <td style="color: var(--secondary); font-size: 0.85rem;">{{ row.combined_info }}</td>
+                    <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'remark')"><span>{{ row.remark }}</span>
+                    </td>
+                    {% else %}
+                    <td>{{ row.cli_name }}</td>
+                    <td>{{ row.inquiry_mpn }}</td>
+                    <td>{{ row.quoted_mpn }}</td>
+                    <td>{{ row.inquiry_brand }}</td>
+                    <td>{{ row.inquiry_qty }}</td>
+                    <td>{{ row.target_price_rmb }}</td>
+                    <td>{{ row.cost_price_rmb }}</td>
+                    <td>{{ row.is_transferred }}</td>
+                    <td style="color: var(--secondary); font-size: 0.85rem;">{{ row.combined_info }}</td>
+                    <td>{{ row.remark }}</td>
+                    {% endif %}
+
+                    {% if current_user.rule == '3' %}
+                    <td style="position: sticky; right: 0; background: white; z-index: 1;">
+                        <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                            <button class="action-btn action-btn-primary"
+                                onclick="transToOffer('{{ row.quote_id }}')"
+                                title="转为报价单"
+                                style="padding: 0.5rem 0.6rem; min-width: 36px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                            </button>
+                            <button class="action-btn action-btn-danger"
+                                onclick="deleteRow('{{ row.quote_id }}')"
+                                title="删除"
+                                style="padding: 0.5rem 0.6rem; min-width: 36px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="13" style="text-align: center; color: var(--secondary); padding: 2rem;">暂无需求记录，请添加新需求。
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div
+        style="padding: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: var(--secondary); font-size: 0.9rem;">共 {{ total }} 条记录</span>
+        <div style="display: flex; gap: 0.5rem;">
+            {% if page > 1 %}
+            <a href="/quote?page={{ page - 1 }}&search={{ search }}&status={{ status }}&start_date={{ start_date }}&end_date={{ end_date }}&cli_id={{ cli_id }}&is_transferred={{ is_transferred }}&page_size={{ page_size }}"
+                class="btn"
+                style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">上一页</a>
+            {% endif %}
+            <span style="padding: 0.3rem 0.8rem; background: var(--primary); color: white; border-radius: 4px;">{{ page
+                }} / {{ total_pages if total_pages > 0 else 1 }}</span>
+            {% if page < total_pages %} <a
+                href="/quote?page={{ page + 1 }}&search={{ search }}&status={{ status }}&start_date={{ start_date }}&end_date={{ end_date }}&cli_id={{ cli_id }}&is_transferred={{ is_transferred }}&page_size={{ page_size }}"
+                class="btn"
+                style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">
+                下一页</a>
+                {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 500px; max-height: 90vh; overflow-y: auto;">
+        <h3 style="margin-bottom: 1.5rem;">新增需求</h3>
+        <form action="/quote/add" method="post" style="display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">客户名称*</label>
+                <select name="cli_id" required
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="">-- 请选择关联客户 --</option>
+                    {% for c in cli_list %}
+                    <option value="{{ c.cli_id }}">{{ c.cli_name }} ({{ c.region }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价型号 (Inquiry MPN)*</label>
+                <input type="text" name="inquiry_mpn" required
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价型号 (Quoted MPN)</label>
+                <input type="text" name="quoted_mpn"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价品牌</label>
+                <input type="text" name="inquiry_brand"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价数量</label>
+                    <input type="number" name="inquiry_qty" value="0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">目标价(¥)</label>
+                    <input type="number" step="0.01" name="target_price_rmb" value="0.0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">成本价(¥)</label>
+                    <input type="number" step="0.01" name="cost_price_rmb" value="0.0"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">批号 (D/C)</label>
+                    <input type="text" name="date_code" placeholder="如: 23+"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期 (L/T)</label>
+                    <input type="text" name="delivery_date" placeholder="如: 1-2 weeks"
+                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                </div>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">初始状态</label>
+                <select name="status"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="询价中">询价中</option>
+                    <option value="缺货">缺货</option>
+                    <option value="已报价">已报价</option>
+                </select>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">备注</label>
+                <textarea name="remark"
+                    style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+                <button type="button" class="btn" onclick="toggleModal('addModal')">取消</button>
+                <button type="submit" class="btn btn-primary">提交</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 90%; max-width: 600px;">
+        <h3 style="margin-bottom: 1.5rem;">批量导入需求表数据</h3>
+
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--light); border-radius: 4px;">
+            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式一：上传 CSV 文件 (推荐)</p>
+            <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
+                1. 点击这里 <a href="/static/template_quote.csv" download
+                    style="color: var(--primary); font-weight: 600;">下载 Excel 标准模板 (CSV格式)</a><br>
+                2. 在 Excel 中用该模板录入数据并保存<br>
+                3. 上传保存的模板文件
+            </p>
+            <form action="/quote/import/csv" method="post" enctype="multipart/form-data"
+                style="display: flex; gap: 1rem; align-items: center;">
+                <input type="file" name="csv_file" accept=".csv" required
+                    style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                <button type="submit" class="btn btn-primary">上传并导入</button>
+            </form>
+        </div>
+
+        <div style="padding: 1rem; border: 1px solid var(--border); border-radius: 4px;">
+            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式二：粘贴文本导入</p>
+            <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
+                格式要求与模板一致：<br>客户编号,询价型号,报价型号,询价品牌,询价数量,目标价,成本价,备注<br>
+                (注: 客户编号必须事先存在于系统中，如 C001)
+            </p>
+            <form action="/quote/import" method="post">
+                <textarea name="batch_text" rows="10" placeholder="C001,STM32F103C8T6,,ST,500,8.5,7.0,急单"
+                    style="width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1rem; font-family: monospace;"></textarea>
+                <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                    <button type="button" class="btn" onclick="toggleModal('importModal')">取消</button>
+                    <button type="submit" class="btn btn-primary" style="background: var(--text);">文本导入</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .badge {
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        display: inline-block;
+    }
+
+    .badge-info {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .badge-success {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    /* Modern Action Buttons - Bento Grid Style */
+    .action-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.4rem;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.85rem;
+        font-weight: 500;
+        gap: 0.25rem;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .action-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .action-btn:active {
+        transform: translateY(0);
+    }
+
+    .action-btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .action-btn-primary:hover {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    }
+
+    .action-btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+
+    .action-btn-success:hover {
+        background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    }
+
+    .action-btn-danger {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+
+    .action-btn-danger:hover {
+        background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+    }
+
+    .action-btn-warning {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+
+    .action-btn-warning:hover {
+        background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+    }
+
+    /* Toast Notification */
+    .toast {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        padding: 0.75rem 1.25rem;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 9999;
+        animation: slideIn 0.3s ease;
+    }
+
+    .toast-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    }
+
+    .toast-error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    }
+
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+</style>
+
+<script>
+    const cliOptions = `
+        <option value="">--选择客户--</option>
+        {% for c in cli_list %}
+        <option value="{{ c.cli_id }}">{{ c.cli_name }}</option>
+        {% endfor %}
+    `;
+
+    // 页面加载时从服务器获取筛选条件并恢复
+    window.addEventListener('DOMContentLoaded', () => {
+        // 从页面数据中恢复筛选条件（由后端从 session 读取）
+        const search = "{{ search }}";
+        const start_date = "{{ start_date }}";
+        const end_date = "{{ end_date }}";
+        const cli_id = "{{ cli_id }}";
+        const status = "{{ status }}";
+        const is_transferred = "{{ is_transferred }}";
+
+        // 设置表单值
+        if (search) document.getElementById('search').value = search;
+        if (start_date) document.getElementById('start_date').value = start_date;
+        if (end_date) document.getElementById('end_date').value = end_date;
+        if (cli_id) document.getElementById('cli_id').value = cli_id;
+        if (status) document.getElementById('status').value = status;
+        if (is_transferred) document.getElementById('is_transferred').value = is_transferred;
+
+        // 为所有筛选控件添加 change 事件，自动提交
+        ['search', 'start_date', 'end_date', 'cli_id', 'status', 'is_transferred'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', () => applyFilters());
+                // 搜索框支持回车
+                if (id === 'search') {
+                    el.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') applyFilters();
+                    });
+                }
+            }
+        });
+    });
+
+    // 应用筛选条件，跳转到指定页
+    function applyFilters(page = 1) {
+        const search = encodeURIComponent(document.getElementById('search').value);
+        const start_date = document.getElementById('start_date').value;
+        const end_date = document.getElementById('end_date').value;
+        const cli_id = document.getElementById('cli_id').value;
+        const status = document.getElementById('status').value;
+        const is_transferred = document.getElementById('is_transferred').value;
+        const page_size = {{ page_size }};
+
+        // 始终传递 status 和 is_transferred 参数（即使是空值）
+        let url = `/quote?page=${page}&page_size=${page_size}&status=${encodeURIComponent(status)}&is_transferred=${encodeURIComponent(is_transferred)}`;
+        if (search) url += `&search=${search}`;
+        if (start_date) url += `&start_date=${start_date}`;
+        if (end_date) url += `&end_date=${end_date}`;
+        if (cli_id) url += `&cli_id=${cli_id}`;
+
+        window.location.href = url;
+    }
+
+    function toggleModal(id) {
+        const modal = document.getElementById(id);
+        modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function makeEditable(td, quote_id, field, inputType = 'text') {
+        if (td.querySelector('input')) return;
+        const isSpan = td.querySelector('span') !== null;
+        const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
+        td.innerHTML = `<input type="${inputType}" value="${originalValue}" style="width: 100%; min-width: 80px; padding: 4px; box-sizing: border-box;">`;
+        const input = td.querySelector('input');
+        input.focus();
+
+        input.onblur = () => saveEdit(td, quote_id, field, input.value, originalValue);
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') td.innerHTML = isSpan ? `<span>${originalValue}</span>` : originalValue;
+        };
+    }
+
+    function makeEditableSelect(td, quote_id, field, originalId) {
+        if (td.querySelector('select')) return;
+        const originalText = td.querySelector('span').innerText;
+        td.innerHTML = `<select style="width: 100%; padding: 4px; box-sizing: border-box;">${cliOptions}</select>`;
+        const select = td.querySelector('select');
+        select.value = originalId;
+        select.focus();
+
+        select.onblur = () => {
+            if (select.value !== originalId) {
+                saveEdit(td, quote_id, field, select.value, originalText, select.options[select.selectedIndex].text);
+            } else {
+                td.innerHTML = `<span>${originalText}</span>`;
+            }
+        };
+        select.onkeydown = (e) => {
+            if (e.key === 'Escape') td.innerHTML = `<span>${originalText}</span>`;
+        };
+    }
+
+    function makeStatusEditable(td, quote_id, currentStatus) {
+        if (td.querySelector('select')) return;
+        const originalBadge = td.innerHTML;
+        td.innerHTML = `
+            <select style="width: 100%; padding: 4px; box-sizing: border-box;">
+                <option value="询价中">询价中</option>
+                <option value="缺货">缺货</option>
+                <option value="已报价">已报价</option>
+            </select>
+        `;
+        const select = td.querySelector('select');
+        select.value = currentStatus;
+        select.focus();
+
+        select.onblur = () => {
+            if (select.value !== currentStatus) {
+                saveStatusEdit(td, quote_id, select.value, originalBadge);
+            } else {
+                td.innerHTML = originalBadge;
+            }
+        };
+    }
+
+    function saveStatusEdit(td, quote_id, newValue, originalBadge) {
+        const formData = new FormData();
+        formData.append('quote_id', quote_id);
+        formData.append('field', 'status');
+        formData.append('value', newValue);
+
+        fetch('/api/quote/update', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert('更新失败: ' + data.message);
+                    td.innerHTML = originalBadge;
+                }
+            });
+    }
+
+    function saveEdit(td, quote_id, field, newValue, originalValue, newText = null) {
+        if (newValue === originalValue) {
+            td.innerHTML = `<span>${originalValue}</span>`;
+            return;
+        }
+        const formData = new FormData();
+        formData.append('quote_id', quote_id);
+        formData.append('field', field);
+        formData.append('value', newValue);
+
+        fetch('/api/quote/update', {
+            method: 'POST',
+            body: formData
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const display = newText !== null ? newText : newValue;
+                    td.innerHTML = `<span style="color: green;">${display}</span>`;
+                    setTimeout(() => {
+                        window.location.reload(); // Reload to refresh combined info
+                    }, 500);
+                } else {
+                    alert('更新失败: ' + data.message);
+                    td.innerHTML = `<span>${originalValue}</span>`;
+                }
+            });
+    }
+
+    function deleteRow(quote_id) {
+        if (confirm(`确定要删除需求 ${quote_id} 吗？`)) {
+            const formData = new FormData();
+            formData.append('quote_id', quote_id);
+            fetch('/api/quote/delete', { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('删除失败: ' + data.message);
+                });
+        }
+    }
+
+    function toggleAll(source) {
+        const checkboxes = document.querySelectorAll('.row-checkbox');
+        checkboxes.forEach(cb => cb.checked = source.checked);
+    }
+
+    function batchDelete() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要删除的记录');
+            return;
+        }
+        if (confirm(`确定要删除选中的 ${selected.length} 条记录吗？`)) {
+            fetch('/api/quote/batch_delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('批量删除失败: ' + data.message);
+                });
+        }
+    }
+
+    async function batchToOffer() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要转换的需求记录');
+            return;
+        }
+        if (!confirm(`确定要把选中的 ${selected.length} 条需求转为报价单吗？`)) return;
+
+        try {
+            const response = await fetch('/api/quote/batch_to_offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(data.message);
+                window.location.href = '/offer';
+            } else {
+                alert('转换失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    async function exportSelectedToOfferCsv() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要导出的需求记录');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/quote/export_offer_csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                const blob = new Blob([data.csv_content], { type: 'text/csv;charset=utf-8-sig;' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `offer_template_export_${new Date().getTime()}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert('导出失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    function batchCopy() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要复制的记录');
+            return;
+        }
+        if (confirm(`确定要复制选中的 ${selected.length} 条记录吗？`)) {
+            fetch('/api/quote/batch_copy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('批量复制失败: ' + data.message);
+                });
+        }
+    }
+
+    function makeTransferredEditable(element, id, currentValue) {
+        if (element.querySelector('select')) return;
+
+        const select = document.createElement('select');
+        select.style.width = '100%';
+        select.style.padding = '2px';
+
+        const options = ['未转', '已转'];
+        options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.text = opt;
+            if (opt === currentValue) option.selected = true;
+            select.appendChild(option);
+        });
+
+        const span = element.querySelector('span');
+        element.innerHTML = '';
+        element.appendChild(select);
+        select.focus();
+
+        const updateValue = () => {
+            const newValue = select.value;
+            if (newValue === currentValue) {
+                element.innerHTML = '';
+                element.appendChild(span);
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('quote_id', id);
+            formData.append('field', 'is_transferred');
+            formData.append('value', newValue);
+
+            fetch('/api/quote/update', {
+                method: 'POST',
+                body: formData
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        span.textContent = newValue;
+                        span.className = `badge ${newValue === '已转' ? 'badge-success' : 'badge-warning'}`;
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    } else {
+                        alert('更新失败: ' + data.message);
+                        element.innerHTML = '';
+                        element.appendChild(span);
+                    }
+                });
+        };
+
+        select.onblur = updateValue;
+        select.onchange = updateValue;
+    }
+
+    // 单条转报价函数
+    async function transToOffer(quote_id) {
+        if (!confirm(`确定要将需求 ${quote_id} 转为报价单吗？`)) return;
+
+        try {
+            const response = await fetch('/api/quote/batch_to_offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [quote_id] })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => {
+                    window.location.href = '/offer';
+                }, 1000);
+            } else {
+                showToast('转换失败：' + data.message, 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showToast('请求失败，请稍后重试', 'error');
+        }
+    }
+
+    // Toast 提示函数
+    function showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+</script>
+{% endblock %}

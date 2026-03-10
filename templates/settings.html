@@ -1,0 +1,458 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .settings-page {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .settings-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+    }
+
+    .settings-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .settings-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+
+    .settings-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+
+    .settings-section {
+        padding: 1.5rem;
+        border-bottom: var(--border-light);
+    }
+
+    .settings-section:last-child {
+        border-bottom: none;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .section-icon {
+        width: 40px;
+        height: 40px;
+        background: var(--bg-glass);
+        border-radius: var(--radius);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .section-icon.primary {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+        color: var(--primary);
+    }
+
+    .section-icon.secondary {
+        background: linear-gradient(135deg, rgba(100, 116, 139, 0.15) 0%, rgba(148, 163, 184, 0.15) 100%);
+        color: var(--secondary);
+    }
+
+    .section-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .section-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-main);
+    }
+
+    .section-desc {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+        line-height: 1.6;
+    }
+
+    .path-box {
+        background: var(--bg-glass);
+        border: var(--border-light);
+        border-radius: var(--radius);
+        padding: 1rem;
+        font-family: 'Fira Code', 'Consolas', monospace;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+        word-break: break-all;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .path-box svg {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        color: var(--primary);
+    }
+
+    .backup-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        min-width: 160px;
+        padding: 0.75rem 1.5rem;
+    }
+
+    .backup-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    #backup-status {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: var(--radius);
+        display: none;
+        font-size: 0.875rem;
+    }
+
+    #backup-status.success {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--accent);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    #backup-status.success::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+    }
+
+    #backup-status.error {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        background: rgba(239, 68, 68, 0.1);
+        color: #EF4444;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    #backup-status.error::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: #EF4444;
+        border-radius: 50%;
+    }
+
+    .about-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .about-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .about-label {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        min-width: 100px;
+    }
+
+    .about-value {
+        font-size: 0.875rem;
+        color: var(--text-main);
+        font-weight: 500;
+    }
+
+    .version-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.75rem;
+        background: var(--primary-gradient);
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: var(--radius-full);
+    }
+</style>
+
+<div class="settings-page">
+    <div class="settings-header">
+        <h1>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            系统设置
+        </h1>
+    </div>
+
+    <div class="settings-card">
+        <!-- Backup Section -->
+        <div class="settings-section">
+            <div class="section-header">
+                <div class="section-icon primary">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="section-title">数据备份</div>
+                </div>
+            </div>
+            <p class="section-desc">
+                点击下方按钮将备份所有数据库文件 (.db) 到系统预设目录。备份将按当前日期创建，如果当日备份已存在，则会覆盖。
+            </p>
+
+            <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-main);">
+                当前备份根目录
+            </div>
+            <div class="path-box">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                </svg>
+                <span>{{ backup_path }}</span>
+            </div>
+
+            <button id="btn-backup" class="btn btn-primary backup-btn">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                <span id="btn-text">立即执行备份</span>
+            </button>
+
+            <div id="backup-status"></div>
+
+            <!-- 自动备份提示 -->
+            <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(99, 102, 241, 0.1); border-radius: var(--radius); font-size: 0.85rem; color: var(--text-muted);">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px; display: inline; vertical-align: middle; margin-right: 0.5rem;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                系统启动时已自动备份，之后每30分钟自动执行备份
+            </div>
+        </div>
+
+        <!-- Restore Section -->
+        <div class="settings-section">
+            <div class="section-header">
+                <div class="section-icon secondary">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="section-title">数据恢复</div>
+                </div>
+            </div>
+            <p class="section-desc">
+                从备份目录恢复数据库文件。选择一个备份点进行恢复，恢复后会覆盖当前数据库。
+            </p>
+
+            <button id="btn-load-backups" class="btn btn-secondary backup-btn" style="margin-bottom: 1rem;">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 18px; height: 18px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                加载备份列表
+            </button>
+
+            <div id="backup-list-container" style="display: none;">
+                <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-main);">
+                    选择备份点
+                </div>
+                <div id="backup-list" style="max-height: 300px; overflow-y: auto;">
+                    <!-- 备份列表将动态加载 -->
+                </div>
+            </div>
+
+            <div id="restore-status"></div>
+        </div>
+
+        <!-- About Section -->
+        <div class="settings-section">
+            <div class="section-header">
+                <div class="section-icon secondary">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="section-title">关于系统</div>
+                </div>
+            </div>
+            <div class="about-info">
+                <div class="about-row">
+                    <span class="about-label">平台名称</span>
+                    <span class="about-value">UniUltra 开放平台</span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">当前版本</span>
+                    <span class="version-badge">v2.0</span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">UI 主题</span>
+                    <span class="about-value">Glassmorphism + Dark Mode</span>
+                </div>
+                <div class="about-row">
+                    <span class="about-label">技术栈</span>
+                    <span class="about-value">Python + FastAPI + Jinja2</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 手动备份
+    document.getElementById('btn-backup').addEventListener('click', async function () {
+        const btn = this;
+        const btnText = document.getElementById('btn-text');
+        const statusDiv = document.getElementById('backup-status');
+
+        // UI state: Loading
+        btn.disabled = true;
+        const originalText = btnText.innerText;
+        btnText.innerHTML = '<span class="loading-spinner"></span>备份中...';
+        statusDiv.className = '';
+        statusDiv.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/backup', {
+                method: 'POST'
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                statusDiv.className = 'success';
+                statusDiv.innerText = result.message;
+            } else {
+                statusDiv.className = 'error';
+                statusDiv.innerText = result.message;
+            }
+        } catch (error) {
+            statusDiv.className = 'error';
+            statusDiv.innerText = '请求失败，请稍后重试。';
+        } finally {
+            btn.disabled = false;
+            btnText.innerText = originalText;
+            statusDiv.style.display = 'flex';
+        }
+    });
+
+    // 加载备份列表
+    document.getElementById('btn-load-backups').addEventListener('click', async function () {
+        const btn = this;
+        const container = document.getElementById('backup-list-container');
+        const listDiv = document.getElementById('backup-list');
+        const statusDiv = document.getElementById('restore-status');
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading-spinner"></span>加载中...';
+        statusDiv.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/backup/list');
+            const result = await response.json();
+
+            if (result.success && result.backups.length > 0) {
+                listDiv.innerHTML = result.backups.map(backup => `
+                    <div class="backup-item" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--bg-glass); border: var(--border-light); border-radius: var(--radius); margin-bottom: 0.5rem;">
+                        <div>
+                            <div style="font-weight: 500; color: var(--text-main);">${backup.name}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">${backup.mtime} · ${backup.size}</div>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="restoreBackup(this)" data-path="${backup.path.replace(/\\\\/g, '\\\\\\\\')}" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                            恢复
+                        </button>
+                    </div>
+                `).join('');
+                container.style.display = 'block';
+            } else if (result.success && result.backups.length === 0) {
+                listDiv.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 1rem;">暂无备份记录</div>';
+                container.style.display = 'block';
+            } else {
+                statusDiv.className = 'error';
+                statusDiv.innerText = result.message || '加载失败';
+                statusDiv.style.display = 'flex';
+            }
+        } catch (error) {
+            statusDiv.className = 'error';
+            statusDiv.innerText = '请求失败，请稍后重试。';
+            statusDiv.style.display = 'flex';
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 18px; height: 18px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>加载备份列表`;
+        }
+    });
+
+    // 恢复备份
+    async function restoreBackup(btn) {
+        const backupPath = btn.getAttribute('data-path');
+        const statusDiv = document.getElementById('restore-status');
+
+        if (!confirm('确定要从该备份恢复数据库吗？当前数据将被覆盖。')) {
+            return;
+        }
+
+        statusDiv.className = '';
+        statusDiv.style.display = 'none';
+
+        try {
+            const formData = new FormData();
+            formData.append('backup_path', backupPath);
+
+            const response = await fetch('/api/backup/restore', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                statusDiv.className = 'success';
+                statusDiv.innerText = result.message + ' (建议刷新页面以加载最新数据)';
+            } else {
+                statusDiv.className = 'error';
+                statusDiv.innerText = result.message;
+            }
+            statusDiv.style.display = 'flex';
+        } catch (error) {
+            statusDiv.className = 'error';
+            statusDiv.innerText = '请求失败，请稍后重试。';
+            statusDiv.style.display = 'flex';
+        }
+    }
+</script>
+{% endblock %}

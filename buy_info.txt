@@ -1,0 +1,16 @@
+0|buy_id|TEXT|0||1
+1|buy_date|TEXT|0||0
+2|order_id|TEXT|0||0
+3|vendor_id|TEXT|0||0
+4|buy_mpn|TEXT|0||0
+5|buy_brand|TEXT|0||0
+6|buy_price_rmb|REAL|0||0
+7|buy_qty|INTEGER|0||0
+8|sales_price_rmb|REAL|0||0
+9|total_amount|REAL|0||0
+10|is_source_confirmed|INTEGER|0|0|0
+11|is_ordered|INTEGER|0|0|0
+12|is_instock|INTEGER|0|0|0
+13|is_shipped|INTEGER|0|0|0
+14|remark|TEXT|0||0
+15|created_at|DATETIME|0|datetime('now', 'localtime')|0

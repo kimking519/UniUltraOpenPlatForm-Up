@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UniUltra 开放平台</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}?v=2.0">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        /* Sidebar Enhancements */
+        .sidebar {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.98) 100%);
+        }
+
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1.5rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .logo-icon svg {
+            width: 24px;
+            height: 24px;
+            color: white;
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6366F1 0%, #10B981 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            color: rgba(241, 245, 249, 0.7);
+            text-decoration: none;
+            transition: all 0.2s ease;
+            font-weight: 500;
+            font-size: 0.9rem;
+            position: relative;
+            margin: 0.125rem 0.75rem;
+            border-radius: 8px;
+        }
+
+        .menu-item .menu-icon {
+            width: 20px;
+            height: 20px;
+            opacity: 0.7;
+            transition: opacity 0.2s ease;
+        }
+
+        .menu-item:hover {
+            color: #F1F5F9;
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .menu-item:hover .menu-icon {
+            opacity: 1;
+        }
+
+        .menu-item.active {
+            color: #F1F5F9;
+            background: rgba(99, 102, 241, 0.15);
+        }
+
+        .menu-item.active .menu-icon {
+            opacity: 1;
+            color: var(--primary-light);
+        }
+
+        /* Active indicator */
+        .menu-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3px;
+            height: 60%;
+            background: linear-gradient(180deg, #6366F1 0%, #8B5CF6 100%);
+            border-radius: 0 2px 2px 0;
+        }
+
+        .menu-section {
+            padding: 1rem 1.5rem 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: rgba(241, 245, 249, 0.4);
+        }
+
+        /* Navbar Enhancements */
+        .navbar {
+            background: rgba(255, 255, 255, 0.8);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+        }
+
+        [data-theme="dark"] .navbar {
+            background: rgba(30, 41, 59, 0.8);
+            border-bottom: 1px solid rgba(71, 85, 105, 0.2);
+        }
+
+        .navbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .navbar-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        /* Breadcrumbs */
+        .breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .breadcrumbs a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .breadcrumbs a:hover {
+            color: var(--primary);
+        }
+
+        .breadcrumbs .current {
+            color: var(--text-main);
+            font-weight: 500;
+        }
+
+        .breadcrumbs .separator {
+            color: var(--text-muted);
+            opacity: 0.5;
+        }
+
+        /* Search Box */
+        .search-box {
+            position: relative;
+            width: 280px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.5rem 1rem 0.5rem 2.5rem;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            font-size: 0.875rem;
+            color: var(--text-main);
+            transition: all 0.2s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            background: var(--card-bg);
+        }
+
+        .search-box input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-box .search-icon {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            color: var(--text-muted);
+            pointer-events: none;
+        }
+
+        /* Navbar Actions */
+        .navbar-action {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .navbar-action:hover {
+            background: var(--bg-glass-hover);
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .navbar-action svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .navbar-action .badge-dot {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 8px;
+            height: 8px;
+            background: #EF4444;
+            border-radius: 50%;
+            border: 2px solid var(--card-bg);
+        }
+
+        /* User Profile */
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.375rem 0.75rem 0.375rem 0.375rem;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-light);
+            border-radius: 24px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .user-profile:hover {
+            background: var(--bg-glass-hover);
+            border-color: var(--primary);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .user-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-main);
+        }
+
+        .user-role {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        /* Mobile Menu Toggle */
+        .mobile-menu-toggle {
+            display: none;
+            width: 40px;
+            height: 40px;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            cursor: pointer;
+            color: var(--text-main);
+        }
+
+        .mobile-menu-toggle svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-menu-toggle {
+                display: flex;
+            }
+
+            .search-box {
+                display: none;
+            }
+
+            .breadcrumbs {
+                display: none;
+            }
+
+            .user-info {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sidebar">
+        <!-- Logo -->
+        <div class="sidebar-logo">
+            <div class="logo-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+            </div>
+            <span class="logo-text">UniUltra</span>
+        </div>
+
+        <nav class="sidebar-menu">
+            <div class="menu-section">主菜单</div>
+
+            <a href="/" class="menu-item {% if active_page == 'dashboard' %}active{% endif %}">
+                <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+                <span>总控制台</span>
+            </a>
+
+            <a href="/quote" class="menu-item {% if active_page == 'quote' %}active{% endif %}">
+                <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                <span>需求管理</span>
+            </a>
+
+            <a href="/offer" class="menu-item {% if active_page == 'offer' %}active{% endif %}">
+                <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                </svg>
+                <span>报价订单</span>
+            </a>
+
+            <a href="/order" class="menu-item {% if active_page == 'order' %}active{% endif %}">
+                <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                </svg>
+                <span>销售订单</span>
+            </a>
+
+            <a href="/buy" class="menu-item {% if active_page == 'buy' %}active{% endif %}">
+                <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                </svg>
+                <span>采购管理</span>
+            </a>
+
+            <div class="menu-section">系统配置</div>
+
+            <div class="menu-group">
+                <a href="#"
+                    class="menu-item group-title {% if active_page in ['daily', 'emp', 'cli', 'vendor'] %}active{% endif %}"
+                    onclick="toggleSubmenu('config-menu', event)">
+                    <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <span style="flex: 1;">配置管理</span>
+                    <svg class="chevron-icon {% if active_page in ['daily', 'emp', 'cli', 'vendor'] %}rotated{% endif %}"
+                        style="width: 16px; height: 16px; transition: transform 0.3s;" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                            clip-rule="evenodd" />
+                    </svg>
+                </a>
+                <div id="config-menu"
+                    class="submenu {% if active_page in ['daily', 'emp', 'cli', 'vendor'] %}open{% endif %}">
+                    <a href="/daily"
+                        class="menu-item submenu-item {% if active_page == 'daily' %}active{% endif %}">
+                        <svg class="menu-icon" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/>
+                        </svg>
+                        <span>动态参数</span>
+                    </a>
+                    <a href="/emp"
+                        class="menu-item submenu-item {% if active_page == 'emp' %}active{% endif %}">
+                        <svg class="menu-icon" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        </svg>
+                        <span>员工管理</span>
+                    </a>
+                    <a href="/cli" class="menu-item submenu-item {% if active_page == 'cli' %}active{% endif %}">
+                        <svg class="menu-icon" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <span>客户表</span>
+                    </a>
+                    <a href="/vendor"
+                        class="menu-item submenu-item {% if active_page == 'vendor' %}active{% endif %}">
+                        <svg class="menu-icon" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <span>供应商表</span>
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Sidebar Footer -->
+        <div style="padding: 1rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.08); margin-top: auto;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: rgba(241,245,249,0.4);">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>v2.0 Glassmorphism</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <header class="navbar">
+            <div class="navbar-left">
+                <!-- Mobile Menu Toggle -->
+                <button class="mobile-menu-toggle" onclick="toggleSidebar()">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                </button>
+
+                <!-- Search Box -->
+                <div class="search-box">
+                    <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    <input type="text" placeholder="搜索..." id="globalSearch">
+                </div>
+            </div>
+
+            <div class="navbar-right">
+                <!-- Theme Toggle -->
+                <button class="navbar-action" onclick="toggleTheme()" title="切换深色/浅色模式">
+                    <svg class="theme-toggle-icon sun-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                    <svg class="theme-toggle-icon moon-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                    </svg>
+                </button>
+
+                <!-- Notifications -->
+                <button class="navbar-action" title="通知">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                    </svg>
+                    <span class="badge-dot"></span>
+                </button>
+
+                <!-- User Dropdown -->
+                <div class="user-dropdown">
+                    <div class="user-profile">
+                        <div class="user-avatar">A</div>
+                        <div class="user-info">
+                            <span class="user-name">管理员</span>
+                            <span class="user-role">Admin</span>
+                        </div>
+                        <svg class="chevron-icon" style="width: 16px; height: 16px;" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                                clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="dropdown-menu">
+                        <a href="/settings" class="dropdown-item">
+                            <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span>设置</span>
+                        </a>
+                        <hr class="dropdown-divider">
+                        <a href="/logout" class="dropdown-item logout">
+                            <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            <span>退出登录</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="container fade-in">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            let alertMsg = [];
+
+            if (params.has('import_success')) {
+                const count = parseInt(params.get('import_success'), 10);
+                if (count > 0) alertMsg.push(`批量导入成功: ${count} 条`);
+            }
+            if (params.has('errors')) {
+                const count = parseInt(params.get('errors'), 10);
+                if (count > 0) alertMsg.push(`导入失败: ${count} 条`);
+            }
+            if (params.has('msg')) {
+                const prefix = params.get('success') === '1' ? '操作成功: ' : '操作失败: ';
+                alertMsg.push(prefix + params.get('msg'));
+            }
+
+            if (alertMsg.length > 0) {
+                alert(alertMsg.join('\n'));
+                const newUrl = window.location.pathname +
+                    window.location.search.replace(/[?&](import_success|errors|msg|success)=[^&]+/g, '')
+                        .replace(/^&/, '?').replace(/\?$/, '');
+                window.history.replaceState({}, document.title, newUrl || window.location.pathname);
+            }
+        });
+    </script>
+
+    <script>
+        function toggleSubmenu(id, event) {
+            event.preventDefault();
+            const submenu = document.getElementById(id);
+            const icon = event.currentTarget.querySelector('.chevron-icon');
+            if (submenu.classList.contains('open')) {
+                submenu.classList.remove('open');
+                if (icon) icon.classList.remove('rotated');
+            } else {
+                submenu.classList.add('open');
+                if (icon) icon.classList.add('rotated');
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.classList.toggle('open');
+        }
+    </script>
+
+    <!-- Theme Toggle Script -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                updateThemeIcons(true);
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                updateThemeIcons(false);
+            }
+        })();
+
+        function toggleTheme() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+            if (isDark) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                updateThemeIcons(false);
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                updateThemeIcons(true);
+            }
+        }
+
+        function updateThemeIcons(isDark) {
+            const sunIcons = document.querySelectorAll('.sun-icon');
+            const moonIcons = document.querySelectorAll('.moon-icon');
+            sunIcons.forEach(icon => icon.style.display = isDark ? 'block' : 'none');
+            moonIcons.forEach(icon => icon.style.display = isDark ? 'none' : 'block');
+        }
+    </script>
+
+    <!-- Global UI Components -->
+    <div id="toast-container" style="position: fixed; top: 1.5rem; right: 1.5rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.75rem;"></div>
+
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner-lg"></div>
+        <div class="loading-text">加载中...</div>
+    </div>
+
+    <div id="connection-indicator" class="connection-indicator">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414"/>
+        </svg>
+        <span>网络连接已断开</span>
+    </div>
+
+    <!-- Global UI Scripts -->
+    <script>
+        // ============================================
+        // Toast Notification System
+        // ============================================
+        const Toast = {
+            container: null,
+
+            init() {
+                this.container = document.getElementById('toast-container');
+            },
+
+            show(message, type = 'info', duration = 3000) {
+                if (!this.container) this.init();
+
+                const toast = document.createElement('div');
+                toast.className = `toast toast-${type}`;
+                toast.innerHTML = `
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        ${this.getIcon(type)}
+                    </svg>
+                    <span>${message}</span>
+                `;
+
+                this.container.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.style.animation = 'slideOut 0.3s ease forwards';
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            },
+
+            getIcon(type) {
+                switch(type) {
+                    case 'success':
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>';
+                    case 'error':
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>';
+                    case 'warning':
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
+                    default:
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>';
+                }
+            },
+
+            success(message, duration) { this.show(message, 'success', duration); },
+            error(message, duration) { this.show(message, 'error', duration); },
+            warning(message, duration) { this.show(message, 'warning', duration); },
+            info(message, duration) { this.show(message, 'info', duration); }
+        };
+
+        // Add slideOut animation
+        const style = document.createElement('style');
+        style.textContent = `@keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }`;
+        document.head.appendChild(style);
+
+        // ============================================
+        // Confirm Dialog System
+        // ============================================
+        const Confirm = {
+            show(options) {
+                const { title, message, type = 'warning', confirmText = '确认', cancelText = '取消', onConfirm, onCancel } = options;
+
+                const dialog = document.createElement('div');
+                dialog.className = 'confirm-dialog';
+                dialog.id = 'confirm-dialog';
+                dialog.innerHTML = `
+                    <div class="dialog-content">
+                        <div class="dialog-icon ${type}">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                ${this.getIcon(type)}
+                            </svg>
+                        </div>
+                        <div class="dialog-title">${title}</div>
+                        <div class="dialog-message">${message}</div>
+                        <div class="dialog-actions">
+                            <button class="btn btn-ghost" id="confirm-cancel">${cancelText}</button>
+                            <button class="btn btn-${type === 'danger' ? 'danger' : 'primary'}" id="confirm-ok">${confirmText}</button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(dialog);
+
+                const close = () => {
+                    dialog.style.animation = 'fadeIn 0.2s ease reverse';
+                    setTimeout(() => dialog.remove(), 200);
+                };
+
+                dialog.querySelector('#confirm-cancel').onclick = () => {
+                    close();
+                    if (onCancel) onCancel();
+                };
+
+                dialog.querySelector('#confirm-ok').onclick = () => {
+                    close();
+                    if (onConfirm) onConfirm();
+                };
+
+                dialog.onclick = (e) => {
+                    if (e.target === dialog) {
+                        close();
+                        if (onCancel) onCancel();
+                    }
+                };
+            },
+
+            getIcon(type) {
+                switch(type) {
+                    case 'danger':
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>';
+                    case 'success':
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>';
+                    default:
+                        return '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
+                }
+            },
+
+            delete(title, message, onConfirm) {
+                this.show({ title, message, type: 'danger', confirmText: '删除', onConfirm });
+            }
+        };
+
+        // ============================================
+        // Loading Overlay
+        // ============================================
+        const Loading = {
+            overlay: null,
+
+            init() {
+                this.overlay = document.getElementById('loading-overlay');
+            },
+
+            show(text = '加载中...') {
+                if (!this.overlay) this.init();
+                this.overlay.querySelector('.loading-text').textContent = text;
+                this.overlay.classList.add('active');
+            },
+
+            hide() {
+                if (!this.overlay) this.init();
+                this.overlay.classList.remove('active');
+            }
+        };
+
+        // ============================================
+        // Connection Status Monitor
+        // ============================================
+        const Connection = {
+            indicator: null,
+
+            init() {
+                this.indicator = document.getElementById('connection-indicator');
+
+                window.addEventListener('online', () => this.updateStatus(true));
+                window.addEventListener('offline', () => this.updateStatus(false));
+            },
+
+            updateStatus(isOnline) {
+                if (!this.indicator) this.init();
+
+                if (isOnline) {
+                    this.indicator.classList.add('online');
+                    this.indicator.querySelector('span').textContent = '网络已恢复';
+                    this.indicator.classList.add('show');
+
+                    setTimeout(() => {
+                        this.indicator.classList.remove('show');
+                    }, 2000);
+                } else {
+                    this.indicator.classList.remove('online');
+                    this.indicator.querySelector('span').textContent = '网络连接已断开';
+                    this.indicator.classList.add('show');
+                }
+            }
+        };
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            Toast.init();
+            Loading.init();
+            Connection.init();
+        });
+    </script>
+</body>
+
+</html>

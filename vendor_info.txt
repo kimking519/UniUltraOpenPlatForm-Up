@@ -1,0 +1,8 @@
+0|vendor_id|TEXT|0||1
+1|vendor_name|TEXT|1||0
+2|address|TEXT|0||0
+3|qq|TEXT|0||0
+4|wechat|TEXT|0||0
+5|email|TEXT|0||0
+6|remark|TEXT|0||0
+7|created_at|DATETIME|0|datetime('now', 'localtime')|0
