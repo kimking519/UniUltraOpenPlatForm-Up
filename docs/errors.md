@@ -213,3 +213,128 @@ function applyFilters() {
 - [ ] 空值选项（如"全部"）是否有独立的 `value=""` 和判断条件
 - [ ] JavaScript 是否始终传递所有参数（包括空值）
 - [ ] 分页链接是否包含所有筛选参数
+
+---
+
+## 2026-03-10: 文档生成系列 Bug（出现2次以上）
+
+### Bug 1: 报价单生成 Excel 报错 - `no such column: o.offer_no`
+
+#### 问题描述
+在报价订单中生成 Excel 报价时报错：`生成失败: 生成异常: no such column: o.offer_no`
+
+#### 根本原因
+`document_generator.py` 中的 SQL 查询引用了不存在的列 `offer_no`：
+```sql
+SELECT o.offer_id, o.offer_no, o.offer_date, ...
+FROM uni_offer o
+```
+
+但实际上 `uni_offer` 表并没有 `offer_no` 列。表结构如下：
+- `offer_id` (主键)
+- `offer_date`
+- `quote_id`
+- `inquiry_mpn` / `quoted_mpn`
+- ...
+
+#### 修复方案
+移除 SQL 查询中不存在的 `offer_no` 列：
+```python
+# document_generator.py - get_offers_for_document()
+rows = conn.execute(f"""
+    SELECT o.offer_id, o.offer_date, o.cli_id,
+           o.quoted_mpn, o.quoted_brand, o.offer_price_rmb, o.price_usd as offer_price_usd,
+           ...
+    FROM uni_offer o
+    ...
+""")
+```
+
+---
+
+### Bug 2: PI 生成报错 - `'MergedCell' object attribute 'value' is read-only`
+
+#### 问题描述
+在销售订单中生成 PI 报错：`生成失败: 生成异常: 'MergedCell' object attribute 'value' is read-only`
+
+#### 根本原因
+PI 模板（`templates/pi/ProformaInvoice_template.xlsx`）中的 Total 行预设了合并单元格。
+当代码尝试向合并单元格的非主单元格写入值时，会触发 `MergedCell` 只读错误。
+
+```python
+# 问题代码
+ws.cell(actual_total_row, 1).value = "Total Amount:"  # 如果该单元格是合并单元格的一部分
+```
+
+#### 修复方案
+在写入数据前，先取消该行可能存在的合并单元格：
+```python
+# 先取消可能存在的合并单元格
+merged_ranges_to_remove = []
+for merged_range in ws.merged_cells.ranges:
+    if merged_range.min_row == actual_total_row:
+        merged_ranges_to_remove.append(merged_range)
+for mr in merged_ranges_to_remove:
+    ws.unmerge_cells(str(mr))
+
+# 然后写入数据
+ws.cell(actual_total_row, 1).value = "Total Amount:"
+ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+
+# 最后重新合并
+ws.merge_cells(f"A{actual_total_row}:G{actual_total_row}")
+```
+
+#### 关键知识点
+1. **MergedCell 只读**：合并单元格中只有左上角的主单元格可以写入，其他单元格是只读的
+2. **正确处理流程**：先取消合并 → 写入数据 → 重新合并
+3. **遍历合并区域**：使用 `ws.merged_cells.ranges` 获取所有合并区域
+
+---
+
+### Bug 3: 文档输出路径错误
+
+#### 问题描述
+销售订单中生成 PI 和 CI 的路径应该是 `E:\1_Business\1_Auto\{客户名}\yyyymmdd`，
+但代码中默认输出到项目目录下的 `Trans` 文件夹。
+
+#### 根本原因
+多个文档生成函数中的默认输出路径不一致：
+- `document_generator.py`: 默认使用 `os.path.join(project_root, "Trans")`
+- `ci_generator.py`: 同样使用 `Trans` 目录
+
+#### 修复方案
+1. 定义统一的默认输出路径常量：
+```python
+# document_generator.py
+DEFAULT_OUTPUT_BASE = r"E:\1_Business\1_Auto"
+
+def _get_output_base():
+    """获取输出基础目录"""
+    output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
+    if output_base:
+        return output_base
+    return DEFAULT_OUTPUT_BASE
+```
+
+2. 在所有文档生成函数中使用统一的路径逻辑：
+```python
+if not output_base:
+    output_base = _get_output_base()
+```
+
+3. 同时修复 `ci_generator.py` 中的 `generate_ci_kr()` 函数。
+
+#### 影响范围
+- `document_generator.py`: `generate_ci_us()`, `generate_pi()`, `generate_koquote()`
+- `ci_generator.py`: `generate_ci_kr()`
+
+---
+
+### 检查清单
+
+修改文档生成相关代码时，请检查：
+- [ ] SQL 查询中的列名是否与表结构一致
+- [ ] 处理 Excel 模板时是否考虑了合并单元格
+- [ ] 输出路径是否使用统一的默认值 `E:\1_Business\1_Auto`
+- [ ] 环境变量 `UNIULTRA_OUTPUT_DIR` 是否正确使用

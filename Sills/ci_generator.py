@@ -311,12 +311,12 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
     cli_name = list(cli_names)[0]
 
     # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if not output_base:
         output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
     if not output_base:
-        project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        output_base = os.path.join(project_root, "Trans")
+        output_base = r"E:\1_Business\1_Auto"
 
     now = datetime.now()
     date_dir = now.strftime("%Y%m%d")
@@ -328,8 +328,6 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
 
     # 确定模板目录
     if not template_dir:
-        project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         template_dir = os.path.join(project_root, "templates", "ci_kr")
 
     # 生成 CI

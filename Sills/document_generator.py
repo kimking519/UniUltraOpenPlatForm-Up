@@ -50,6 +50,18 @@ BORDER_MEDIUM = Border(
 # 数据查询函数
 # ============================================================
 
+# 默认输出目录
+DEFAULT_OUTPUT_BASE = r"E:\1_Business\1_Auto"
+
+
+def _get_output_base():
+    """获取输出基础目录"""
+    output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
+    if output_base:
+        return output_base
+    return DEFAULT_OUTPUT_BASE
+
+
 def get_orders_for_document(order_ids):
     """获取订单列表（用于生成CI/PI文档）"""
     if not order_ids:
@@ -79,8 +91,8 @@ def get_offers_for_document(offer_ids):
     placeholders = ','.join(['?'] * len(offer_ids))
     with get_db_connection() as conn:
         rows = conn.execute(f"""
-            SELECT o.offer_id, o.offer_no, o.offer_date, o.cli_id,
-                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb, o.offer_price_usd,
+            SELECT o.offer_id, o.offer_date, o.cli_id,
+                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb, o.price_usd as offer_price_usd,
                    o.quoted_qty, o.date_code, o.delivery_date, o.inquiry_qty, o.inquiry_mpn,
                    c.cli_name, c.cli_name_en, c.contact_name, c.address, c.email, c.phone,
                    c.cli_full_name, c.region
@@ -127,10 +139,9 @@ def generate_ci_us(order_ids, output_base=None, template_dir=None):
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     if not output_base:
-        output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
-    if not output_base:
-        output_base = os.path.join(project_root, "Trans")
+        output_base = _get_output_base()
 
     if not template_dir:
         template_dir = os.path.join(project_root, "templates", "ci_us")
@@ -324,10 +335,9 @@ def generate_pi(order_ids, output_base=None, template_dir=None):
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     if not output_base:
-        output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
-    if not output_base:
-        output_base = os.path.join(project_root, "Trans")
+        output_base = _get_output_base()
 
     if not template_dir:
         template_dir = os.path.join(project_root, "templates", "pi")
@@ -479,6 +489,15 @@ def _generate_pi_excel(orders, template_dir, output_path):
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
+
+    # 先取消可能存在的合并单元格，避免 MergedCell 写入错误
+    merged_ranges_to_remove = []
+    for merged_range in ws.merged_cells.ranges:
+        if merged_range.min_row == actual_total_row:
+            merged_ranges_to_remove.append(merged_range)
+    for mr in merged_ranges_to_remove:
+        ws.unmerge_cells(str(mr))
+
     ws.cell(actual_total_row, 1).value = "Total Amount:"
     ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
     ws.cell(actual_total_row, 8).number_format = '#,##0'
@@ -536,10 +555,9 @@ def generate_koquote(offer_ids, output_base=None, template_dir=None):
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
     if not output_base:
-        output_base = os.environ.get('UNIULTRA_OUTPUT_DIR')
-    if not output_base:
-        output_base = os.path.join(project_root, "Trans")
+        output_base = _get_output_base()
 
     if not template_dir:
         template_dir = os.path.join(project_root, "templates", "koquote")
