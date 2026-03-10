@@ -194,6 +194,11 @@ def generate_ci_excel(orders, template_dir, output_path):
     for idx, order in enumerate(orders):
         row = data_start_row + idx
 
+        # 先取消该行可能存在的合并单元格（关键：必须在获取cell之前取消）
+        for merged_range in list(ws.merged_cells.ranges):
+            if merged_range.min_row == row:
+                ws.unmerge_cells(str(merged_range))
+
         ws.cell(row=row, column=1).value = idx + 1
         ws.cell(row=row, column=2).value = "集成电路/IC"
         ws.cell(row=row, column=3).value = order.get("inquiry_mpn", "") or ""

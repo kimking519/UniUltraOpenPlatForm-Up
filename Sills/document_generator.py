@@ -431,25 +431,41 @@ def _generate_pi_excel(orders, template_dir, output_path):
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # 填写头部信息
-    _safe_write_cell(ws, 8, 4, now.strftime("UNI%Y%m%d%H"))
-    _safe_write_cell(ws, 9, 4, now.strftime("%Y-%m-%d"))
+    # ---- 1. 填写头部信息 ----
+    ws.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
+    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
-    _safe_write_cell(ws, 12, 3, cli_name_en)
-    _safe_write_cell(ws, 13, 3, first_order.get("contact_name", "") or "")
-    _safe_write_cell(ws, 14, 3, first_order.get("email", "") or "")
-    _safe_write_cell(ws, 15, 3, first_order.get("phone", "") or "")
-    _safe_write_cell(ws, 16, 3, first_order.get("address", "") or "")
+    ws.cell(12, 3).value = cli_name_en
+    ws.cell(13, 3).value = first_order.get("contact_name", "") or ""
+    ws.cell(14, 3).value = first_order.get("email", "") or ""
+    ws.cell(15, 3).value = first_order.get("phone", "") or ""
+    ws.cell(16, 3).value = first_order.get("address", "") or ""
 
-    # 数据行处理
+    # ---- 2. 处理数据行 ----
     header_row = 18
     first_data_row = 19
     template_data_rows = 2
     total_template_row = 21
     footer_start_row = 22
 
-    # 保存 footer 数据
+    # ============================================================
+    # 关键修复：在插入行之前保存固定内容区域的所有信息
+    # ============================================================
+
+    # 保存固定内容区域的合并单元格
+    footer_merged_ranges = []
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row >= footer_start_row:
+            footer_merged_ranges.append({
+                "range_str": str(merged_range),
+                "min_row": merged_range.min_row,
+                "min_col": merged_range.min_col,
+                "max_row": merged_range.max_row,
+                "max_col": merged_range.max_col,
+            })
+
+    # 保存固定内容区域的所有单元格值和样式
     footer_cells_data = {}
     for row in range(footer_start_row, ws.max_row + 1):
         for col in range(1, ws.max_column + 1):
@@ -482,7 +498,19 @@ def _generate_pi_excel(orders, template_dir, output_path):
     actual_total_row = first_data_row + data_count
     actual_footer_start_row = actual_total_row + 1
 
-    # 恢复 footer 数据
+    # ============================================================
+    # 关键修复：恢复固定内容区域的数据
+    # ============================================================
+
+    # 先取消所有可能存在的合并单元格
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row >= actual_footer_start_row:
+            try:
+                ws.unmerge_cells(str(merged_range))
+            except:
+                pass
+
+    # 恢复单元格值和样式（按新的行号偏移）
     for (orig_row, col), cell_data in footer_cells_data.items():
         new_row = orig_row + rows_diff
         if new_row >= actual_footer_start_row:
@@ -504,36 +532,75 @@ def _generate_pi_excel(orders, template_dir, output_path):
         new_row = orig_row + rows_diff
         ws.row_dimensions[new_row].height = height
 
+    # 恢复合并单元格
+    for merged_info in footer_merged_ranges:
+        new_min_row = merged_info["min_row"] + rows_diff
+        new_max_row = merged_info["max_row"] + rows_diff
+        if new_min_row <= actual_total_row - 1 and new_max_row >= first_data_row:
+            continue
+        try:
+            ws.merge_cells(
+                start_row=new_min_row,
+                start_column=merged_info["min_col"],
+                end_row=new_max_row,
+                end_column=merged_info["max_col"]
+            )
+        except:
+            pass
+
+    # 取消数据行的合并单元格（关键：在写入数据前）
+    merged_to_remove = []
+    for merged_range in list(ws.merged_cells.ranges):
+        min_row = merged_range.min_row
+        if first_data_row <= min_row <= actual_total_row - 1:
+            merged_to_remove.append(merged_range)
+    for merged_range in merged_to_remove:
+        try:
+            ws.unmerge_cells(str(merged_range))
+        except:
+            pass
+
     # 写入数据
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
-        _safe_write_cell(ws, row, 1, idx + 1)
-        _safe_write_cell(ws, row, 2, order.get("inquiry_mpn", "") or "")
-        _safe_write_cell(ws, row, 3, order.get("inquiry_brand", "") or "")
-        _safe_write_cell(ws, row, 4, order.get("date_code", "") or "")
+        ws.cell(row, 1).value = idx + 1
+        ws.cell(row, 2).value = order.get("inquiry_mpn", "") or ""
+        ws.cell(row, 3).value = order.get("inquiry_brand", "") or ""
+        ws.cell(row, 4).value = order.get("date_code", "") or ""
 
         qty = order.get("quoted_qty") or order.get("inquiry_qty") or ""
-        _safe_write_cell(ws, row, 5, qty)
+        ws.cell(row, 5).value = qty
         if qty:
             ws.cell(row, 5).number_format = '#,##0'
 
-        _safe_write_cell(ws, row, 6, order.get("delivery_date", "") or "")
+        ws.cell(row, 6).value = order.get("delivery_date", "") or ""
 
         price_kwr = order.get("calculated_price_kwr", "") or ""
-        _safe_write_cell(ws, row, 7, price_kwr)
+        ws.cell(row, 7).value = price_kwr
         if price_kwr:
             ws.cell(row, 7).number_format = '#,##0'
 
         if qty and price_kwr:
-            _safe_write_cell(ws, row, 8, f"=G{row}*E{row}")
+            ws.cell(row, 8).value = f"=G{row}*E{row}"
             ws.cell(row, 8).number_format = '#,##0'
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
 
-    _safe_write_cell(ws, actual_total_row, 1, "Total Amount:")
-    _safe_write_cell(ws, actual_total_row, 8, f"=SUM(H{first_data_row}:H{last_data_row})")
+    # 取消 TOTAL 行的合并单元格
+    merged_to_unmerge = []
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row == actual_total_row:
+            merged_to_unmerge.append(merged_range)
+    for merged_range in merged_to_unmerge:
+        try:
+            ws.unmerge_cells(str(merged_range))
+        except:
+            pass
+
+    ws.cell(actual_total_row, 1).value = "Total Amount:"
+    ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
     ws.cell(actual_total_row, 8).number_format = '#,##0'
 
     try:
@@ -611,7 +678,7 @@ def generate_koquote(offer_ids, output_base=None, template_dir=None):
 
 
 def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw):
-    """生成韩文报价单 Excel 文件"""
+    """生成韩文报价单 Excel 文件 - 参照成功脚本 make_koquote_20260301194403.py"""
     data_count = len(offers)
     first_offer = offers[0]
     now = datetime.now()
@@ -630,73 +697,68 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
     wb = openpyxl.load_workbook(template_path)
     ws = wb.active
 
-    # 填写头部信息 (根据SKILL.md的模板结构)
-    # C5 = 客户公司全名
+    # ---- 1. 填写头部信息 ----
+    # B5固定填写"수신:"，C5动态填入客户公司全名
     cli_full_name = first_offer.get("cli_full_name", "") or first_offer.get("cli_name", "")
-    _safe_write_cell(ws, 5, 3, cli_full_name)  # C5
+    ws.cell(5, 2).value = "수신:"
+    ws.cell(5, 3).value = cli_full_name
 
-    # 编号和日期
     quote_no = now.strftime("%Y%m%d%H%M")
-    _safe_write_cell(ws, 6, 4, f"제 {quote_no}호")  # D6
-    _safe_write_cell(ws, 7, 4, f"{now.year}년 {now.month}월 {now.day}일")  # D7
+    ws.cell(7, 2).value = f"견적번호 : 제 {quote_no}호"
+    ws.cell(9, 2).value = f"작성일자 :{now.year}년  {now.month:02d}월 {now.day:02d}일"
 
-    # 数据行处理 (假设数据从第15行开始，根据模板调整)
-    first_data_row = 15
-    template_data_rows = 1
+    # ---- 2. 数据行处理 ----
+    # 模板固定行号 (参照成功脚本)
+    first_data_row = 17
+    template_data_rows = 3  # 模板中有3行数据
+    TEMPLATE_TOTAL_ROW = 20
+    FOOTER_ROWS = 3  # 合计行 + 报价信息行 + 特别事项行
 
-    # 调整行数
-    rows_diff = data_count - template_data_rows
-    if rows_diff > 0:
-        ws.insert_rows(first_data_row + template_data_rows, rows_diff)
+    # 计算需要的行数
+    last_data_row = first_data_row + data_count - 1
+    total_row = last_data_row + 1
+    info_row = last_data_row + 2
+    note_row = last_data_row + 3
 
-    # 写入数据
+    # 删除模板中多余的行
+    default_template_rows = 20
+    if data_count < template_data_rows:
+        ws.delete_rows(last_data_row + 1, template_data_rows - data_count)
+
+    # ---- 3. 写入数据 ----
     total_qty = 0
     total_amount = 0
 
     for idx, offer in enumerate(offers):
         row = first_data_row + idx
 
-        # No.
-        _safe_write_cell(ws, row, 1, idx + 1)
+        # 列结构: B=No., C=모델명, D=제공가능한 부품, E=메이커, F=생산일자, G=수량, I=단가, J=납기, L=비고
+        ws.cell(row, 2).value = str(idx + 1)                       # B列: No.
+        ws.cell(row, 3).value = offer.get("inquiry_mpn", "")       # C列: 모델명
+        ws.cell(row, 4).value = offer.get("quoted_mpn", "")        # D列: 제공가능한 부품
+        ws.cell(row, 5).value = offer.get("inquiry_brand", "")     # E列: 메이커
+        ws.cell(row, 6).value = offer.get("date_code", "")         # F列: 생산일자
 
-        # 모델명 (型号)
-        _safe_write_cell(ws, row, 2, offer.get("inquiry_mpn", "") or "")
-
-        # 제공가능한 부품 (报价型号)
-        _safe_write_cell(ws, row, 3, offer.get("quoted_mpn", "") or offer.get("inquiry_mpn", "") or "")
-
-        # 메이커 (品牌)
-        _safe_write_cell(ws, row, 4, offer.get("inquiry_brand", "") or "")
-
-        # 생산일자 (批次号)
-        _safe_write_cell(ws, row, 5, offer.get("date_code", "") or "")
-
-        # 수량(EA) (数量)
         qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or 0
         try:
             qty = int(qty)
         except:
             qty = 0
-        _safe_write_cell(ws, row, 6, qty)
-        ws.cell(row=row, column=6).number_format = '#,##0'
+        ws.cell(row, 7).value = qty                                # G列: 수량
         total_qty += qty
 
-        # 단가(KRW) (单价)
+        # 单价: 优先使用 offer_price_rmb * 汇率
         price_kwr = offer.get("offer_price_rmb")
         if price_kwr and float(price_kwr or 0) > 0:
             price_kwr = round(float(price_kwr) * exchange_rate_krw, 1)
         else:
             price_kwr = 0
-        _safe_write_cell(ws, row, 7, price_kwr)
-        ws.cell(row=row, column=7).number_format = '#,##0'
+        ws.cell(row, 9).value = price_kwr                          # I列: 단가
 
-        # 납기 (交期)
-        _safe_write_cell(ws, row, 8, offer.get("delivery_date", "") or "")
+        ws.cell(row, 10).value = offer.get("delivery_date", "")    # J列: 납기
+        ws.cell(row, 12).value = offer.get("remark", "")           # L列: 비고
 
-        # 비고 (备注)
-        _safe_write_cell(ws, row, 9, offer.get("remark", "") or "")
-
-        total_amount += price_kwr * qty
+        total_amount += float(price_kwr or 0) * qty
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb.save(output_path)
