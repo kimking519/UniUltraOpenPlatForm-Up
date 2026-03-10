@@ -108,6 +108,9 @@ class DbContext:
             self.conn.commit()
         else:
             self.conn.rollback()
+        # 从追踪集合中移除并关闭连接
+        with _connection_lock:
+            _active_connections.discard(self.conn)
         self.conn.close()
 
 

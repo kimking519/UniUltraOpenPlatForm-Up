@@ -341,7 +341,7 @@
                 </div>
                 <div style="flex: 1;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价品牌</label>
-                    <input type="text" name="quoted_brand"
+                    <input type="text" name="quoted_brand" id="formQuotedBrand"
                         style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 </div>
             </div>
@@ -482,6 +482,7 @@
                     document.getElementById('formInquiryMpn').value = q.inquiry_mpn || '';
                     document.getElementById('formQuotedMpn').value = q.quoted_mpn || '';
                     document.getElementById('formInquiryBrand').value = q.inquiry_brand || '';
+                    document.getElementById('formQuotedBrand').value = q.inquiry_brand || '';  // 报价品牌默认等于需求品牌
                     document.getElementById('formInquiryQty').value = q.inquiry_qty || 0;
                     document.getElementById('formActualQty').value = q.inquiry_qty || 0;
                     document.getElementById('formQuotedQty').value = q.inquiry_qty || 0;
