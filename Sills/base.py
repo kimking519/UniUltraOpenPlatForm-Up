@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import platform
 from functools import lru_cache
 from datetime import datetime
 import threading
@@ -19,9 +20,41 @@ _connection_lock = threading.Lock()
 POOL_SIZE = 10
 POOL_TIMEOUT = 5.0
 
-# SQLite PRAGMA 优化配置
-PRAGMA_OPTIMIZATIONS = """
-PRAGMA journal_mode = WAL;
+
+def _is_wsl_windows_path(db_path):
+    """
+    检测是否在 WSL 中访问 Windows 文件系统
+    WSL 通过 9P 协议访问 Windows 盘，不完全支持 SQLite WAL 的文件锁定
+    """
+    # 检查是否在 WSL 环境中
+    if platform.system() == 'Linux':
+        try:
+            # 检查 /proc/version 是否包含 microsoft 或 wsl
+            with open('/proc/version', 'r') as f:
+                version_info = f.read().lower()
+                if 'microsoft' in version_info or 'wsl' in version_info:
+                    # WSL 环境，检查路径是否是 Windows 挂载点
+                    abs_path = os.path.abspath(db_path)
+                    if abs_path.startswith('/mnt/'):
+                        return True
+        except (FileNotFoundError, PermissionError):
+            pass
+    return False
+
+
+def _get_journal_mode():
+    """根据运行环境选择合适的 journal 模式"""
+    if _is_wsl_windows_path(DB_PATH):
+        print("[DB] 检测到 WSL 访问 Windows 文件系统，使用 DELETE 模式以避免 I/O 错误")
+        return "DELETE"
+    return "WAL"
+
+
+# 动态生成 PRAGMA 配置
+JOURNAL_MODE = _get_journal_mode()
+
+PRAGMA_OPTIMIZATIONS = f"""
+PRAGMA journal_mode = {JOURNAL_MODE};
 PRAGMA synchronous = NORMAL;
 PRAGMA cache_size = -64000;
 PRAGMA temp_store = MEMORY;
