@@ -239,6 +239,14 @@ def generate_ci_excel(orders, template_dir, output_path):
         if ws_footer.row_dimensions[src_row].height:
             ws.row_dimensions[dst_row].height = ws_footer.row_dimensions[src_row].height
 
+    # 复制 footer 中的合并单元格
+    for merged_range in ws_footer.merged_cells.ranges:
+        new_range = f"{openpyxl.utils.get_column_letter(merged_range.min_col)}{footer_start_row + merged_range.min_row - 1}:{openpyxl.utils.get_column_letter(merged_range.max_col)}{footer_start_row + merged_range.max_row - 1}"
+        try:
+            ws.merge_cells(new_range)
+        except:
+            pass
+
     ws.cell(row=footer_start_row, column=5).value = total_qty
     ws.cell(row=footer_start_row, column=5).number_format = '#,##0'
 
