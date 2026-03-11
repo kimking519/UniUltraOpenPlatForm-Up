@@ -392,9 +392,14 @@
                             <div style="font-weight: 500; color: var(--text-main);">${backup.name}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted);">${backup.mtime} · ${backup.size}</div>
                         </div>
-                        <button class="btn btn-primary btn-sm" onclick="restoreBackup(this)" data-path="${backup.path.replace(/\\\\/g, '\\\\\\\\')}" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
-                            恢复
-                        </button>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-primary btn-sm" onclick="restoreBackup(this)" data-path="${backup.path.replace(/\\\\/g, '\\\\\\\\')}" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                                恢复
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteBackup(this)" data-path="${backup.path.replace(/\\\\/g, '\\\\\\\\')}" data-name="${backup.name}" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: #EF4444; color: white; border: none;">
+                                删除
+                            </button>
+                        </div>
                     </div>
                 `).join('');
                 container.style.display = 'block';
@@ -443,6 +448,46 @@
             if (result.success) {
                 statusDiv.className = 'success';
                 statusDiv.innerText = result.message + ' (建议刷新页面以加载最新数据)';
+            } else {
+                statusDiv.className = 'error';
+                statusDiv.innerText = result.message;
+            }
+            statusDiv.style.display = 'flex';
+        } catch (error) {
+            statusDiv.className = 'error';
+            statusDiv.innerText = '请求失败，请稍后重试。';
+            statusDiv.style.display = 'flex';
+        }
+    }
+
+    // 删除备份
+    async function deleteBackup(btn) {
+        const backupPath = btn.getAttribute('data-path');
+        const backupName = btn.getAttribute('data-name');
+        const statusDiv = document.getElementById('restore-status');
+
+        if (!confirm(`确定要删除备份 "${backupName}" 吗？此操作不可恢复。`)) {
+            return;
+        }
+
+        statusDiv.className = '';
+        statusDiv.style.display = 'none';
+
+        try {
+            const formData = new FormData();
+            formData.append('backup_path', backupPath);
+
+            const response = await fetch('/api/backup/delete', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                statusDiv.className = 'success';
+                statusDiv.innerText = result.message;
+                // 刷新备份列表
+                document.getElementById('btn-load-backups').click();
             } else {
                 statusDiv.className = 'error';
                 statusDiv.innerText = result.message;

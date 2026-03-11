@@ -218,7 +218,7 @@
                             row.quoted_qty }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
                             "%.2f"|format(row.cost_price_rmb or 0) }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'offer_price_rmb', 'number')"><span>{{
+                    <td ondblclick="makeEditableRmb(this, '{{ row.offer_id }}', 'offer_price_rmb', {{ row.offer_price_rmb or 0 }})"><span>{{
                             "%.2f"|format(row.offer_price_rmb or 0) }}</span></td>
                     <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_kwr', 'KWR', {{ row.price_kwr or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ row.price_kwr }}</span></td>
@@ -511,6 +511,83 @@
         modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
     }
 
+    // 编辑RMB价格字段，完成后自动计算 USD（USD = RMB / USD汇率）
+    async function makeEditableRmb(td, offer_id, field, currentValue) {
+        if (td.querySelector('input')) return;
+
+        // 获取最新USD汇率
+        let usdExchangeRate = 7.0;
+        try {
+            const res = await fetch('/api/exchange/rates');
+            const rateData = await res.json();
+            if (rateData.success) {
+                usdExchangeRate = rateData.usd;
+            }
+        } catch (e) {
+            console.error('Failed to get exchange rate:', e);
+        }
+
+        const originalValue = currentValue;
+        td.innerHTML = `<input type="number" step="0.01" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+        const input = td.querySelector('input');
+        input.focus();
+
+        const saveRmb = async (newValue) => {
+            if (newValue === originalValue) {
+                td.innerHTML = `<span>${originalValue}</span>`;
+                return;
+            }
+
+            // 保存 RMB
+            const formData = new FormData();
+            formData.append('offer_id', offer_id);
+            formData.append('field', field);
+            formData.append('value', newValue);
+
+            try {
+                const res = await fetch('/api/offer/update', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    td.innerHTML = `<span>${newValue}</span>`;
+
+                    // 自动计算并更新 USD = RMB / USD汇率
+                    const newUsd = parseFloat(newValue) / usdExchangeRate;
+                    const usdFormData = new FormData();
+                    usdFormData.append('offer_id', offer_id);
+                    usdFormData.append('field', 'price_usd');
+                    usdFormData.append('value', newUsd.toFixed(4));
+
+                    await fetch('/api/offer/update', {
+                        method: 'POST',
+                        body: usdFormData
+                    });
+
+                    // 刷新页面显示最新数据
+                    setTimeout(() => window.location.reload(), 500);
+                } else {
+                    alert('更新失败：' + data.message);
+                    td.innerHTML = `<span>${originalValue}</span>`;
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                alert('请求失败，请稍后重试');
+                td.innerHTML = `<span>${originalValue}</span>`;
+            }
+        };
+
+        input.onblur = () => saveRmb(input.value);
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') input.blur();
+            if (e.key === 'Escape') {
+                td.innerHTML = `<span>${originalValue}</span>`;
+            }
+        };
+    }
+
     function makeEditable(td, offer_id, field, inputType = 'text') {
         if (td.querySelector('input')) return;
         const isSpan = td.querySelector('span') !== null;
@@ -567,31 +644,7 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    // 计算新的 RMB 价格
-                    // KWR: 1 RMB = 180 KRW → RMB = KWR / 180
-                    // USD: 1 USD = 7 RMB → RMB = USD * 7
-                    const newPrice = parseFloat(newValue);
-                    let newRmb = 0;
-                    if (currency === 'KWR') {
-                        // KRW 汇率 > 10，表示 1 RMB = ? KRW
-                        newRmb = newPrice / exchangeRate;
-                    } else {
-                        // USD 汇率 < 10，表示 1 USD = ? RMB
-                        newRmb = newPrice * exchangeRate;
-                    }
-                    newRmb = Math.round(newRmb * 100) / 100;
-
-                    // 更新 RMB 价格
-                    const rmbFormData = new FormData();
-                    rmbFormData.append('offer_id', offer_id);
-                    rmbFormData.append('field', 'offer_price_rmb');
-                    rmbFormData.append('value', newRmb.toFixed(2));
-
-                    await fetch('/api/offer/update', {
-                        method: 'POST',
-                        body: rmbFormData
-                    });
-
+                    // USD/KWR 修改时不自动更新 RMB（按用户需求）
                     td.innerHTML = `<span style="color:var(--primary);">${newValue}</span>`;
 
                     // 刷新页面显示最新数据

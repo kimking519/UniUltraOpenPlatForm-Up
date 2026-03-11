@@ -356,3 +356,15 @@ def delete_order(order_id):
         if "FOREIGN KEY constraint failed" in str(e):
             return False, "删除失败：记录已被 [采购记录]引用，无法直接删除。"
         return False, str(e)
+
+def get_order_by_id(order_id):
+    """根据order_id获取订单信息"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute("SELECT * FROM uni_order WHERE order_id = ?", (order_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+    except Exception as e:
+        return None

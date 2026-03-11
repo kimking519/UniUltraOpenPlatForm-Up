@@ -562,7 +562,25 @@
                 document.getElementById('price_rmb_' + orderId).innerText = parseFloat(newVal).toFixed(2);
                 document.getElementById('price_kwr_' + orderId).innerText = res.price_kwr;
                 document.getElementById('price_usd_' + orderId).innerText = res.price_usd;
-            } else {
+            }
+
+            // 如果返回了利润，更新利润显示
+            if (res.profit !== undefined) {
+                // 找到利润单元格并更新
+                const row = document.querySelector(`tr:has(td[id="price_rmb_${orderId}"])`) ||
+                           document.querySelector(`tr:has(td[onclick*="'${orderId}'"][onclick*="'price_rmb'"])`);
+                if (row) {
+                    const profitCell = row.querySelector('td span[style*="green"]');
+                    if (profitCell) {
+                        profitCell.innerText = res.profit;
+                    }
+                }
+            }
+
+            // 对于非price_rmb修改且有利润更新的情况，不需要刷新页面
+            if (field === 'price_rmb' || (field === 'cost_price_rmb' && res.profit !== undefined)) {
+                // 已经更新了显示，不需要刷新
+            } else if (field !== 'price_rmb') {
                 window.location.reload();
             }
         } else {

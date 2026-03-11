@@ -12,7 +12,7 @@ from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor,
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
 from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, delete_quote, update_quote, batch_delete_quote, batch_copy_quote, batch_add_quotes
 from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
-from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer
+from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer, get_order_by_id
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
 
 from typing import Optional
@@ -458,13 +458,30 @@ async def order_update_api(order_id: str = Form(...), field: str = Form(...), va
                     'price_kwr': price_kwr,
                     'price_usd': price_usd
                 })
-                return {"success": success, "message": msg, "price_kwr": price_kwr, "price_usd": price_usd}
+
+                # 获取成本价计算利润
+                order_info = get_order_by_id(order_id)
+                cost_price = float(order_info.get('cost_price_rmb') or 0) if order_info else 0
+                profit = round(val - cost_price, 3)
+
+                return {"success": success, "message": msg, "price_kwr": price_kwr, "price_usd": price_usd, "profit": profit}
+
+            # 当修改cost_price_rmb时，计算利润
+            if field == 'cost_price_rmb':
+                success, msg = update_order(order_id, {field: val})
+
+                # 获取销售价计算利润
+                order_info = get_order_by_id(order_id)
+                price_rmb = float(order_info.get('price_rmb') or 0) if order_info else 0
+                profit = round(price_rmb - val, 3)
+
+                return {"success": success, "message": msg, "profit": profit}
 
             success, msg = update_order(order_id, {field: val})
             return {"success": success, "message": msg}
         except:
             return {"success": False, "message": "必须是数字"}
-            
+
     success, msg = update_order(order_id, {field: value})
     return {"success": success, "message": msg}
 
@@ -1689,6 +1706,32 @@ async def api_backup_restore(backup_path: str = Form(...), current_user: dict = 
         return {"success": True, "message": f"恢复成功！已恢复 {restored_count} 个数据库文件（请刷新页面）"}
     except Exception as e:
         return {"success": False, "message": f"恢复失败: {str(e)}"}
+
+
+@app.post("/api/backup/delete")
+async def api_backup_delete(backup_path: str = Form(...), current_user: dict = Depends(login_required)):
+    """删除备份目录"""
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可执行删除"}
+
+    try:
+        # 安全检查：确保路径在备份目录内
+        backup_root = get_backup_root()
+        if not os.path.exists(backup_path):
+            return {"success": False, "message": "备份目录不存在"}
+
+        # 确保是备份目录
+        if not backup_path.startswith(backup_root):
+            return {"success": False, "message": "非法路径"}
+
+        if not os.path.basename(backup_path).startswith("backup_"):
+            return {"success": False, "message": "不是有效的备份目录"}
+
+        # 删除目录
+        shutil.rmtree(backup_path)
+        return {"success": True, "message": f"已删除备份: {os.path.basename(backup_path)}"}
+    except Exception as e:
+        return {"success": False, "message": f"删除失败: {str(e)}"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
