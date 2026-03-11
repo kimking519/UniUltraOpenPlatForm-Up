@@ -653,6 +653,203 @@ def _generate_pi_excel(orders, template_dir, output_path):
 
 
 # ============================================================
+# PI-US 生成 (USD 价格)
+# ============================================================
+
+def generate_pi_us(order_ids, output_base=None, template_dir=None):
+    """
+    生成 Proforma Invoice (USD版本)
+
+    Args:
+        order_ids: 订单ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if openpyxl is None:
+        return False, "缺少依赖: 请安装 openpyxl -> pip install openpyxl"
+
+    if not order_ids:
+        return False, "未提供订单编号"
+
+    orders = get_orders_for_document(order_ids)
+    if not orders:
+        return False, f"订单编号 {order_ids} 不存在"
+
+    cli_names = set(o.get("cli_name") or "未知客户" for o in orders)
+    if len(cli_names) > 1:
+        return False, f"订单属于不同客户 ({', '.join(cli_names)})，无法生成同一份PI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    if not output_base:
+        output_base = _get_output_base()
+
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "pi")
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+    invoice_no = now.strftime("UNI%Y%m%d%H%M%S")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    output_filename = f"Proforma Invoice_{cli_name}_{invoice_no}_US.xlsx"
+    output_path = os.path.join(output_dir, output_filename)
+
+    # 获取汇率 (USD汇率用于计算)
+    _, usd_val = get_exchange_rates()
+
+    # 计算USD价格
+    for order in orders:
+        price_usd = order.get("price_usd")
+        if not price_usd or float(price_usd or 0) == 0:
+            price_rmb = order.get("price_rmb")
+            if price_rmb and float(price_rmb or 0) > 0:
+                # USD汇率小于10时，用除法
+                if usd_val > 10:
+                    price_usd = round(float(price_rmb) * usd_val, 3)
+                else:
+                    price_usd = round(float(price_rmb) / usd_val, 3) if usd_val else 0
+            else:
+                price_usd = 0
+        else:
+            price_usd = float(price_usd)
+        order["calculated_price_usd"] = price_usd
+
+    return _generate_pi_us_excel(orders, template_dir, output_path)
+
+
+def _generate_pi_us_excel(orders, template_dir, output_path):
+    """生成PI-US Excel文件"""
+    data_count = len(orders)
+    first_order = orders[0]
+    now = datetime.now()
+
+    # 查找US模板文件
+    template_path = None
+    if os.path.isdir(template_dir):
+        # 优先使用US专用模板
+        preferred_template = "Proforma_Invoice_TAEJU_UNI2025110502_US.xlsx"
+        preferred_path = os.path.join(template_dir, preferred_template)
+        if os.path.exists(preferred_path):
+            template_path = preferred_path
+        else:
+            for f in os.listdir(template_dir):
+                if f.endswith(".xlsx") and not f.startswith("~") and "_US" in f:
+                    template_path = os.path.join(template_dir, f)
+                    break
+
+    if not template_path or not os.path.exists(template_path):
+        return False, f"US模板文件不存在于 {template_dir}"
+
+    wb = openpyxl.load_workbook(template_path)
+    ws = wb.active
+
+    # ---- 1. 填写头部信息 ----
+    # 根据US模板结构: D8=Invoice No, D9=Date
+    ws.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
+    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
+
+    cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
+    ws.cell(12, 3).value = cli_name_en
+    ws.cell(13, 3).value = first_order.get("contact_name", "") or ""
+    ws.cell(14, 3).value = first_order.get("email", "") or ""
+    ws.cell(15, 3).value = first_order.get("phone", "") or ""
+    ws.cell(16, 3).value = first_order.get("address", "") or ""
+
+    # ---- 2. 处理数据行 ----
+    # US模板结构: Row 18=表头, Row 19=数据行, Row 20=Total (A20:G20 merged), Row 21=空, Row 22=TERMS
+    header_row = 18
+    first_data_row = 19
+    template_data_rows = 1  # US模板只有1行示例数据
+
+    # 调整行数
+    rows_diff = data_count - template_data_rows
+    if rows_diff > 0:
+        # 在 Row 20 插入新行（Total 行会自动下移）
+        ws.insert_rows(20, rows_diff)
+        for i in range(rows_diff):
+            new_row = 20 + i
+            ws.row_dimensions[new_row].height = 20.0
+
+    actual_total_row = first_data_row + data_count
+
+    # 取消数据行的合并单元格（关键：在写入数据前）
+    merged_to_remove = []
+    for merged_range in list(ws.merged_cells.ranges):
+        min_row = merged_range.min_row
+        if first_data_row <= min_row <= actual_total_row - 1:
+            merged_to_remove.append(merged_range)
+    for merged_range in merged_to_remove:
+        try:
+            ws.unmerge_cells(str(merged_range))
+        except:
+            pass
+
+    # 写入数据 (US模板列结构: A=#, B=Part No., C=Manufacturer, D=D/C, E=Qty, F=L/T, G=Unit Price USD, H=Total USD)
+    for idx, order in enumerate(orders):
+        row = first_data_row + idx
+
+        ws.cell(row, 1).value = idx + 1
+        ws.cell(row, 2).value = order.get("inquiry_mpn", "") or ""
+        ws.cell(row, 3).value = order.get("inquiry_brand", "") or ""
+        ws.cell(row, 4).value = order.get("date_code", "") or ""
+
+        qty = order.get("quoted_qty") or order.get("inquiry_qty") or ""
+        ws.cell(row, 5).value = qty
+        if qty:
+            ws.cell(row, 5).number_format = '#,##0'
+
+        ws.cell(row, 6).value = order.get("delivery_date", "") or ""
+
+        # USD价格
+        price_usd = order.get("calculated_price_usd", "") or ""
+        ws.cell(row, 7).value = price_usd
+        if price_usd:
+            ws.cell(row, 7).number_format = '#,##0.000'
+
+        if qty and price_usd:
+            ws.cell(row, 8).value = f"=G{row}*E{row}"
+            ws.cell(row, 8).number_format = '#,##0.000'
+
+    # 更新 TOTAL 行
+    last_data_row = actual_total_row - 1
+
+    # 取消 TOTAL 行的合并单元格
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row == actual_total_row:
+            try:
+                ws.unmerge_cells(str(merged_range))
+            except:
+                pass
+
+    ws.cell(actual_total_row, 1).value = "Total Amount:"
+    ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws.cell(actual_total_row, 8).number_format = '#,##0.000'
+
+    try:
+        ws.merge_cells(f"A{actual_total_row}:G{actual_total_row}")
+    except:
+        pass
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    wb.save(output_path)
+
+    return True, {
+        "excel_path": output_path,
+        "invoice_no": now.strftime("UNI%Y%m%d%H"),
+        "cli_name": first_order.get("cli_name", ""),
+        "count": data_count
+    }
+
+
+# ============================================================
 # 韩文报价单生成 (견적서)
 # ============================================================
 

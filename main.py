@@ -1609,6 +1609,33 @@ async def api_order_generate_pi(request: Request, current_user: dict = Depends(l
         return {"success": False, "message": f"生成异常: {str(e)}"}
 
 
+@app.post("/api/order/generate_pi_us")
+async def api_order_generate_pi_us(request: Request, current_user: dict = Depends(login_required)):
+    """生成PI-US文件（美元版）"""
+    from Sills.document_generator import generate_pi_us
+
+    data = await request.json()
+    order_ids = data.get("order_ids", [])
+    if not order_ids:
+        return {"success": False, "message": "未选择任何订单"}
+
+    try:
+        success, result = generate_pi_us(order_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
 @app.post("/api/order/generate_ci_kr")
 async def api_order_generate_ci_kr(request: Request, current_user: dict = Depends(login_required)):
     """生成CI-KR文件"""

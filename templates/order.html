@@ -225,7 +225,11 @@
             </button>
             <button class="dropdown-item" onclick="batchGeneratePI()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                生成PI
+                生成PI-KR
+            </button>
+            <button class="dropdown-item" onclick="batchGeneratePIUS()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                生成PI-US
             </button>
             <button class="dropdown-item" onclick="batchGenerateCIKR()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -844,6 +848,30 @@
             const res = await resp.json();
             if (res.success) {
                 alert(`PI生成成功！\n客户: ${res.cli_name}\n订单数: ${res.count}\nInvoice No.: ${res.invoice_no}\nExcel: ${res.excel_path}\nPDF: ${res.pdf_path}`);
+            } else {
+                alert('生成失败: ' + res.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败：' + error.message);
+        }
+    }
+
+    // 批量生成PI-US
+    async function batchGeneratePIUS() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) return alert('请选择要生成PI的订单');
+        if (!confirm(`确定将选中的 ${ids.length} 个订单生成PI-US(美元版)吗？`)) return;
+
+        try {
+            const resp = await fetch('/api/order/generate_pi_us', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order_ids: ids })
+            });
+            const res = await resp.json();
+            if (res.success) {
+                alert(`PI-US生成成功！\n客户: ${res.cli_name}\n订单数: ${res.count}\nInvoice No.: ${res.invoice_no}\nExcel: ${res.excel_path}`);
             } else {
                 alert('生成失败: ' + res.message);
             }
