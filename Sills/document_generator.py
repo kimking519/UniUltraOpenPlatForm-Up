@@ -780,10 +780,32 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
         rows_to_delete = template_data_rows - data_count
         ws1.delete_rows(first_data_row + data_count, rows_to_delete)
 
-    # 如果需要更多行，插入新行
+    # 如果需要更多行，插入新行并复制样式
     elif data_count > template_data_rows:
         rows_to_insert = data_count - template_data_rows
-        ws1.insert_rows(first_data_row + template_data_rows, rows_to_insert)
+        insert_at = first_data_row + template_data_rows
+
+        # 使用最后一行作为样式模板
+        style_template_row = first_data_row + template_data_rows - 1  # Row 15
+
+        # 插入空白行
+        ws1.insert_rows(insert_at, rows_to_insert)
+
+        # 复制样式到新插入的行
+        for i in range(rows_to_insert):
+            new_row = insert_at + i
+            for col in range(2, 10):  # B-I列
+                src_cell = ws1.cell(row=style_template_row, column=col)
+                dest_cell = ws1.cell(row=new_row, column=col)
+
+                # 复制样式
+                if src_cell.has_style:
+                    dest_cell.font = copy(src_cell.font)
+                    dest_cell.border = copy(src_cell.border)
+                    dest_cell.fill = copy(src_cell.fill)
+                    dest_cell.number_format = src_cell.number_format
+                    dest_cell.protection = copy(src_cell.protection)
+                    dest_cell.alignment = copy(src_cell.alignment)
 
     # ---- 5. 写入数据 ----
     total_qty = 0
