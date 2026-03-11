@@ -58,6 +58,27 @@ def get_backup_root():
     is_windows = platform.system() == "Windows"
     return r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else "/home/kim/workspace/DbBackup"
 
+def get_server_env():
+    """检测服务器环境（包括WSL）"""
+    system = platform.system()
+
+    if system == "Linux":
+        # 检测是否是WSL
+        try:
+            with open("/proc/version", "r") as f:
+                version = f.read().lower()
+                if "microsoft" in version or "wsl" in version:
+                    return "WSL"
+        except:
+            pass
+        return "Linux"
+    elif system == "Windows":
+        return "Windows"
+    elif system == "Darwin":
+        return "macOS"
+    else:
+        return system
+
 def do_backup():
     """执行备份操作（内部函数，无权限检查）"""
     backup_root = get_backup_root()
@@ -849,6 +870,11 @@ async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
     from Sills.base import get_exchange_rates
     krw, usd = get_exchange_rates()
     return {"success": True, "krw": krw, "usd": usd}
+
+@app.get("/api/server/env")
+async def get_server_env_api():
+    """获取服务器环境信息"""
+    return {"success": True, "env": get_server_env()}
 
 @app.post("/api/offer/update")
 async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
