@@ -82,7 +82,7 @@ def do_backup():
     static_src = os.path.join(project_root, "static")
     if os.path.exists(static_src):
         static_dst = os.path.join(backup_dir, "static")
-        shutil.copytree(static_src, static_dst)
+        shutil.copytree(static_src, static_dst, dirs_exist_ok=True)
 
     return len(db_files), backup_dir
 
