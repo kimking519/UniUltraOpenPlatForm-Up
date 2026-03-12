@@ -66,11 +66,10 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
                 except:
                     r['price_kwr'] = 0.0
 
-            # 采购单价(USD) - 只在数据库没有值时才计算
+            # 采购单价(USD) - 只在数据库没有值时才计算 (USD汇率表示 1 RMB = ? USD，直接乘)
             if not r.get('price_usd') or float(r.get('price_usd') or 0) == 0:
                 try:
-                    if usd_val > 10: r['price_usd'] = round(buy_price * usd_val, 2)
-                    else: r['price_usd'] = round(buy_price / usd_val, 2) if usd_val else 0.0
+                    r['price_usd'] = round(buy_price * usd_val, 2) if usd_val else 0.0
                 except:
                     r['price_usd'] = 0.0
 

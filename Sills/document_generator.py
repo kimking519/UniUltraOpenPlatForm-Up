@@ -910,11 +910,8 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
         if not price_usd or float(price_usd or 0) == 0:
             price_rmb = order.get("price_rmb")
             if price_rmb and float(price_rmb or 0) > 0:
-                # USD汇率小于10时，用除法
-                if usd_val > 10:
-                    price_usd = round(float(price_rmb) * usd_val, 3)
-                else:
-                    price_usd = round(float(price_rmb) / usd_val, 3) if usd_val else 0
+                # USD汇率表示 1 RMB = ? USD，直接乘
+                price_usd = round(float(price_rmb) * usd_val, 3) if usd_val else 0
             else:
                 price_usd = 0
         else:

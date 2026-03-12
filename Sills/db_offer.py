@@ -85,11 +85,8 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             else:
                 expected_kwr = round(offer_price / krw_val, 1) if krw_val else 0.0
 
-            # 计算期望的 USD 值
-            if usd_val > 10:
-                expected_usd = round(offer_price * usd_val, 3)
-            else:
-                expected_usd = round(offer_price / usd_val, 3) if usd_val else 0.0
+            # 计算期望的 USD 值 (USD汇率表示 1 RMB = ? USD)
+            expected_usd = round(offer_price * usd_val, 3) if usd_val else 0.0
 
             # 获取数据库中的当前值
             current_kwr = float(r.get('price_kwr') or 0)
@@ -218,8 +215,8 @@ def add_offer(data, emp_id, conn=None):
             if krw_val > 10: price_kwr = round(offer_price * krw_val, 1)
             else: price_kwr = round(offer_price / krw_val, 1) if krw_val else 0.0
 
-            if usd_val > 10: price_usd = round(offer_price * usd_val, 2)
-            else: price_usd = round(offer_price / usd_val, 2) if usd_val else 0.0
+            # USD汇率表示 1 RMB = ? USD，直接乘
+            price_usd = round(offer_price * usd_val, 2) if usd_val else 0.0
 
             inquiry_mpn = data.get('inquiry_mpn', '')
             quoted_mpn = data.get('quoted_mpn', '')
@@ -280,11 +277,8 @@ def update_offer(offer_id, data):
             else:
                 data['price_kwr'] = round(offer_price / krw_val, 1) if krw_val else 0.0
 
-            # 计算 USD
-            if usd_val > 10:
-                data['price_usd'] = round(offer_price * usd_val, 2)
-            else:
-                data['price_usd'] = round(offer_price / usd_val, 2) if usd_val else 0.0
+            # 计算 USD (USD汇率表示 1 RMB = ? USD，直接乘)
+            data['price_usd'] = round(offer_price * usd_val, 2) if usd_val else 0.0
 
         set_cols = []
         params = []

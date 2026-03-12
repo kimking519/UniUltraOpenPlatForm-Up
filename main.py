@@ -949,7 +949,7 @@ async def offer_batch_price_increase_api(request: Request, current_user: dict = 
                 cost_price = float(row[0])
                 new_offer_rmb = cost_price * (1 + ratio / 100)
                 new_price_kwr = round(new_offer_rmb * krw_rate, 1)  # KWR保留1位小数
-                new_price_usd = round(new_offer_rmb / usd_rate, 3)  # USD保留3位小数
+                new_price_usd = round(new_offer_rmb * usd_rate, 3)  # USD保留3位小数
 
                 conn.execute("""
                     UPDATE uni_offer
@@ -1128,13 +1128,10 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
             else:
                 pkwr = round(offer_price_rmb / krw_rate, 1) if krw_rate else 0
 
-        # USD 价格
+        # USD 价格 (USD汇率表示 1 RMB = ? USD，直接乘)
         pusd = r.get('price_usd')
         if not pusd or float(pusd) == 0:
-            if usd_rate > 10:
-                pusd = round(offer_price_rmb * usd_rate, 2)
-            else:
-                pusd = round(offer_price_rmb / usd_rate, 2) if usd_rate else 0
+            pusd = round(offer_price_rmb * usd_rate, 2) if usd_rate else 0
 
         # 利润计算
         profit = round(offer_price_rmb - cost_price_rmb, 3)
@@ -1363,8 +1360,7 @@ async def order_export_csv(request: Request, current_user: dict = Depends(login_
             if krw_rate > 10: price_kwr = round(price_rmb * krw_rate, 1)
             else: price_kwr = round(price_rmb / krw_rate, 1) if krw_rate else 0
         if not price_usd:
-            if usd_rate > 10: price_usd = round(price_rmb * usd_rate, 2)
-            else: price_usd = round(price_rmb / usd_rate, 2) if usd_rate else 0
+            price_usd = round(price_rmb * usd_rate, 2) if usd_rate else 0
 
         writer.writerow([
             d.get('order_date', ''),
@@ -1520,8 +1516,7 @@ async def buy_export_csv(request: Request, current_user: dict = Depends(login_re
             if krw_rate > 10: price_kwr = round(buy_price * krw_rate, 1)
             else: price_kwr = round(buy_price / krw_rate, 1) if krw_rate else 0
         if not price_usd or float(price_usd or 0) == 0:
-            if usd_rate > 10: price_usd = round(buy_price * usd_rate, 2)
-            else: price_usd = round(buy_price / usd_rate, 2) if usd_rate else 0
+            price_usd = round(buy_price * usd_rate, 2) if usd_rate else 0
 
         writer.writerow([
             d.get('buy_date', ''),
