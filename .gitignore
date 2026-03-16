@@ -57,3 +57,6 @@ secrets/
 
 # Skills (不上传到 GitHub)
 openclaw_skills/
+*.png
+tests/reports/
+performance_test_report.txt
