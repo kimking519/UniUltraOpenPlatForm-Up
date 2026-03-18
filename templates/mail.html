@@ -807,6 +807,10 @@
     <!-- Sidebar -->
     <div class="mail-sidebar">
         <div class="mail-sidebar-header">
+            <div class="current-email" style="padding: 0.5rem 0; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border);">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">当前邮箱</div>
+                <div style="font-size: 0.85rem; color: var(--text-main); font-weight: 500; word-break: break-all;">{{ current_email or '未配置' }}</div>
+            </div>
             <button class="compose-btn" onclick="openComposePanel()">
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
