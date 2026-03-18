@@ -324,7 +324,21 @@ def init_db():
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id)
     );
 
-    -- 邮件系统表
+    -- 邮件系统配置表（必须在uni_mail之前创建）
+    CREATE TABLE IF NOT EXISTS mail_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_name TEXT DEFAULT '默认账户',
+        smtp_server TEXT,
+        smtp_port INTEGER DEFAULT 587,
+        imap_server TEXT,
+        imap_port INTEGER DEFAULT 993,
+        username TEXT,
+        password TEXT,
+        use_tls INTEGER DEFAULT 1,
+        is_current INTEGER DEFAULT 0 CHECK(is_current IN (0,1)),
+        created_at DATETIME DEFAULT (datetime('now', 'localtime'))
+    );
+
     CREATE TABLE IF NOT EXISTS uni_mail (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         subject TEXT,
@@ -350,20 +364,6 @@ def init_db():
         ref_id TEXT NOT NULL,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (mail_id) REFERENCES uni_mail(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS mail_config (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_name TEXT DEFAULT '默认账户',
-        smtp_server TEXT,
-        smtp_port INTEGER DEFAULT 587,
-        imap_server TEXT,
-        imap_port INTEGER DEFAULT 993,
-        username TEXT,
-        password TEXT,
-        use_tls INTEGER DEFAULT 1,
-        is_current INTEGER DEFAULT 0 CHECK(is_current IN (0,1)),
-        created_at DATETIME DEFAULT (datetime('now', 'localtime'))
     );
 
     CREATE TABLE IF NOT EXISTS mail_sync_lock (
@@ -419,18 +419,18 @@ def init_db():
     """
 
     with get_db_connection() as conn:
+        # 先执行迁移：为已有数据库添加 account_id 列（必须在executescript之前）
+        try:
+            conn.execute("ALTER TABLE uni_mail ADD COLUMN account_id INTEGER REFERENCES mail_config(id) ON DELETE SET NULL")
+            print("[DB] 迁移完成：uni_mail 添加 account_id 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在或表不存在，忽略
+
         conn.executescript(schema)
         conn.execute("""
             INSERT OR IGNORE INTO uni_emp (emp_id, emp_name, account, password, rule)
             VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
         """)
-
-        # 迁移：为已有数据库添加 account_id 列（用户隔离）
-        try:
-            conn.execute("ALTER TABLE uni_mail ADD COLUMN account_id INTEGER REFERENCES mail_config(id) ON DELETE SET NULL")
-            print("[DB] 迁移完成：uni_mail 添加 account_id 列")
-        except sqlite3.OperationalError:
-            pass  # 列已存在，忽略
 
         conn.commit()
     # 初始化后清除缓存
