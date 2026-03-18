@@ -313,7 +313,7 @@
                         style="cursor: pointer;">{{ row.delivery_date or '' }}</td>
                     <td>
                         <select onchange="updateRowField('{{ row.order_id }}', 'return_status', this.value)"
-                            style="padding: 1px; font-size: 0.55rem;">
+                            style="padding: 4px; font-size: 0.85rem; border-radius: 4px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-main);">
                             <option value="正常" {% if row.return_status=='正常' %}selected{% endif %}>正常</option>
                             <option value="已退货" {% if row.return_status=='已退货' %}selected{% endif %}>已退货</option>
                         </select>
@@ -345,11 +345,15 @@
                         {{ row.remark }}
                     </td>
                     <td>
-                        <div style="display: flex; gap: 0.2rem;">
-                            <button class="btn" style="color: #3b82f6; padding: 1px 4px; font-size: 0.55rem;"
-                                onclick="convertToBuy('{{ row.order_id }}')">转采购</button>
-                            <button class="btn" style="color: red; padding: 1px 4px; font-size: 0.55rem;"
-                                onclick="deleteOrder('{{ row.order_id }}')">删除</button>
+                        <div style="display: flex; gap: 0.3rem;">
+                            <button class="btn" style="color: #3b82f6; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #3b82f6; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="转采购"
+                                onclick="convertToBuy('{{ row.order_id }}')">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                            </button>
+                            <button class="btn" style="color: #ef4444; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #ef4444; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="删除"
+                                onclick="deleteOrder('{{ row.order_id }}')">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -680,6 +684,11 @@
                 document.getElementById('price_usd_' + orderId).innerText = res.price_usd;
             }
 
+            // 如果修改的是price_usd，只更新price_usd显示
+            if (field === 'price_usd') {
+                document.getElementById('price_usd_' + orderId).innerText = newVal;
+            }
+
             // 如果返回了利润，更新利润显示
             if (res.profit !== undefined) {
                 // 找到利润单元格并更新
@@ -693,10 +702,10 @@
                 }
             }
 
-            // 对于非price_rmb修改且有利润更新的情况，不需要刷新页面
-            if (field === 'price_rmb' || (field === 'cost_price_rmb' && res.profit !== undefined)) {
-                // 已经更新了显示，不需要刷新
-            } else if (field !== 'price_rmb') {
+            // 对于price_rmb修改，已经更新了显示，不需要刷新
+            // 对于price_usd修改，也已经更新了显示，不需要刷新
+            // 对于cost_price_rmb修改且有利润更新的情况，也不需要刷新
+            if (field !== 'price_rmb' && field !== 'price_usd' && !(field === 'cost_price_rmb' && res.profit !== undefined)) {
                 window.location.reload();
             }
         } else {

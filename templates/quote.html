@@ -846,14 +846,18 @@
     }
 
     function saveEdit(td, quote_id, field, newValue, originalValue, newText = null) {
-        if (newValue === originalValue) {
-            td.innerHTML = `<span>${originalValue}</span>`;
+        // 对于空值和原值进行比较时，都作为空字符串处理
+        const normalizedNewValue = newValue === null || newValue === undefined ? '' : String(newValue).trim();
+        const normalizedOriginalValue = originalValue === null || originalValue === undefined ? '' : String(originalValue).trim();
+
+        if (normalizedNewValue === normalizedOriginalValue) {
+            td.innerHTML = `<span>${normalizedOriginalValue}</span>`;
             return;
         }
         const formData = new FormData();
         formData.append('quote_id', quote_id);
         formData.append('field', field);
-        formData.append('value', newValue);
+        formData.append('value', normalizedNewValue);
 
         fetch('/api/quote/update', {
             method: 'POST',
@@ -862,14 +866,14 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    const display = newText !== null ? newText : newValue;
+                    const display = newText !== null ? newText : normalizedNewValue;
                     td.innerHTML = `<span style="color: green;">${display}</span>`;
                     setTimeout(() => {
                         window.location.reload(); // Reload to refresh combined info
                     }, 500);
                 } else {
                     alert('更新失败: ' + data.message);
-                    td.innerHTML = `<span>${originalValue}</span>`;
+                    td.innerHTML = `<span>${normalizedOriginalValue}</span>`;
                 }
             });
     }

@@ -1013,31 +1013,31 @@
 
 <!-- Settings Modal -->
 <div class="modal" id="settingsModal">
-    <div class="modal-content" style="max-width: 700px;">
-        <div class="modal-header">
-            <h2>邮件设置</h2>
+    <div class="modal-content" style="max-width: 700px; background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg) 70%, #1e3a5f 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;">
+        <div class="modal-header" style="border-bottom: 1px solid var(--border);">
+            <h2 style="color: var(--text-main);">邮件设置</h2>
             <button class="modal-close" onclick="closeModal('settingsModal')">
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" style="background: transparent;">
             <!-- 同步间隔设置（独立区域） -->
             <div class="settings-section" style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
-                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #fff;">同步设置</h3>
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-main);">同步设置</h3>
                 <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 0;">
-                    <label style="margin-bottom: 0; color: white;">同步间隔</label>
-                    <input type="number" id="syncInterval" value="30" min="1" max="60" style="width: 80px;">
-                    <span style="color: white;">分钟</span>
-                    <button class="btn btn-secondary" style="margin-left: auto;" onclick="saveSyncInterval()">保存间隔</button>
+                    <label style="margin-bottom: 0; color: var(--text-main);">同步间隔</label>
+                    <input type="number" id="syncInterval" value="30" min="1" max="60" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <span style="color: var(--text-main);">分钟</span>
+                    <button class="btn btn-primary" style="margin-left: auto;" onclick="saveSyncInterval()">保存间隔</button>
                 </div>
             </div>
 
             <!-- 账户管理区域 -->
             <div class="settings-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0; font-size: 14px; color: #fff;">邮件账户</h3>
+                    <h3 style="margin: 0; font-size: 14px; color: var(--text-main);">邮件账户</h3>
                     <button class="btn btn-primary" onclick="openAddAccountModal()">+ 添加账户</button>
                 </div>
 
@@ -1047,8 +1047,8 @@
                 </div>
             </div>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal('settingsModal')">关闭</button>
+        <div class="modal-footer" style="background: #1e3a5f; border-top: none; padding: 1rem 1.5rem;">
+            <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="closeModal('settingsModal')">关闭</button>
         </div>
     </div>
 </div>
@@ -1134,18 +1134,18 @@
 }
 .account-item.current {
     border-color: #6366F1;
-    background: rgba(99, 102, 241, 0.05);
+    background: rgba(99, 102, 241, 0.15);
 }
 .account-info {
     flex: 1;
 }
 .account-name {
     font-weight: 600;
-    color: #fff;
+    color: var(--text-main);
 }
 .account-email {
     font-size: 12px;
-    color: rgba(255,255,255,0.7);
+    color: var(--text-muted);
 }
 .account-current-badge {
     background: #6366F1;
@@ -1762,6 +1762,7 @@
 
             if (result.success) {
                 await loadAccounts();
+                loadEmails(); // 切换账户后刷新邮件列表
                 alert('已切换到新账户');
             } else {
                 alert('切换失败: ' + (result.message || '未知错误'));
