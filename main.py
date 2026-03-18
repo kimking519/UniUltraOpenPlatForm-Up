@@ -1866,10 +1866,14 @@ async def api_backup_delete(backup_path: str = Form(...), current_user: dict = D
 @app.get("/mail", response_class=HTMLResponse)
 async def mail_page(request: Request, current_user: dict = Depends(login_required)):
     """邮件中心页面"""
+    from Sills.db_mail import get_mail_config
+    mail_config = get_mail_config()
+    current_email = mail_config.get('username', '') if mail_config else ''
     return templates.TemplateResponse("mail.html", {
         "request": request,
         "active_page": "mail",
-        "current_user": current_user
+        "current_user": current_user,
+        "current_email": current_email
     })
 
 
@@ -1880,9 +1884,12 @@ async def api_mail_list(
     page_size: int = 20,
     current_user: dict = Depends(login_required)
 ):
-    """获取邮件列表"""
+    """获取邮件列表（用户隔离）"""
     is_sent = 1 if folder == "sent" else 0
-    result = get_mail_list(page=page, limit=page_size, is_sent=is_sent)
+    # 获取当前邮件账户ID
+    config = get_mail_config()
+    account_id = config.get('id') if config else None
+    result = get_mail_list(page=page, limit=page_size, is_sent=is_sent, account_id=account_id)
     return result
 
 
