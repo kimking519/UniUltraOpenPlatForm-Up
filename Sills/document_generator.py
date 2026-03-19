@@ -1503,6 +1503,9 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
             pass  # 忽略合并错误
 
     # ---- 7. 保存文件 ----
+    # 禁用网格线，让边框控制显示
+    ws1.sheet_view.showGridLines = False
+
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb1.save(output_path)
     wb1.close()
