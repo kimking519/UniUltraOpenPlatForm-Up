@@ -1424,7 +1424,10 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
             price_kwr = float(price_rmb) * exchange_rate_krw
         else:
             price_kwr = 0
-        ws1.cell(row, 7).value = price_kwr                           # G: 단가
+        price_cell = ws1.cell(row, 7)
+        price_cell.value = price_kwr                           # G: 단가
+        # 显式设置数字格式，保留原始小数精度
+        price_cell.number_format = '#,##0.##########'
 
         # 交期
         ws1.cell(row, 8).value = offer.get("delivery_date", "")      # H: 납기
