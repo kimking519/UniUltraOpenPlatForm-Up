@@ -1385,6 +1385,22 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
                     dest_cell.protection = copy(src_cell.protection)
                     dest_cell.alignment = copy(src_cell.alignment)
 
+                # 新插入的行，H列右边框和I列左边框设为空
+                if col == 8:  # H列
+                    dest_cell.border = Border(
+                        left=dest_cell.border.left,
+                        right=Side(style=None),  # 无右边框
+                        top=dest_cell.border.top,
+                        bottom=dest_cell.border.bottom
+                    )
+                elif col == 9:  # I列
+                    dest_cell.border = Border(
+                        left=Side(style=None),  # 无左边框
+                        right=dest_cell.border.right,
+                        top=dest_cell.border.top,
+                        bottom=dest_cell.border.bottom
+                    )
+
     # ---- 5. 写入数据 ----
     total_qty = 0
     total_amount = 0
@@ -1444,25 +1460,22 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
         # 交期 - 设置H列边框（无右边框）
         h_cell = ws1.cell(row, 8)
         h_cell.value = offer.get("delivery_date", "")      # H: 납기
-        # 复制模板样式但移除右边框
-        h_border = Border(
-            left=Side(style='thin') if ws1.cell(row, 8).border.left else Side(style=None),
+        h_cell.border = Border(
+            left=h_cell.border.left,
             right=Side(style=None),  # 无右边框
-            top=Side(style='thin') if ws1.cell(row, 8).border.top else Side(style=None),
-            bottom=Side(style='thin') if ws1.cell(row, 8).border.bottom else Side(style=None)
+            top=h_cell.border.top,
+            bottom=h_cell.border.bottom
         )
-        h_cell.border = h_border
 
         # 备注 - 设置I列边框（无左边框）
         i_cell = ws1.cell(row, 9)
         i_cell.value = offer.get("remark", "")             # I: 비고
-        i_border = Border(
+        i_cell.border = Border(
             left=Side(style=None),  # 无左边框
-            right=Side(style='thin') if ws1.cell(row, 9).border.right else Side(style=None),
-            top=Side(style='thin') if ws1.cell(row, 9).border.top else Side(style=None),
-            bottom=Side(style='thin') if ws1.cell(row, 9).border.bottom else Side(style=None)
+            right=i_cell.border.right,
+            top=i_cell.border.top,
+            bottom=i_cell.border.bottom
         )
-        i_cell.border = i_border
 
         total_amount += float(price_kwr or 0) * qty
 
@@ -1503,9 +1516,6 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
             pass  # 忽略合并错误
 
     # ---- 7. 保存文件 ----
-    # 禁用网格线，让边框控制显示
-    ws1.sheet_view.showGridLines = False
-
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb1.save(output_path)
     wb1.close()
