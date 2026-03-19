@@ -1352,6 +1352,10 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
         rows_to_delete = template_data_rows - data_count
         ws1.delete_rows(first_data_row + data_count, rows_to_delete)
 
+    # 设置模板中保留的示例行行高为20
+    for row in range(first_data_row, first_data_row + min(data_count, template_data_rows)):
+        ws1.row_dimensions[row].height = 20
+
     # 如果需要更多行，插入新行并复制样式
     elif data_count > template_data_rows:
         rows_to_insert = data_count - template_data_rows
@@ -1387,27 +1391,6 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
 
     # 定义边框样式
     from openpyxl.styles import Border, Side
-    no_border = Border()
-    thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-    # H列右边无边框（去掉交期和备注之间的实线）
-    h_border = Border(
-        left=Side(style='thin'),
-        right=Side(style=None),  # 无右边框
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
-    # I列左边无边框
-    i_border = Border(
-        left=Side(style=None),  # 无左边框
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
-    )
 
     for idx, offer in enumerate(offers):
         row = first_data_row + idx
@@ -1461,11 +1444,24 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
         # 交期 - 设置H列边框（无右边框）
         h_cell = ws1.cell(row, 8)
         h_cell.value = offer.get("delivery_date", "")      # H: 납기
+        # 复制模板样式但移除右边框
+        h_border = Border(
+            left=Side(style='thin') if ws1.cell(row, 8).border.left else Side(style=None),
+            right=Side(style=None),  # 无右边框
+            top=Side(style='thin') if ws1.cell(row, 8).border.top else Side(style=None),
+            bottom=Side(style='thin') if ws1.cell(row, 8).border.bottom else Side(style=None)
+        )
         h_cell.border = h_border
 
         # 备注 - 设置I列边框（无左边框）
         i_cell = ws1.cell(row, 9)
         i_cell.value = offer.get("remark", "")             # I: 비고
+        i_border = Border(
+            left=Side(style=None),  # 无左边框
+            right=Side(style='thin') if ws1.cell(row, 9).border.right else Side(style=None),
+            top=Side(style='thin') if ws1.cell(row, 9).border.top else Side(style=None),
+            bottom=Side(style='thin') if ws1.cell(row, 9).border.bottom else Side(style=None)
+        )
         i_cell.border = i_border
 
         total_amount += float(price_kwr or 0) * qty
