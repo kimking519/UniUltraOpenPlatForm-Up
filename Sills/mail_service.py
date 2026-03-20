@@ -682,3 +682,106 @@ def send_email_now(to: str, subject: str, body: str,
 
     finally:
         smtp_client.disconnect()
+
+
+def send_email_with_attachments(to: str, subject: str, body: str,
+                                  html_body: str = None, cc: str = None,
+                                  attachments: list = None) -> Dict[str, Any]:
+    """
+    发送带附件的邮件
+
+    Args:
+        to: 收件人
+        subject: 主题
+        body: 正文
+        html_body: HTML 正文（可选）
+        cc: 抄送（可选）
+        attachments: 附件列表 [{'path': '文件路径', 'filename': '文件名', 'content_type': 'MIME类型'}]
+
+    Returns:
+        发送结果
+    """
+    from email.mime.base import MIMEBase
+    from email import encoders
+
+    config = get_mail_config()
+    if not config:
+        return {"success": False, "error": "邮件配置未找到"}
+
+    smtp_client = SMTPClient(config)
+
+    try:
+        smtp_client.connect()
+
+        # 创建带附件的邮件
+        if attachments:
+            msg = MIMEMultipart('mixed')
+        else:
+            msg = MIMEMultipart('alternative')
+
+        msg['From'] = config['username']
+        msg['To'] = to
+        msg['Subject'] = subject
+
+        if cc:
+            msg['Cc'] = cc
+
+        # 添加正文部分
+        if attachments:
+            # 有附件时，正文需要放在multipart/alternative中
+            text_part = MIMEMultipart('alternative')
+            text_part.attach(MIMEText(body, 'plain', 'utf-8'))
+            if html_body:
+                text_part.attach(MIMEText(html_body, 'html', 'utf-8'))
+            msg.attach(text_part)
+        else:
+            # 无附件直接添加正文
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            if html_body:
+                msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+
+        # 添加附件
+        if attachments:
+            for att in attachments:
+                with open(att['path'], 'rb') as f:
+                    part = MIMEBase(*att.get('content_type', 'application/octet-stream').split('/'))
+                    part.set_payload(f.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        'attachment',
+                        filename=att['filename']
+                    )
+                    msg.attach(part)
+
+        # 发送
+        recipients = [to]
+        if cc:
+            recipients.append(cc)
+        smtp_client.client.sendmail(config['username'], recipients, msg.as_string())
+
+        result = {"success": True, "message_id": msg.get('Message-ID', '')}
+
+        if result['success']:
+            # 保存到数据库
+            save_email({
+                'subject': subject,
+                'from_addr': config.get('username', ''),
+                'to_addr': to,
+                'cc_addr': cc,
+                'content': body,
+                'html_content': html_body,
+                'sent_at': datetime.now().isoformat(),
+                'is_sent': 1,
+                'message_id': result.get('message_id'),
+                'sync_status': 'completed',
+                'account_id': config.get('id')
+            })
+
+        return result
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    finally:
+        smtp_client.disconnect()

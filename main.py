@@ -1971,6 +1971,62 @@ async def api_mail_send(
         return {"success": False, "message": f"发送失败: {result.get('error', '未知错误')}"}
 
 
+@app.post("/api/mail/send-with-attachments")
+async def api_mail_send_with_attachments(
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """发送带附件的邮件"""
+    from fastapi import UploadFile, File, Form
+    import tempfile
+    import os
+
+    form = await request.form()
+    to = form.get('to', '')
+    subject = form.get('subject', '')
+    body = form.get('body', '')
+    html_body = form.get('html_body', '')
+    cc = form.get('cc', '')
+
+    if not to or not subject:
+        return {"success": False, "message": "收件人和主题不能为空"}
+
+    # 获取附件
+    attachments = []
+    for key, value in form.items():
+        if key == 'attachments' and hasattr(value, 'filename'):
+            # 保存到临时文件
+            content = await value.read()
+            if content:
+                temp_dir = tempfile.gettempdir()
+                temp_path = os.path.join(temp_dir, value.filename)
+                with open(temp_path, 'wb') as f:
+                    f.write(content)
+                attachments.append({
+                    'path': temp_path,
+                    'filename': value.filename,
+                    'content_type': value.content_type or 'application/octet-stream'
+                })
+
+    from Sills.mail_service import send_email_with_attachments
+    result = send_email_with_attachments(
+        to=to, subject=subject, body=body,
+        html_body=html_body, cc=cc, attachments=attachments
+    )
+
+    # 清理临时文件
+    for att in attachments:
+        try:
+            os.remove(att['path'])
+        except:
+            pass
+
+    if result["success"]:
+        return {"success": True, "message": "邮件发送成功", "message_id": result.get("message_id")}
+    else:
+        return {"success": False, "message": f"发送失败: {result.get('error', '未知错误')}"}
+
+
 @app.post("/api/mail/sync")
 async def api_mail_sync(current_user: dict = Depends(login_required)):
     """同步邮件（后台异步）"""

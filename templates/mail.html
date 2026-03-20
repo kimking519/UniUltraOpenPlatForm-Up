@@ -1991,12 +1991,38 @@
             return;
         }
 
+        // 检查是否有附件
+        const hasAttachments = selectedFiles && selectedFiles.length > 0;
+
         try {
-            const response = await fetch('/api/mail/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
-            });
+            let response;
+
+            if (hasAttachments) {
+                // 使用FormData发送附件
+                const formData = new FormData();
+                formData.append('to', to);
+                formData.append('cc', cc || '');
+                formData.append('subject', subject);
+                formData.append('body', body);
+                formData.append('html_body', htmlBody);
+
+                // 添加附件文件
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    formData.append('attachments', selectedFiles[i]);
+                }
+
+                response = await fetch('/api/mail/send-with-attachments', {
+                    method: 'POST',
+                    body: formData
+                });
+            } else {
+                // 无附件使用JSON
+                response = await fetch('/api/mail/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
+                });
+            }
 
             const result = await response.json();
 
@@ -2595,10 +2621,12 @@
     // Update attachment list display
     function updateAttachmentList() {
         const container = document.getElementById('attachmentList');
+        const attachmentsArea = document.getElementById('attachmentsArea');
         if (!container) return;
 
         if (selectedFiles.length === 0) {
             container.innerHTML = '';
+            if (attachmentsArea) attachmentsArea.classList.remove('has-files');
             return;
         }
 
@@ -2609,6 +2637,8 @@
                 <button type="button" class="attachment-remove" onclick="removeAttachment(${index})">×</button>
             </div>
         `).join('');
+
+        if (attachmentsArea) attachmentsArea.classList.add('has-files');
     }
 
     // Remove attachment
