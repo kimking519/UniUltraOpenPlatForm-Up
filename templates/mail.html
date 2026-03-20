@@ -1126,6 +1126,9 @@
                 <label>邮箱类型</label>
                 <select id="mailType" onchange="fillMailPresets()">
                     <option value="">请选择...</option>
+                    <option value="163">163邮箱</option>
+                    <option value="126">126邮箱</option>
+                    <option value="qq">QQ邮箱</option>
                     <option value="netease_qiye">网易企业邮箱</option>
                     <option value="qq_qiye">QQ企业邮箱</option>
                     <option value="gmail">Gmail</option>
@@ -1643,6 +1646,27 @@
 
     // Mail presets for common providers
     const mailPresets = {
+        '163': {
+            smtp_server: 'smtp.163.com',
+            smtp_port: 465,
+            imap_server: 'imap.163.com',
+            imap_port: 993,
+            use_tls: true
+        },
+        '126': {
+            smtp_server: 'smtp.126.com',
+            smtp_port: 465,
+            imap_server: 'imap.126.com',
+            imap_port: 993,
+            use_tls: true
+        },
+        'qq': {
+            smtp_server: 'smtp.qq.com',
+            smtp_port: 465,
+            imap_server: 'imap.qq.com',
+            imap_port: 993,
+            use_tls: true
+        },
         netease_qiye: {
             smtp_server: 'smtp.qiye.163.com',
             smtp_port: 465,
