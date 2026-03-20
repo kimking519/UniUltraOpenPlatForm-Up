@@ -146,35 +146,50 @@ class IMAPClient:
             # 提取正文
             content = ''
             html_content = ''
+
+            def decode_payload(payload, part):
+                """智能解码邮件正文"""
+                if not payload:
+                    return ''
+                charset = part.get_content_charset()
+                # 韩文邮件常用编码列表
+                encodings = ['euc-kr', 'ks_c_5601-1987', 'iso-2022-kr', 'utf-8', 'gbk', 'gb2312', 'iso-8859-1']
+
+                # 如果检测到charset，优先尝试
+                if charset:
+                    try:
+                        return payload.decode(charset, errors='replace')
+                    except (LookupError, UnicodeDecodeError):
+                        pass
+
+                # 尝试各种编码
+                for enc in encodings:
+                    try:
+                        decoded = payload.decode(enc, errors='strict')
+                        # 检查是否有乱码特征（太多替换字符）
+                        if decoded.count('\ufffd') / len(decoded) < 0.1:
+                            return decoded
+                    except (LookupError, UnicodeDecodeError):
+                        continue
+
+                # 最后用utf-8强制解码
+                return payload.decode('utf-8', errors='replace')
+
             if msg.is_multipart():
                 for part in msg.walk():
                     content_type = part.get_content_type()
                     if content_type == 'text/plain':
                         payload = part.get_payload(decode=True)
                         if payload:
-                            # 获取part的charset
-                            charset = part.get_content_charset() or 'utf-8'
-                            try:
-                                content += payload.decode(charset, errors='replace')
-                            except (LookupError, UnicodeDecodeError):
-                                content += payload.decode('utf-8', errors='replace')
+                            content += decode_payload(payload, part)
                     elif content_type == 'text/html':
                         payload = part.get_payload(decode=True)
                         if payload:
-                            # 获取part的charset
-                            charset = part.get_content_charset() or 'utf-8'
-                            try:
-                                html_content += payload.decode(charset, errors='replace')
-                            except (LookupError, UnicodeDecodeError):
-                                html_content += payload.decode('utf-8', errors='replace')
+                            html_content += decode_payload(payload, part)
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    charset = msg.get_content_charset() or 'utf-8'
-                    try:
-                        content = payload.decode(charset, errors='replace')
-                    except (LookupError, UnicodeDecodeError):
-                        content = payload.decode('utf-8', errors='replace')
+                    content = decode_payload(payload, msg)
 
             return {
                 'subject': subject,
