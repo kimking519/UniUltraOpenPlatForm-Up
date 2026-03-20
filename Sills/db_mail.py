@@ -135,6 +135,20 @@ def delete_email(mail_id: int) -> bool:
         return result.rowcount > 0
 
 
+def batch_delete_emails(mail_ids: list) -> int:
+    """批量删除邮件"""
+    if not mail_ids:
+        return 0
+    with get_db_connection() as conn:
+        # 删除关联关系
+        placeholders = ','.join('?' * len(mail_ids))
+        conn.execute(f"DELETE FROM uni_mail_rel WHERE mail_id IN ({placeholders})", mail_ids)
+        # 删除邮件
+        result = conn.execute(f"DELETE FROM uni_mail WHERE id IN ({placeholders})", mail_ids)
+        conn.commit()
+        return result.rowcount
+
+
 def create_mail_relation(mail_id: int, ref_type: str, ref_id: str) -> int:
     """
     创建邮件与ERP实体的关联关系

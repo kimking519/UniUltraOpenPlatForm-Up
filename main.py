@@ -2320,6 +2320,18 @@ async def api_mail_delete(mail_id: int, current_user: dict = Depends(login_requi
     return result
 
 
+@app.post("/api/mail/batch-delete")
+async def api_mail_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    """批量删除邮件"""
+    from Sills.db_mail import batch_delete_emails
+    data = await request.json()
+    mail_ids = data.get('ids', [])
+    if not mail_ids:
+        return {"success": False, "message": "未选择邮件"}
+    deleted = batch_delete_emails(mail_ids)
+    return {"success": True, "deleted": deleted}
+
+
 @app.get("/api/mail/{mail_id}/analyze")
 async def api_mail_analyze(mail_id: int, current_user: dict = Depends(login_required)):
     """AI 分析邮件"""

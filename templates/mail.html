@@ -241,12 +241,19 @@
 
     .mail-item {
         display: grid;
-        grid-template-columns: 200px 1fr 120px;
-        gap: 1rem;
+        grid-template-columns: 24px 200px 1fr 120px;
+        gap: 0.75rem;
         padding: 1rem;
         border-bottom: 1px solid var(--border);
         cursor: pointer;
         transition: all 0.2s;
+        align-items: center;
+    }
+
+    .mail-checkbox {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
     }
 
     .mail-item:hover {
@@ -932,14 +939,22 @@
         </svg>
         邮件中心
     </h1>
-    <div class="sync-status" id="syncStatus">
-        <div class="sync-progress-container">
-            <div class="sync-progress-bar" id="syncProgressBar">
-                <div class="sync-progress-fill" id="syncProgressFill"></div>
+    <div style="display: flex; align-items: center; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="batchDeleteMails()" id="batchDeleteBtn" style="display: none;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            批量删除 (<span id="selectedCount">0</span>)
+        </button>
+        <div class="sync-status" id="syncStatus">
+            <div class="sync-progress-container">
+                <div class="sync-progress-bar" id="syncProgressBar">
+                    <div class="sync-progress-fill" id="syncProgressFill"></div>
+                </div>
+                <div class="sync-progress-text" id="syncProgressText"></div>
             </div>
-            <div class="sync-progress-text" id="syncProgressText"></div>
+            <span id="syncText">就绪</span>
         </div>
-        <span id="syncText">就绪</span>
     </div>
 </div>
 
@@ -1391,6 +1406,7 @@
 
         container.innerHTML = emails.map(email => `
             <div class="mail-item" onclick="openEmail(${email.id})">
+                <input type="checkbox" class="mail-checkbox" data-id="${email.id}" onclick="event.stopPropagation()">
                 <div class="mail-sender">${escapeHtml(email.from_addr)}</div>
                 <div>
                     <div class="mail-subject">${escapeHtml(email.subject || '(无主题)')}</div>
@@ -1399,6 +1415,11 @@
                 <div class="mail-date">${formatDate(email.created_at)}</div>
             </div>
         `).join('');
+
+        // Add checkbox event listeners
+        document.querySelectorAll('.mail-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateSelectedCount);
+        });
     }
 
     // Render pagination
@@ -1772,6 +1793,46 @@
             }
         } catch (error) {
             console.error('Delete email error:', error);
+        }
+    }
+
+    // Update selected count and show/hide batch delete button
+    function updateSelectedCount() {
+        const checkboxes = document.querySelectorAll('.mail-checkbox:checked');
+        const count = checkboxes.length;
+        const btn = document.getElementById('batchDeleteBtn');
+        const countSpan = document.getElementById('selectedCount');
+
+        countSpan.textContent = count;
+        btn.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+
+    // Batch delete emails
+    async function batchDeleteMails() {
+        const checkboxes = document.querySelectorAll('.mail-checkbox:checked');
+        const ids = Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
+
+        if (ids.length === 0) return;
+
+        if (!confirm(`确定要删除选中的 ${ids.length} 封邮件吗？`)) return;
+
+        try {
+            const response = await fetch('/api/mail/batch-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                loadEmails();
+                loadInboxCount();
+            } else {
+                alert('删除失败: ' + (result.message || '未知错误'));
+            }
+        } catch (error) {
+            alert('删除失败: ' + error.message);
         }
     }
 
