@@ -1412,7 +1412,7 @@
                     <div class="mail-subject">${escapeHtml(email.subject || '(无主题)')}</div>
                     <div class="mail-preview">${escapeHtml(email.content_preview || '')}</div>
                 </div>
-                <div class="mail-date">${formatDate(email.sent_at)}</div>
+                <div class="mail-date">${formatDate(email.sent_at || email.received_at || email.created_at)}</div>
             </div>
         `).join('');
 
