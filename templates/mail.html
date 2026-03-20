@@ -1565,30 +1565,44 @@
 
             // 邮件内容（优先HTML，其次纯文本）
             const bodyEl = document.getElementById('detailBody');
-            if (email.html_content && email.html_content.trim()) {
+            let htmlContent = email.html_content && email.html_content.trim();
+            let textContent = email.content || '';
+
+            // 检测content是否是HTML格式
+            const isContentHtml = textContent.trim().toLowerCase().startsWith('<!doctype') ||
+                                  textContent.trim().toLowerCase().startsWith('<html') ||
+                                  textContent.includes('<body') && textContent.includes('</body>');
+
+            if (htmlContent) {
                 // 清理HTML内容开头的空白
-                let htmlContent = email.html_content.trim();
-                // 替换&nbsp;为普通空格
+                htmlContent = htmlContent.trim();
                 htmlContent = htmlContent.replace(/&nbsp;/g, ' ');
-                // 移除开头的空白和<br>标签（包括带style的）
                 htmlContent = htmlContent.replace(/^(\s*<br\s*(\/|\s[^>]*)?\s*>)+/gi, '');
-                // 移除开头的带内容的<br>
                 htmlContent = htmlContent.replace(/^(\s*<br[^>]*>\s*)+/gi, '');
-                // 移除开头的空白段落（包括带style和内容的）
                 htmlContent = htmlContent.replace(/^(\s*<p[^>]*>\s*(&nbsp;|\s)*<\/p>)+/gi, '');
                 htmlContent = htmlContent.replace(/^(\s*<p[^>]*>\s*<br\s*\/?\s*>\s*<\/p>)+/gi, '');
-                // 移除开头的<div>空白
                 htmlContent = htmlContent.replace(/^(\s*<div[^>]*>\s*(&nbsp;|\s)*<\/div>)+/gi, '');
-                // 移除开头的body标签（如果有）
                 htmlContent = htmlContent.replace(/^(\s*<body[^>]*>)+/gi, '');
                 htmlContent = htmlContent.replace(/(<\/body>\s*)+$/gi, '');
-                // 再次整体trim
                 htmlContent = htmlContent.trim();
                 bodyEl.innerHTML = htmlContent;
+            } else if (isContentHtml) {
+                // content是HTML格式，提取body内容渲染
+                let bodyContent = textContent;
+                // 提取body内容
+                const bodyMatch = bodyContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+                if (bodyMatch) {
+                    bodyContent = bodyMatch[1];
+                }
+                // 移除doctype和html标签
+                bodyContent = bodyContent.replace(/<!doctype[^>]*>/gi, '');
+                bodyContent = bodyContent.replace(/<\/?html[^>]*>/gi, '');
+                bodyContent = bodyContent.trim();
+                bodyEl.innerHTML = bodyContent;
             } else {
-                // 清理纯文本开头的空白
-                let textContent = (email.content || '(无内容)').trim();
-                bodyEl.textContent = textContent;
+                // 纯文本
+                textContent = textContent.trim();
+                bodyEl.textContent = textContent || '(无内容)';
             }
 
             // Load relations
