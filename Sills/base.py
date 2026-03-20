@@ -426,6 +426,13 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # 列已存在或表不存在，忽略
 
+        # 迁移：添加 cc 字段
+        try:
+            conn.execute("ALTER TABLE uni_mail ADD COLUMN cc_addr TEXT")
+            print("[DB] 迁移完成：uni_mail 添加 cc_addr 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
         conn.executescript(schema)
         conn.execute("""
             INSERT OR IGNORE INTO uni_emp (emp_id, emp_name, account, password, rule)

@@ -132,6 +132,9 @@ class IMAPClient:
             # 解析收件人
             to_addr = self._decode_header(msg.get('To', ''))
 
+            # 解析抄送
+            cc_addr = self._decode_header(msg.get('Cc', '') or msg.get('CC', ''))
+
             # 解析日期
             date_str = msg.get('Date', '')
             try:
@@ -163,6 +166,7 @@ class IMAPClient:
                 'subject': subject,
                 'from_addr': from_email or from_addr,
                 'to_addr': to_addr,
+                'cc_addr': cc_addr,
                 'content': content,
                 'html_content': html_content,
                 'received_at': received_at,

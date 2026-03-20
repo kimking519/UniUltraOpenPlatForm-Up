@@ -924,8 +924,10 @@
             <div class="email-detail-header">
                 <div class="email-detail-subject" id="detailSubject"></div>
                 <div class="email-detail-meta">
-                    <span>发件人: <strong id="detailFrom"></strong></span>
-                    <span>时间: <strong id="detailDate"></strong></span>
+                    <div><span>发件人:</span> <strong id="detailFrom"></strong></div>
+                    <div><span>收件人:</span> <strong id="detailTo"></strong></div>
+                    <div id="detailCcRow" style="display: none;"><span>抄送:</span> <strong id="detailCc"></strong></div>
+                    <div><span>时间:</span> <strong id="detailDate"></strong></div>
                 </div>
             </div>
             <div class="email-detail-body" id="detailBody"></div>
@@ -1413,12 +1415,31 @@
 
         try {
             const response = await fetch(`/api/mail/${id}`);
-            const email = await response.json();
+            const result = await response.json();
+            const email = result.email || result;
 
+            // 填充邮件详情
             document.getElementById('detailSubject').textContent = email.subject || '(无主题)';
-            document.getElementById('detailFrom').textContent = email.from_addr;
+            document.getElementById('detailFrom').textContent = email.from_addr || '';
+            document.getElementById('detailTo').textContent = email.to_addr || '';
             document.getElementById('detailDate').textContent = formatDate(email.received_at || email.created_at);
-            document.getElementById('detailBody').textContent = email.content || email.html_content || '(无内容)';
+
+            // 抄送显示
+            const ccRow = document.getElementById('detailCcRow');
+            if (email.cc_addr && email.cc_addr.trim()) {
+                document.getElementById('detailCc').textContent = email.cc_addr;
+                ccRow.style.display = 'block';
+            } else {
+                ccRow.style.display = 'none';
+            }
+
+            // 邮件内容（优先HTML，其次纯文本）
+            const bodyEl = document.getElementById('detailBody');
+            if (email.html_content && email.html_content.trim()) {
+                bodyEl.innerHTML = email.html_content;
+            } else {
+                bodyEl.textContent = email.content || '(无内容)';
+            }
 
             // 自动打开写信面板并填充数据
             const replySubject = email.subject ? 'Re: ' + email.subject : '';
