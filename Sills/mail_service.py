@@ -152,15 +152,29 @@ class IMAPClient:
                     if content_type == 'text/plain':
                         payload = part.get_payload(decode=True)
                         if payload:
-                            content += payload.decode('utf-8', errors='ignore')
+                            # 获取part的charset
+                            charset = part.get_content_charset() or 'utf-8'
+                            try:
+                                content += payload.decode(charset, errors='replace')
+                            except (LookupError, UnicodeDecodeError):
+                                content += payload.decode('utf-8', errors='replace')
                     elif content_type == 'text/html':
                         payload = part.get_payload(decode=True)
                         if payload:
-                            html_content += payload.decode('utf-8', errors='ignore')
+                            # 获取part的charset
+                            charset = part.get_content_charset() or 'utf-8'
+                            try:
+                                html_content += payload.decode(charset, errors='replace')
+                            except (LookupError, UnicodeDecodeError):
+                                html_content += payload.decode('utf-8', errors='replace')
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    content = payload.decode('utf-8', errors='ignore')
+                    charset = msg.get_content_charset() or 'utf-8'
+                    try:
+                        content = payload.decode(charset, errors='replace')
+                    except (LookupError, UnicodeDecodeError):
+                        content = payload.decode('utf-8', errors='replace')
 
             return {
                 'subject': subject,
