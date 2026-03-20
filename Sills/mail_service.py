@@ -232,6 +232,7 @@ class IMAPClient:
                 'content': content,
                 'html_content': html_content,
                 'received_at': received_at,
+                'sent_at': received_at,  # 收件箱邮件也用sent_at存储发件时间
                 'message_id': msg.get('Message-ID', ''),
                 'is_sent': 0
             }
