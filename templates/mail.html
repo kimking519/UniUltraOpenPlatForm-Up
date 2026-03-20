@@ -2027,13 +2027,16 @@
             const result = await response.json();
 
             if (result.success) {
-                alert('邮件发送成功');
+                // 先关闭面板
                 closeComposePanel();
+                // 显示成功提示
+                alert('邮件发送成功');
+                // 刷新发件箱
                 if (currentFolder === 'sent') {
                     loadEmails();
                 }
             } else {
-                alert('发送失败: ' + (result.error || '未知错误'));
+                alert('发送失败: ' + (result.message || result.error || '未知错误'));
             }
         } catch (error) {
             alert('发送失败: ' + error.message);
