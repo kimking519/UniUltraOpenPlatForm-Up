@@ -2844,11 +2844,18 @@
 
     // ============ Paste Attachments ============
     function initPasteAttachments() {
+        // 在整个面板和文本区域都监听粘贴事件
         const composeBody = document.getElementById('composePanelBody');
+        const textArea = document.getElementById('composeBody');
 
-        if (!composeBody) return;
+        if (composeBody) {
+            composeBody.addEventListener('paste', handlePaste, false);
+        }
 
-        composeBody.addEventListener('paste', handlePaste, false);
+        // 文本区域也需要监听，捕获粘贴的图片
+        if (textArea) {
+            textArea.addEventListener('paste', handlePaste, false);
+        }
     }
 
     function handlePaste(e) {
@@ -2863,6 +2870,9 @@
             if (item.kind === 'file') {
                 const file = item.getAsFile();
                 if (file) {
+                    // 阻止默认行为，防止图片被粘贴到文本框
+                    e.preventDefault();
+
                     // Generate filename if it's a pasted image without name
                     if (file.type.startsWith('image/') && (!file.name || file.name === 'image.png')) {
                         const ext = file.type.split('/')[1] || 'png';
@@ -2880,11 +2890,16 @@
             selectedFiles = selectedFiles.concat(files);
             updateAttachmentList();
 
-            // Show brief notification
-            const dropZone = document.getElementById('dropZone');
-            dropZone.classList.add('active');
-            setTimeout(() => dropZone.classList.remove('active'), 500);
+            // 显示提示
+            showPasteNotification(files.length);
         }
+    }
+
+    // 显示粘贴成功提示
+    function showPasteNotification(count) {
+        const dropZone = document.getElementById('dropZone');
+        dropZone.classList.add('active');
+        setTimeout(() => dropZone.classList.remove('active'), 500);
     }
 </script>
 {% endblock %}
