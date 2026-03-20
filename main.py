@@ -1947,17 +1947,21 @@ async def api_mail_list(
 
 @app.post("/api/mail/send")
 async def api_mail_send(
-    to: str = Form(...),
-    subject: str = Form(...),
-    body: str = Form(default=""),
-    html_body: str = Form(default=""),
+    request: Request,
     current_user: dict = Depends(login_required)
 ):
     """发送邮件"""
+    data = await request.json()
+    to = data.get('to', '')
+    subject = data.get('subject', '')
+    body = data.get('body', '')
+    html_body = data.get('html_body', '')
+    cc = data.get('cc', '')
+
     if not to or not subject:
         return {"success": False, "message": "收件人和主题不能为空"}
 
-    result = send_email_now(to=to, subject=subject, body=body, html_body=html_body)
+    result = send_email_now(to=to, subject=subject, body=body, html_body=html_body, cc=cc)
 
     if result["success"]:
         return {"success": True, "message": "邮件发送成功", "message_id": result.get("message_id")}

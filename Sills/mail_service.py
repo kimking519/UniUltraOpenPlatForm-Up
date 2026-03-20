@@ -438,7 +438,7 @@ def sync_inbox_async() -> Dict[str, Any]:
 
 
 def send_email_now(to: str, subject: str, body: str,
-                   html_body: str = None) -> Dict[str, Any]:
+                   html_body: str = None, cc: str = None) -> Dict[str, Any]:
     """
     立即发送邮件
 
@@ -447,6 +447,7 @@ def send_email_now(to: str, subject: str, body: str,
         subject: 主题
         body: 正文
         html_body: HTML 正文（可选）
+        cc: 抄送（可选）
 
     Returns:
         发送结果
@@ -455,7 +456,7 @@ def send_email_now(to: str, subject: str, body: str,
 
     try:
         smtp_client.connect()
-        result = smtp_client.send_email(to, subject, body, html_body)
+        result = smtp_client.send_email(to, subject, body, html_body, cc)
         smtp_client.disconnect()
 
         if result['success']:
@@ -464,6 +465,7 @@ def send_email_now(to: str, subject: str, body: str,
                 'subject': subject,
                 'from_addr': smtp_client.config.get('username', ''),
                 'to_addr': to,
+                'cc_addr': cc,
                 'content': body,
                 'html_content': html_body,
                 'sent_at': datetime.now().isoformat(),

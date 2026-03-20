@@ -1722,6 +1722,16 @@
         const subject = document.getElementById('composeSubject').value;
         const body = document.getElementById('composeBody').value;
 
+        // 构建HTML内容：用户输入 + 原始引用内容
+        let htmlBody = '';
+        if (replyHtmlBody) {
+            // 回复邮件：用户输入在前，原始内容在后
+            htmlBody = `<div style="font-family: sans-serif; line-height: 1.6;"><pre style="white-space: pre-wrap; font-family: inherit;">${body.split('\n\n━━━━━━')[0]}</pre>${replyHtmlBody}</div>`;
+        } else if (body) {
+            // 新邮件：将纯文本转为HTML
+            htmlBody = `<div style="font-family: sans-serif; line-height: 1.6;"><pre style="white-space: pre-wrap; font-family: inherit;">${body}</pre></div>`;
+        }
+
         if (!to || !subject) {
             alert('请填写收件人和主题');
             return;
@@ -1731,7 +1741,7 @@
             const response = await fetch('/api/mail/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ to, cc, subject, body })
+                body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
             });
 
             const result = await response.json();
@@ -1776,9 +1786,8 @@
         const dateEl = document.getElementById('detailDate');
         const date = dateEl ? dateEl.textContent : '';
 
-        // 格式化引用内容
-        let originalBody = '';
-        originalBody = '\n\n━━━━━━━━━━━━━━━━━━━━━━\n';
+        // 格式化纯文本引用内容
+        let originalBody = '\n\n━━━━━━━━━━━━━━━━━━━━━━\n';
         originalBody += `发件人: ${from}\n`;
         originalBody += `发送时间: ${date}\n`;
         originalBody += `收件人: ${to}\n`;
@@ -1787,13 +1796,27 @@
         }
         originalBody += `主题: ${subject}\n`;
         originalBody += '━━━━━━━━━━━━━━━━━━━━━━\n\n';
-
-        // 获取文本内容
         const textContent = bodyEl.textContent || bodyEl.innerText || '';
         originalBody += textContent;
 
+        // 格式化HTML引用内容
+        const originalHtml = `
+            <br><br>
+            <div style="border-left: 2px solid #ccc; padding-left: 10px; color: #666;">
+                <p style="margin: 0; color: #888; font-size: 12px;">━━━━━━━━━━━━━━━━━━━━━━</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>发件人:</strong> ${from}</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>发送时间:</strong> ${date}</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>收件人:</strong> ${to}</p>
+                ${cc ? `<p style="margin: 5px 0; font-size: 12px;"><strong>抄送:</strong> ${cc}</p>` : ''}
+                <p style="margin: 5px 0; font-size: 12px;"><strong>主题:</strong> ${subject}</p>
+                <p style="margin: 0; color: #888; font-size: 12px;">━━━━━━━━━━━━━━━━━━━━━━</p>
+            </div>
+            <br>
+            ${bodyEl.innerHTML}
+        `;
+
         // 不关闭详情面板，直接打开写信面板
-        openComposePanel(from, 'Re: ' + subject, originalBody, cc);
+        openComposePanel(from, 'Re: ' + subject, originalBody, cc, originalHtml);
     }
 
     // AI analyze
@@ -2152,6 +2175,7 @@
     // ============ Compose Panel Functions ============
     let selectedFiles = [];
     let isComposePanelMinimized = false;
+    let replyHtmlBody = '';  // 保存回复时的HTML内容
 
     // Toggle CC field visibility
     function toggleCcField() {
@@ -2160,12 +2184,13 @@
     }
 
     // Open compose panel (Gmail style)
-    function openComposePanel(to = '', subject = '', body = '', cc = '') {
+    function openComposePanel(to = '', subject = '', body = '', cc = '', htmlBody = '') {
         const panel = document.getElementById('composePanel');
         document.getElementById('composeTo').value = to;
         document.getElementById('composeCc').value = cc;
         document.getElementById('composeSubject').value = subject;
         document.getElementById('composeBody').value = body;
+        replyHtmlBody = htmlBody;  // 保存HTML内容用于发送
 
         // Show CC field if has value
         const ccField = document.getElementById('ccField');
