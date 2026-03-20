@@ -62,9 +62,6 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         # 使用缓存的汇率
         krw_val, usd_val = get_exchange_rates()
 
-        # 需要更新的记录
-        updates_needed = []
-
         for r in results:
             remark = r.get('remark') or ""
             r['remark'] = remark.replace(' | ', '\n').replace('|', '\n')
@@ -76,42 +73,17 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             except:
                 r['offer_price_rmb'] = 0.0
 
-            # 计算正确的 KWR 和 USD
+            # 只在数据库中没有值时才计算汇率，不覆盖已保存的值（和销售订单逻辑一致）
             offer_price = float(r.get('offer_price_rmb') or 0.0)
-
-            # 计算期望的 KWR 值
-            if krw_val > 10:
-                expected_kwr = round(offer_price * krw_val, 1)
-            else:
-                expected_kwr = round(offer_price / krw_val, 1) if krw_val else 0.0
-
-            # 计算期望的 USD 值 (USD汇率表示 1 RMB = ? USD)
-            expected_usd = round(offer_price * usd_val, 3) if usd_val else 0.0
-
-            # 获取数据库中的当前值
-            current_kwr = float(r.get('price_kwr') or 0)
-            current_usd = float(r.get('price_usd') or 0)
-
-            # 校验并更新显示值
-            r['price_kwr'] = expected_kwr
-            r['price_usd'] = expected_usd
-
-            # 如果数据库值与计算值不一致，记录需要更新
-            if abs(current_kwr - expected_kwr) > 0.1 or abs(current_usd - expected_usd) > 0.001:
-                updates_needed.append({
-                    'offer_id': r.get('offer_id'),
-                    'price_kwr': expected_kwr,
-                    'price_usd': expected_usd
-                })
-
-        # 批量更新数据库
-        if updates_needed:
-            for update in updates_needed:
-                conn.execute(
-                    "UPDATE uni_offer SET price_kwr = ?, price_usd = ? WHERE offer_id = ?",
-                    (update['price_kwr'], update['price_usd'], update['offer_id'])
-                )
-            conn.commit()
+            try:
+                if not r.get('price_kwr') or float(r.get('price_kwr') or 0) == 0:
+                    if krw_val > 10: r['price_kwr'] = round(offer_price * krw_val, 1)
+                    else: r['price_kwr'] = round(offer_price / krw_val, 1) if krw_val else 0.0
+                # USD汇率表示 1 RMB = ? USD，直接乘
+                if not r.get('price_usd') or float(r.get('price_usd') or 0) == 0:
+                    r['price_usd'] = round(offer_price * usd_val, 3) if usd_val else 0.0
+            except:
+                pass
 
         return results, total
 
