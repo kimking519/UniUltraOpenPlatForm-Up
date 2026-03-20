@@ -1257,11 +1257,11 @@
 
     // Load emails
     async function loadEmails() {
-        const isSent = currentFolder === 'sent' ? 1 : 0;
+        const folder = currentFolder; // 'inbox' or 'sent'
         const search = document.getElementById('searchInput').value;
 
         try {
-            const response = await fetch(`/api/mail/list?page=${currentPage}&limit=20&is_sent=${isSent}${search ? '&search=' + encodeURIComponent(search) : ''}`);
+            const response = await fetch(`/api/mail/list?folder=${folder}&page=${currentPage}&page_size=20${search ? '&search=' + encodeURIComponent(search) : ''}`);
             const data = await response.json();
 
             renderEmailList(data.items);

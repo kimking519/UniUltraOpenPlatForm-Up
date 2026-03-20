@@ -1933,6 +1933,7 @@ async def api_mail_list(
     folder: str = "inbox",
     page: int = 1,
     page_size: int = 20,
+    search: str = None,
     current_user: dict = Depends(login_required)
 ):
     """获取邮件列表（用户隔离）"""
@@ -1940,7 +1941,7 @@ async def api_mail_list(
     # 获取当前邮件账户ID
     config = get_mail_config()
     account_id = config.get('id') if config else None
-    result = get_mail_list(page=page, limit=page_size, is_sent=is_sent, account_id=account_id)
+    result = get_mail_list(page=page, limit=page_size, is_sent=is_sent, search=search, account_id=account_id)
     return result
 
 
