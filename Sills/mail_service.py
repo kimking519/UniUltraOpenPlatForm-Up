@@ -78,12 +78,11 @@ class IMAPClient:
                 pass
             self.client = None
 
-    def fetch_emails(self, limit: int = 50, folder: str = 'INBOX') -> List[Dict[str, Any]]:
+    def fetch_emails(self, folder: str = 'INBOX') -> List[Dict[str, Any]]:
         """
         获取邮件列表
 
         Args:
-            limit: 最大获取数量
             folder: 邮箱文件夹
 
         Returns:
@@ -101,7 +100,7 @@ class IMAPClient:
             if status != 'OK':
                 return emails
 
-            message_ids = messages[0].split()[-limit:]  # 获取最新的 N 封
+            message_ids = messages[0].split()  # 获取所有邮件
 
             for msg_id in message_ids:
                 status, msg_data = self.client.fetch(msg_id, '(RFC822)')
@@ -111,6 +110,8 @@ class IMAPClient:
                 raw_email = msg_data[0][1]
                 email_data = self._parse_email(raw_email)
                 if email_data:
+                    # 标记邮件来源文件夹
+                    email_data['folder'] = folder
                     emails.append(email_data)
 
         except Exception as e:
@@ -371,7 +372,7 @@ class SMTPClient:
 
 def sync_inbox(background_tasks=None) -> Dict[str, Any]:
     """
-    同步收件箱（后台任务）
+    同步邮件（收件箱和发件箱）
 
     Args:
         background_tasks: FastAPI BackgroundTasks（暂未使用，保留扩展性）
@@ -400,54 +401,78 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
 
         imap_client = IMAPClient(config)
         imap_client.connect()
-        update_sync_progress(10, 100, "获取邮件列表...")
 
-        emails = imap_client.fetch_emails(limit=50)
-        total_emails = len(emails)
-        update_sync_progress(20, 100, f"发现 {total_emails} 封邮件")
+        # 同步收件箱和发件箱
+        folders = [
+            ('INBOX', 0, '收件箱'),
+            ('Sent', 1, '发件箱'),
+            ('Sent Items', 1, '发件箱'),
+            ('已发送', 1, '发件箱'),
+        ]
 
-        saved_count = 0
-        updated_count = 0
-        for idx, email_data in enumerate(emails):
-            # 更新进度
-            progress = 20 + int((idx / total_emails) * 70) if total_emails > 0 else 90
-            update_sync_progress(progress, 100, f"处理邮件 {idx + 1}/{total_emails}")
+        total_saved = 0
+        total_updated = 0
+        total_processed = 0
 
-            # 检查是否已存在
-            if email_data.get('message_id'):
-                from Sills.db_mail import get_db_connection
-                with get_db_connection() as conn:
-                    existing = conn.execute(
-                        "SELECT id, account_id FROM uni_mail WHERE message_id = ?",
-                        (email_data['message_id'],)
-                    ).fetchone()
-                    if existing:
-                        existing_id, existing_account_id = existing
-                        # 如果邮件存在但 account_id 为 NULL，更新为当前账户
-                        if existing_account_id is None and current_account_id is not None:
-                            conn.execute(
-                                "UPDATE uni_mail SET account_id = ? WHERE id = ?",
-                                (current_account_id, existing_id)
-                            )
-                            conn.commit()
-                            updated_count += 1
-                        continue
+        for folder_name, is_sent, folder_label in folders:
+            try:
+                update_sync_progress(10, 100, f"获取{folder_label}...")
+                emails = imap_client.fetch_emails(folder=folder_name)
+                if not emails:
+                    continue
 
-            # 关联当前账户ID
-            email_data['account_id'] = current_account_id
+                # 标记是否为已发送
+                for email_data in emails:
+                    email_data['is_sent'] = is_sent
 
-            # 保存邮件
-            save_email(email_data)
-            saved_count += 1
+                total_emails = len(emails)
+                update_sync_progress(20, 100, f"{folder_label}发现 {total_emails} 封邮件")
+
+                for idx, email_data in enumerate(emails):
+                    total_processed += 1
+                    # 更新进度
+                    progress = min(90, 20 + int((total_processed / (total_processed + 10)) * 70))
+                    update_sync_progress(progress, 100, f"处理 {folder_label} {idx + 1}/{total_emails}")
+
+                    # 检查是否已存在
+                    if email_data.get('message_id'):
+                        from Sills.db_mail import get_db_connection
+                        with get_db_connection() as conn:
+                            existing = conn.execute(
+                                "SELECT id, account_id FROM uni_mail WHERE message_id = ?",
+                                (email_data['message_id'],)
+                            ).fetchone()
+                            if existing:
+                                existing_id, existing_account_id = existing
+                                # 如果邮件存在但 account_id 为 NULL，更新为当前账户
+                                if existing_account_id is None and current_account_id is not None:
+                                    conn.execute(
+                                        "UPDATE uni_mail SET account_id = ? WHERE id = ?",
+                                        (current_account_id, existing_id)
+                                    )
+                                    conn.commit()
+                                    total_updated += 1
+                                continue
+
+                    # 关联当前账户ID
+                    email_data['account_id'] = current_account_id
+
+                    # 保存邮件
+                    save_email(email_data)
+                    total_saved += 1
+
+            except Exception as e:
+                print(f"Sync {folder_name} error: {e}")
+                continue
 
         update_sync_progress(95, 100, "断开连接...")
         imap_client.disconnect()
 
-        update_sync_progress(100, 100, f"完成！新增 {saved_count} 封，更新 {updated_count} 封")
+        update_sync_progress(100, 100, f"完成！新增 {total_saved} 封，更新 {total_updated} 封")
 
         return {
             "status": "completed",
-            "message": f"Synced {saved_count} new emails, updated {updated_count} existing"
+            "message": f"Synced {total_saved} new emails, updated {total_updated} existing"
         }
 
     except Exception as e:
