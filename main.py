@@ -2613,6 +2613,28 @@ async def api_get_mails_by_folder(
     return result
 
 
+@app.get("/api/mail/trash")
+async def api_mail_trash_list(
+    page: int = 1,
+    page_size: int = 20,
+    search: str = None,
+    current_user: dict = Depends(login_required)
+):
+    """获取回收站邮件列表"""
+    from Sills.db_mail import get_trash_list, get_current_account_id
+    account_id = get_current_account_id()
+    result = get_trash_list(page=page, limit=page_size, search=search, account_id=account_id)
+    return result
+
+
+@app.post("/api/mail/trash/empty")
+async def api_mail_empty_trash(current_user: dict = Depends(login_required)):
+    """清空回收站"""
+    from Sills.db_mail import empty_trash
+    deleted = empty_trash()
+    return {"success": True, "deleted": deleted}
+
+
 @app.get("/api/mail/{mail_id}")
 async def api_mail_detail(mail_id: int, current_user: dict = Depends(login_required)):
     """获取邮件详情"""
@@ -2677,28 +2699,6 @@ async def api_mail_permanent_delete(mail_id: int, current_user: dict = Depends(l
     from Sills.db_mail import permanently_delete_email
     result = permanently_delete_email(mail_id)
     return {"success": result}
-
-
-@app.get("/api/mail/trash")
-async def api_mail_trash_list(
-    page: int = 1,
-    page_size: int = 20,
-    search: str = None,
-    current_user: dict = Depends(login_required)
-):
-    """获取回收站邮件列表"""
-    from Sills.db_mail import get_trash_list, get_current_account_id
-    account_id = get_current_account_id()
-    result = get_trash_list(page=page, limit=page_size, search=search, account_id=account_id)
-    return result
-
-
-@app.post("/api/mail/trash/empty")
-async def api_mail_empty_trash(current_user: dict = Depends(login_required)):
-    """清空回收站"""
-    from Sills.db_mail import empty_trash
-    deleted = empty_trash()
-    return {"success": True, "deleted": deleted}
 
 
 @app.post("/api/mail/batch-delete")
