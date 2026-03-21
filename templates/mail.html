@@ -155,6 +155,24 @@
         margin-top: 0;
     }
 
+    /* 隔离邮件内容中的链接样式，防止泄露到外部 */
+    .email-detail-body a {
+        color: var(--primary) !important;
+    }
+    .email-detail-body a:visited {
+        color: #7C3AED !important;
+    }
+
+    /* 重置侧边栏链接样式，防止邮件内容影响 */
+    .folder-item,
+    .folder-item:visited {
+        color: var(--text-main) !important;
+    }
+    .folder-item.active,
+    .folder-item.active:visited {
+        color: var(--primary) !important;
+    }
+
     .compose-btn {
         width: 100%;
         padding: 0.75rem;
