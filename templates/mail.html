@@ -1273,6 +1273,18 @@
                     <div id="folderManagerList" style="max-height: 200px; overflow-y: auto;"></div>
                 </div>
 
+                <!-- 黑名单管理 -->
+                <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                    <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">黑名单</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">添加到黑名单的邮箱将被拦截，不会出现在收件箱</p>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                        <input type="text" id="blacklistEmail" placeholder="邮箱地址" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <input type="text" id="blacklistReason" placeholder="原因（可选）" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <button class="btn btn-primary" onclick="addBlacklist()">添加</button>
+                    </div>
+                    <div id="blacklistContainer" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+
                 <!-- 过滤规则 -->
                 <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                     <h3 style="margin: 0 0 5px 0; font-size: 15px; color: var(--text-main);">过滤规则</h3>
@@ -3347,6 +3359,93 @@
 
         // Load folders and rules
         await loadFolderManagerData();
+
+        // Load blacklist
+        await loadBlacklist();
+    }
+
+    // Load blacklist
+    async function loadBlacklist() {
+        try {
+            const response = await fetch('/api/mail/blacklist');
+            if (response.ok) {
+                const data = await response.json();
+                renderBlacklist(data.blacklist || []);
+            }
+        } catch (error) {
+            console.error('Load blacklist error:', error);
+        }
+    }
+
+    // Render blacklist
+    function renderBlacklist(blacklist) {
+        const container = document.getElementById('blacklistContainer');
+
+        if (!blacklist || blacklist.length === 0) {
+            container.innerHTML = `<div style="text-align: center; padding: 10px; color: var(--text-muted);">暂无黑名单</div>`;
+            return;
+        }
+
+        container.innerHTML = blacklist.map(item => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: var(--bg-main); border-radius: var(--radius); margin-bottom: 6px;">
+                <div>
+                    <div style="color: var(--text-main); font-size: 13px;">${escapeHtml(item.email_addr)}</div>
+                    ${item.reason ? `<div style="color: var(--text-muted); font-size: 11px;">${escapeHtml(item.reason)}</div>` : ''}
+                </div>
+                <button onclick="removeBlacklist(${item.id})" style="background: #EF4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">移除</button>
+            </div>
+        `).join('');
+    }
+
+    // Add blacklist
+    async function addBlacklist() {
+        const emailInput = document.getElementById('blacklistEmail');
+        const reasonInput = document.getElementById('blacklistReason');
+        const email = emailInput.value.trim();
+        const reason = reasonInput.value.trim();
+
+        if (!email) {
+            alert('请输入邮箱地址');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/mail/blacklist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email_addr: email, reason: reason })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                emailInput.value = '';
+                reasonInput.value = '';
+                loadBlacklist();
+                showToast('已添加到黑名单', 'success');
+            } else {
+                alert(result.message || '添加失败');
+            }
+        } catch (error) {
+            console.error('Add blacklist error:', error);
+            alert('添加失败');
+        }
+    }
+
+    // Remove blacklist
+    async function removeBlacklist(id) {
+        if (!confirm('确定要移除此黑名单吗？')) return;
+
+        try {
+            const response = await fetch(`/api/mail/blacklist/${id}`, { method: 'DELETE' });
+            const result = await response.json();
+            if (result.success) {
+                loadBlacklist();
+                showToast('已从黑名单移除', 'success');
+            }
+        } catch (error) {
+            console.error('Remove blacklist error:', error);
+            alert('移除失败');
+        }
     }
 
     // Load accounts list

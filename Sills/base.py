@@ -407,6 +407,16 @@ def init_db():
         FOREIGN KEY (folder_id) REFERENCES mail_folder(id) ON DELETE CASCADE
     );
 
+    -- 邮件黑名单表
+    CREATE TABLE IF NOT EXISTS mail_blacklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email_addr TEXT NOT NULL UNIQUE,
+        reason TEXT,
+        account_id INTEGER,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
+    );
+
     -- 性能优化索引
     CREATE INDEX IF NOT EXISTS idx_cli_name ON uni_cli(cli_name);
     CREATE INDEX IF NOT EXISTS idx_cli_emp ON uni_cli(emp_id);

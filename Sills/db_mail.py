@@ -389,6 +389,71 @@ def get_draft_count(account_id: int = None) -> int:
         return row[0] if row else 0
 
 
+# ============ 黑名单功能 ============
+
+def add_to_blacklist(email_addr: str, reason: str = None, account_id: int = None) -> bool:
+    """
+    添加邮箱到黑名单
+
+    Args:
+        email_addr: 邮箱地址
+        reason: 拉黑原因
+        account_id: 账户ID
+
+    Returns:
+        是否成功
+    """
+    with get_db_connection() as conn:
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO mail_blacklist (email_addr, reason, account_id)
+                VALUES (?, ?, ?)
+            """, (email_addr, reason, account_id))
+            conn.commit()
+            return True
+        except:
+            return False
+
+
+def remove_from_blacklist(blacklist_id: int) -> bool:
+    """从黑名单移除"""
+    with get_db_connection() as conn:
+        result = conn.execute("DELETE FROM mail_blacklist WHERE id = ?", (blacklist_id,))
+        conn.commit()
+        return result.rowcount > 0
+
+
+def get_blacklist_list(account_id: int = None) -> list:
+    """获取黑名单列表"""
+    with get_db_connection() as conn:
+        if account_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM mail_blacklist WHERE account_id = ? OR account_id IS NULL ORDER BY created_at DESC",
+                (account_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM mail_blacklist ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def is_in_blacklist(email_addr: str, account_id: int = None) -> bool:
+    """检查邮箱是否在黑名单中"""
+    with get_db_connection() as conn:
+        if account_id is not None:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM mail_blacklist WHERE email_addr = ? AND (account_id = ? OR account_id IS NULL)",
+                (email_addr, account_id)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM mail_blacklist WHERE email_addr = ?",
+                (email_addr,)
+            ).fetchone()
+        return row[0] > 0 if row else False
+
+
 def get_unread_count(account_id: int = None) -> int:
     """获取未读邮件数量"""
     with get_db_connection() as conn:

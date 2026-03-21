@@ -2882,6 +2882,47 @@ async def api_mail_suggest_reply(mail_id: int, current_user: dict = Depends(logi
 
 # ==================== SmartMail 路由结束 ====================
 
+# ==================== 黑名单 API ====================
+
+@app.get("/api/mail/blacklist")
+async def api_get_blacklist(current_user: dict = Depends(login_required)):
+    """获取黑名单列表"""
+    from Sills.db_mail import get_blacklist_list
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+    blacklist = get_blacklist_list(account_id)
+    return {"success": True, "blacklist": blacklist}
+
+
+@app.post("/api/mail/blacklist")
+async def api_add_blacklist(request: Request, current_user: dict = Depends(login_required)):
+    """添加黑名单"""
+    from Sills.db_mail import add_to_blacklist
+    data = await request.json()
+    email_addr = data.get('email_addr', '').strip()
+    reason = data.get('reason', '')
+
+    if not email_addr:
+        return {"success": False, "message": "邮箱地址不能为空"}
+
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+
+    success = add_to_blacklist(email_addr, reason, account_id)
+    if success:
+        return {"success": True, "message": "已添加到黑名单"}
+    else:
+        return {"success": False, "message": "添加失败或已存在"}
+
+
+@app.delete("/api/mail/blacklist/{blacklist_id}")
+async def api_remove_blacklist(blacklist_id: int, current_user: dict = Depends(login_required)):
+    """移除黑名单"""
+    from Sills.db_mail import remove_from_blacklist
+    success = remove_from_blacklist(blacklist_id)
+    return {"success": success}
+
+
 if __name__ == "__main__":
     # 根据环境选择端口: Windows=8001, WSL=8000
     env = get_server_env()
