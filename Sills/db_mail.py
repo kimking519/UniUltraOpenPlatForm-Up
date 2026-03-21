@@ -232,15 +232,13 @@ def get_trash_count() -> int:
 
 
 def batch_delete_emails(mail_ids: list) -> int:
-    """批量删除邮件"""
+    """批量删除邮件（移入回收站）"""
     if not mail_ids:
         return 0
     with get_db_connection() as conn:
-        # 删除关联关系
         placeholders = ','.join('?' * len(mail_ids))
-        conn.execute(f"DELETE FROM uni_mail_rel WHERE mail_id IN ({placeholders})", mail_ids)
-        # 删除邮件
-        result = conn.execute(f"DELETE FROM uni_mail WHERE id IN ({placeholders})", mail_ids)
+        # 软删除：设置 is_deleted = 1
+        result = conn.execute(f"UPDATE uni_mail SET is_deleted = 1, deleted_at = datetime('now', 'localtime') WHERE id IN ({placeholders})", mail_ids)
         conn.commit()
         return result.rowcount
 
