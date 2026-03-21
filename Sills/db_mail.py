@@ -108,12 +108,7 @@ def get_trash_list(page: int = 1, limit: int = 20, search: str = None, account_i
     query = "SELECT * FROM uni_mail WHERE is_deleted = 1"
     count_query = "SELECT COUNT(*) FROM uni_mail WHERE is_deleted = 1"
 
-    # 用户隔离：按账户ID过滤（包含 account_id 为 NULL 的邮件）
-    if account_id is not None:
-        query += " AND (account_id = ? OR account_id IS NULL)"
-        count_query += " AND (account_id = ? OR account_id IS NULL)"
-        params.append(account_id)
-        count_params.append(account_id)
+    # 回收站不按账户过滤，显示所有已删除邮件
 
     if search:
         query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ?)"
