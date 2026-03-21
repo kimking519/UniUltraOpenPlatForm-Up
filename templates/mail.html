@@ -936,6 +936,53 @@
         border-top: 1px solid var(--border);
     }
 
+    /* Actions at top of detail panel */
+    .email-actions-top {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        padding-bottom: 0.75rem;
+        margin-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    /* Relations Section Compact */
+    .relations-section-compact {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+        margin-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.85rem;
+    }
+
+    .relations-label {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+    }
+
+    .add-relation-inline {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-left: auto;
+    }
+
+    .add-relation-inline select {
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-main);
+        color: var(--text-main);
+    }
+
     /* Relations Section */
     .relations-section {
         margin-top: 1.5rem;
@@ -1339,6 +1386,34 @@
             <div class="detail-panel-title" id="detailPanelTitle">邮件详情</div>
         </div>
         <div class="detail-panel-content">
+            <!-- Actions at top -->
+            <div class="email-actions-top">
+                <button class="btn btn-primary btn-sm" onclick="replyEmail()">回复</button>
+                <button class="btn btn-primary btn-sm" onclick="replyAllEmail()">全部回复</button>
+                <button class="btn btn-secondary btn-sm" onclick="forwardEmail()">转发</button>
+                <button class="btn btn-secondary btn-sm" onclick="analyzeEmail()">AI 分析</button>
+                <button class="btn btn-secondary btn-sm" onclick="suggestReply()">AI 建议</button>
+                <button class="btn btn-secondary btn-sm" id="restoreBtn" style="display: none; color: #22C55E;" onclick="restoreCurrentEmail()">恢复</button>
+                <button class="btn btn-secondary btn-sm" id="unblacklistBtn" style="display: none; color: #3B82F6;" onclick="unblacklistCurrentEmail()">移出黑名单</button>
+                <button class="btn btn-secondary btn-sm" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
+            </div>
+
+            <!-- Relations Section (compact) -->
+            <div class="relations-section-compact">
+                <span class="relations-label">关联:</span>
+                <div class="relation-tags" id="relationTags"></div>
+                <div class="add-relation-inline">
+                    <select id="relationType" style="padding: 2px 6px; font-size: 12px;">
+                        <option value="cli">客户</option>
+                        <option value="order">订单</option>
+                    </select>
+                    <select id="relationRef" style="padding: 2px 6px; font-size: 12px; max-width: 150px;">
+                        <!-- Options loaded dynamically -->
+                    </select>
+                    <button class="btn btn-secondary btn-sm" onclick="addRelation()" style="padding: 2px 8px; font-size: 12px;">+</button>
+                </div>
+            </div>
+
             <div class="email-detail-header">
                 <div class="email-detail-subject" id="detailSubject"></div>
                 <div class="email-detail-meta">
@@ -1349,33 +1424,6 @@
                 </div>
             </div>
             <div class="email-detail-body" id="detailBody"></div>
-
-            <!-- Relations Section -->
-            <div class="relations-section">
-                <h4>关联客户/订单</h4>
-                <div class="relation-tags" id="relationTags"></div>
-                <div class="add-relation-form">
-                    <select id="relationType">
-                        <option value="cli">客户</option>
-                        <option value="order">订单</option>
-                    </select>
-                    <select id="relationRef">
-                        <!-- Options loaded dynamically -->
-                    </select>
-                    <button class="btn btn-secondary" onclick="addRelation()">添加关联</button>
-                </div>
-            </div>
-
-            <div class="email-actions">
-                <button class="btn btn-primary" onclick="replyEmail()">回复</button>
-                <button class="btn btn-primary" onclick="replyAllEmail()">全部回复</button>
-                <button class="btn btn-secondary" onclick="forwardEmail()">转发</button>
-                <button class="btn btn-secondary" onclick="analyzeEmail()">AI 分析</button>
-                <button class="btn btn-secondary" onclick="suggestReply()">AI 建议回复</button>
-                <button class="btn btn-secondary" id="restoreBtn" style="display: none; color: #22C55E;" onclick="restoreCurrentEmail()">恢复</button>
-                <button class="btn btn-secondary" id="unblacklistBtn" style="display: none; color: #3B82F6;" onclick="unblacklistCurrentEmail()">移出黑名单</button>
-                <button class="btn btn-secondary" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
-            </div>
         </div>
     </div>
     </div><!-- End of mail-main-wrapper -->
@@ -1501,6 +1549,34 @@
             </button>
         </div>
         <div class="modal-body">
+            <!-- Actions at top -->
+            <div class="email-actions-top">
+                <button class="btn btn-primary btn-sm" onclick="replyEmail()">回复</button>
+                <button class="btn btn-primary btn-sm" onclick="replyAllEmail()">全部回复</button>
+                <button class="btn btn-secondary btn-sm" onclick="forwardEmail()">转发</button>
+                <button class="btn btn-secondary btn-sm" onclick="analyzeEmail()">AI 分析</button>
+                <button class="btn btn-secondary btn-sm" onclick="suggestReply()">AI 建议</button>
+                <button class="btn btn-secondary btn-sm" id="restoreBtn" style="display: none; color: #22C55E;" onclick="restoreCurrentEmail()">恢复</button>
+                <button class="btn btn-secondary btn-sm" id="unblacklistBtn" style="display: none; color: #3B82F6;" onclick="unblacklistCurrentEmail()">移出黑名单</button>
+                <button class="btn btn-secondary btn-sm" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
+            </div>
+
+            <!-- Relations Section (compact) -->
+            <div class="relations-section-compact">
+                <span class="relations-label">关联:</span>
+                <div class="relation-tags" id="relationTags"></div>
+                <div class="add-relation-inline">
+                    <select id="relationType" style="padding: 2px 6px; font-size: 12px;">
+                        <option value="cli">客户</option>
+                        <option value="order">订单</option>
+                    </select>
+                    <select id="relationRef" style="padding: 2px 6px; font-size: 12px; max-width: 150px;">
+                        <!-- Options loaded dynamically -->
+                    </select>
+                    <button class="btn btn-secondary btn-sm" onclick="addRelation()" style="padding: 2px 8px; font-size: 12px;">+</button>
+                </div>
+            </div>
+
             <div class="email-detail-header">
                 <div class="email-detail-subject" id="detailSubject"></div>
                 <div class="email-detail-meta">
@@ -1509,33 +1585,6 @@
                 </div>
             </div>
             <div class="email-detail-body" id="detailBody"></div>
-
-            <!-- Relations Section -->
-            <div class="relations-section">
-                <h4>关联客户/订单</h4>
-                <div class="relation-tags" id="relationTags"></div>
-                <div class="add-relation-form">
-                    <select id="relationType">
-                        <option value="cli">客户</option>
-                        <option value="order">订单</option>
-                    </select>
-                    <select id="relationRef">
-                        <!-- Options loaded dynamically -->
-                    </select>
-                    <button class="btn btn-secondary" onclick="addRelation()">添加关联</button>
-                </div>
-            </div>
-
-            <div class="email-actions">
-                <button class="btn btn-primary" onclick="replyEmail()">回复</button>
-                <button class="btn btn-primary" onclick="replyAllEmail()">全部回复</button>
-                <button class="btn btn-secondary" onclick="forwardEmail()">转发</button>
-                <button class="btn btn-secondary" onclick="analyzeEmail()">AI 分析</button>
-                <button class="btn btn-secondary" onclick="suggestReply()">AI 建议回复</button>
-                <button class="btn btn-secondary" id="restoreBtn" style="display: none; color: #22C55E;" onclick="restoreCurrentEmail()">恢复</button>
-                <button class="btn btn-secondary" id="unblacklistBtn" style="display: none; color: #3B82F6;" onclick="unblacklistCurrentEmail()">移出黑名单</button>
-                <button class="btn btn-secondary" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
-            </div>
         </div>
     </div>
 </div>
