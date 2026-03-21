@@ -1972,11 +1972,18 @@ async def api_mail_send(
     if not to or not subject:
         return {"success": False, "message": "收件人和主题不能为空"}
 
-    # 追加签名
+    # 追加签名（签名现在是HTML格式）
     signature = get_signature()
     if signature:
-        body = body + "\n\n" + signature if body else signature
-        html_body = html_body + "<br><br>" + signature.replace('\n', '<br>') if html_body else signature.replace('\n', '<br>')
+        # 纯文本body：从HTML中提取纯文本（简单处理）
+        import re
+        plain_signature = re.sub(r'<[^>]+>', '', signature).replace('&nbsp;', ' ')
+        body = body + "\n\n" + plain_signature if body else plain_signature
+        # HTML body：直接追加HTML签名（空字符串也会进入else分支）
+        if html_body and html_body.strip():
+            html_body = html_body + "<br><br>" + signature
+        else:
+            html_body = signature
 
     result = send_email_now(to=to, subject=subject, body=body, html_body=html_body, cc=cc)
 
@@ -2007,11 +2014,18 @@ async def api_mail_send_with_attachments(
     if not to or not subject:
         return {"success": False, "message": "收件人和主题不能为空"}
 
-    # 追加签名
+    # 追加签名（签名现在是HTML格式）
     signature = get_signature()
     if signature:
-        body = body + "\n\n" + signature if body else signature
-        html_body = html_body + "<br><br>" + signature.replace('\n', '<br>') if html_body else signature.replace('\n', '<br>')
+        # 纯文本body：从HTML中提取纯文本（简单处理）
+        import re
+        plain_signature = re.sub(r'<[^>]+>', '', signature).replace('&nbsp;', ' ')
+        body = body + "\n\n" + plain_signature if body else plain_signature
+        # HTML body：直接追加HTML签名（空字符串也会进入else分支）
+        if html_body and html_body.strip():
+            html_body = html_body + "<br><br>" + signature
+        else:
+            html_body = signature
 
     # 获取所有附件（使用getlist获取多个同名字段）
     attachments = []

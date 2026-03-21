@@ -479,8 +479,8 @@
         position: fixed;
         bottom: 0;
         right: 1rem;
-        width: 480px;
-        min-width: 320px;
+        width: 600px;
+        min-width: 400px;
         max-width: calc(100vw - 2rem);
         height: 500px;
         min-height: 300px;
@@ -649,6 +649,13 @@
 
     .compose-body-wrapper textarea::placeholder {
         color: var(--text-muted);
+    }
+
+    /* contenteditable placeholder */
+    #composeBody:empty:before {
+        content: attr(placeholder);
+        color: var(--text-muted);
+        pointer-events: none;
     }
 
     .compose-attachments {
@@ -1101,7 +1108,7 @@
             <!-- 自定义文件夹将动态加载 -->
         </ul>
         <div class="settings-link">
-            <a href="#" onclick="openSettingsModal(event)">
+            <a href="#" onclick="switchToSettings(event)">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -1150,6 +1157,90 @@
 
             <div class="mail-list" id="mailList">
                 <!-- Email list will be loaded here -->
+            </div>
+
+            <!-- 设置视图 (替代弹框) -->
+            <div class="settings-view" id="settingsView" style="display: none; padding: 20px; overflow-y: auto; height: 100%;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; color: var(--text-main);">邮件设置</h2>
+                    <button class="btn" style="background: var(--border); color: var(--text-main);" onclick="closeSettingsView()">返回邮件列表</button>
+                </div>
+
+                <!-- 同步设置 -->
+                <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                    <h3 style="margin: 0 0 15px 0; font-size: 15px; color: var(--text-main);">同步设置</h3>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <label style="color: var(--text-main); min-width: 80px;">同步间隔</label>
+                        <input type="number" id="syncInterval" value="30" min="1" max="60" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <span style="color: var(--text-muted);">分钟</span>
+                        <button class="btn btn-primary" onclick="saveSyncInterval()">保存</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="color: var(--text-main); min-width: 80px;">同步范围</label>
+                        <input type="number" id="syncDays" value="90" min="1" max="365" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <span style="color: var(--text-muted);">天</span>
+                        <button class="btn btn-primary" onclick="saveSyncDays()">保存</button>
+                    </div>
+                </div>
+
+                <!-- 邮件账户 -->
+                <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0; font-size: 15px; color: var(--text-main);">邮件账户</h3>
+                        <button class="btn btn-primary" onclick="openAddAccountModal()">添加账户</button>
+                    </div>
+                    <div id="accountList"></div>
+                </div>
+
+                <!-- 邮件签名 -->
+                <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                    <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">邮件签名</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">签名将自动添加到每封发送的邮件末尾，支持富文本格式</p>
+                    <div class="signature-toolbar" style="display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap;">
+                        <button type="button" class="sig-btn" onclick="execSignatureCmd('bold')" title="粗体" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><b>B</b></button>
+                        <button type="button" class="sig-btn" onclick="execSignatureCmd('italic')" title="斜体" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><i>I</i></button>
+                        <button type="button" class="sig-btn" onclick="execSignatureCmd('underline')" title="下划线" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><u>U</u></button>
+                        <button type="button" class="sig-btn" onclick="execSignatureCmd('insertUnorderedList')" title="无序列表" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">•</button>
+                        <button type="button" class="sig-btn" onclick="execSignatureCmd('insertOrderedList')" title="有序列表" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">1.</button>
+                        <button type="button" class="sig-btn" onclick="insertSignatureLink()" title="插入链接" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">🔗</button>
+                        <button type="button" class="sig-btn" onclick="insertSignatureImage()" title="插入图片" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">🖼️</button>
+                        <select onchange="execSignatureCmd('fontSize', this.value); this.value='';" style="padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">
+                            <option value="">字号</option>
+                            <option value="1">小</option>
+                            <option value="3">正常</option>
+                            <option value="5">大</option>
+                            <option value="7">超大</option>
+                        </select>
+                        <input type="color" id="sigColorPicker" onchange="execSignatureCmd('foreColor', this.value)" title="文字颜色" style="width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+                    </div>
+                    <div id="emailSignature" contenteditable="true" style="width: 100%; min-height: 80px; max-height: 200px; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); font-size: 13px; line-height: 1.5; overflow-y: auto; overflow-x: hidden; word-wrap: break-word;"></div>
+                    <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveSignature()">保存签名</button>
+                </div>
+
+                <!-- 文件夹管理 -->
+                <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                    <h3 style="margin: 0 0 15px 0; font-size: 15px; color: var(--text-main);">文件夹管理</h3>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                        <input type="text" id="newFolderName" placeholder="新文件夹名称" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <button class="btn btn-primary" onclick="addFolder()">添加</button>
+                    </div>
+                    <div id="folderManagerList" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+
+                <!-- 过滤规则 -->
+                <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                    <h3 style="margin: 0 0 5px 0; font-size: 15px; color: var(--text-main);">过滤规则</h3>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">邮件标题包含关键词时自动移入对应文件夹，多个关键词用逗号分隔</p>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                        <select id="ruleFolder" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); min-width: 120px;">
+                            <option value="">选择文件夹</option>
+                        </select>
+                        <input type="text" id="ruleKeyword" placeholder="关键词，多个用逗号分隔" style="flex: 1; min-width: 100px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <input type="number" id="rulePriority" placeholder="优先级" value="0" style="width: 70px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <button class="btn btn-primary" onclick="addFilterRule()">添加</button>
+                    </div>
+                    <div id="filterRulesList" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
             </div>
 
             <div class="pagination" id="pagination">
@@ -1246,9 +1337,57 @@
             <span class="compose-field-label">主题</span>
             <input type="text" id="composeSubject" placeholder="邮件主题">
         </div>
-        <div class="compose-body-wrapper">
-            <textarea id="composeBody" placeholder="邮件内容..."></textarea>
-            <div id="composeHtmlBody" style="border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.5rem; max-height: 300px; overflow-y: auto;"></div>
+        <!-- 富文本工具栏 -->
+        <div class="compose-toolbar" style="display: flex; flex-direction: column; gap: 4px; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); background: var(--card-bg);">
+            <!-- 第一行：字体、字号、格式 -->
+            <div style="display: flex; gap: 3px; align-items: center; flex-wrap: wrap;">
+                <select id="composeFontFamily" onchange="execComposeCmd('fontName', this.value)" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-size: 11px;">
+                    <option value="">字体</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Microsoft YaHei">微软雅黑</option>
+                    <option value="SimSun">宋体</option>
+                    <option value="SimHei">黑体</option>
+                </select>
+                <select onchange="execComposeCmd('fontSize', this.value); this.value='';" style="padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-size: 11px;">
+                    <option value="">字号</option>
+                    <option value="1">小</option>
+                    <option value="2">较小</option>
+                    <option value="3">正常</option>
+                    <option value="4">较大</option>
+                    <option value="5">大</option>
+                    <option value="6">很大</option>
+                    <option value="7">超大</option>
+                </select>
+                <button type="button" onclick="execComposeCmd('bold')" title="粗体" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><b>B</b></button>
+                <button type="button" onclick="execComposeCmd('italic')" title="斜体" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><i>I</i></button>
+                <button type="button" onclick="execComposeCmd('underline')" title="下划线" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><u>U</u></button>
+                <button type="button" onclick="execComposeCmd('strikeThrough')" title="删除线" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;"><s>S</s></button>
+                <div style="width: 1px; height: 18px; background: var(--border); margin: 0 2px;"></div>
+                <button type="button" onclick="execComposeCmd('justifyLeft')" title="左对齐" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">⬅</button>
+                <button type="button" onclick="execComposeCmd('justifyCenter')" title="居中" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">⬌</button>
+                <button type="button" onclick="execComposeCmd('justifyRight')" title="右对齐" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">➡</button>
+            </div>
+            <!-- 第二行：列表、缩进、颜色、链接 -->
+            <div style="display: flex; gap: 3px; align-items: center; flex-wrap: wrap;">
+                <button type="button" onclick="execComposeCmd('insertUnorderedList')" title="无序列表" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">•</button>
+                <button type="button" onclick="execComposeCmd('insertOrderedList')" title="有序列表" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">1.</button>
+                <button type="button" onclick="execComposeCmd('indent')" title="增加缩进" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">→</button>
+                <button type="button" onclick="execComposeCmd('outdent')" title="减少缩进" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">←</button>
+                <div style="width: 1px; height: 18px; background: var(--border); margin: 0 2px;"></div>
+                <input type="color" id="composeColorPicker" onchange="execComposeCmd('foreColor', this.value)" title="文字颜色" style="width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+                <input type="color" id="composeBgColorPicker" onchange="execComposeCmd('hiliteColor', this.value)" title="背景颜色" style="width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+                <div style="width: 1px; height: 18px; background: var(--border); margin: 0 2px;"></div>
+                <button type="button" onclick="insertComposeLink()" title="插入链接" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">🔗</button>
+                <button type="button" onclick="insertComposeImage()" title="插入图片" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">🖼️</button>
+                <button type="button" onclick="execComposeCmd('removeFormat')" title="清除格式" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer;">✕</button>
+            </div>
+        </div>
+        <div class="compose-body-wrapper" style="flex: 1; display: flex; flex-direction: column;">
+            <div id="composeBody" contenteditable="true" placeholder="邮件内容..." style="flex: 1; min-height: 200px; padding: 0.75rem; border: none; background: var(--bg-main); color: var(--text-main); font-size: 14px; line-height: 1.6; overflow-y: auto; outline: none;"></div>
         </div>
         <div class="compose-attachments" id="attachmentsArea">
             <div class="attachment-list" id="attachmentList"></div>
@@ -1315,86 +1454,6 @@
                 <button class="btn btn-secondary" onclick="suggestReply()">AI 建议回复</button>
                 <button class="btn btn-secondary" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Settings Modal -->
-<div class="modal" id="settingsModal">
-    <div class="modal-content" style="max-width: 700px; max-height: 90vh; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg) 70%, #1e3a5f 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;">
-        <div class="modal-header" style="border-bottom: 1px solid var(--border); flex-shrink: 0;">
-            <h2 style="color: var(--text-main);">邮件设置</h2>
-            <button class="modal-close" onclick="closeModal('settingsModal')">
-                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-        </div>
-        <div class="modal-body" style="background: transparent; overflow-y: auto; flex: 1;">
-            <!-- 同步间隔设置（独立区域） -->
-            <div class="settings-section" style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
-                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-main);">同步设置</h3>
-                <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <label style="margin-bottom: 0; color: var(--text-main);">同步间隔</label>
-                    <input type="number" id="syncInterval" value="30" min="1" max="60" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                    <span style="color: var(--text-main);">分钟</span>
-                    <button class="btn btn-primary" style="margin-left: auto;" onclick="saveSyncInterval()">保存间隔</button>
-                </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 0;">
-                    <label style="margin-bottom: 0; color: var(--text-main);">同步时间范围</label>
-                    <input type="number" id="syncDays" value="90" min="1" max="365" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                    <span style="color: var(--text-main);">天</span>
-                    <button class="btn btn-primary" style="margin-left: auto;" onclick="saveSyncDays()">保存范围</button>
-                </div>
-            </div>
-
-            <!-- 账户管理区域 -->
-            <div class="settings-section" style="margin-top: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0; font-size: 14px; color: var(--text-main);">邮件账户</h3>
-                    <button class="btn btn-primary" onclick="openAddAccountModal()">+ 添加账户</button>
-                </div>
-
-                <!-- 账户列表 -->
-                <div id="accountList" class="account-list">
-                    <!-- 动态加载 -->
-                </div>
-            </div>
-
-            <!-- 签名设置区域 -->
-            <div class="settings-section" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
-                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-main);">邮件签名</h3>
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">签名将自动添加到每封发送的邮件末尾</p>
-                <textarea id="emailSignature" rows="5" placeholder="请输入您的签名，例如：&#10;&#10;此致&#10;敬礼&#10;&#10;张三&#10;xxx公司" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); font-size: 13px; line-height: 1.5; resize: vertical;"></textarea>
-                <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveSignature()">保存签名</button>
-            </div>
-
-            <!-- 文件夹管理区域 -->
-            <div class="settings-section" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
-                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-main);">文件夹管理</h3>
-                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
-                    <input type="text" id="newFolderName" placeholder="新文件夹名称" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                    <button class="btn btn-primary" onclick="addFolder()">添加</button>
-                </div>
-                <div id="folderManagerList" style="max-height: 200px; overflow-y: auto;"></div>
-            </div>
-
-            <!-- 添加过滤规则 -->
-            <div class="settings-section" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
-                <h3 style="margin: 0 0 5px 0; font-size: 14px; color: var(--text-main);">添加过滤规则</h3>
-                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">邮件标题包含关键词时自动移入对应文件夹。多个关键词用逗号分隔，如：报价,invoice,quote</p>
-                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
-                    <select id="ruleFolder" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); min-width: 120px;">
-                        <option value="">选择文件夹</option>
-                    </select>
-                    <input type="text" id="ruleKeyword" placeholder="关键词，多个用逗号分隔" style="flex: 1; min-width: 100px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                    <input type="number" id="rulePriority" placeholder="优先级" value="0" style="width: 70px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                    <button class="btn btn-primary" onclick="addFilterRule()">添加规则</button>
-                </div>
-            </div>
-        </div>
-        <div class="modal-footer" style="background: #1e3a5f; border-top: none; padding: 1rem 1.5rem; flex-shrink: 0;">
-            <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="closeModal('settingsModal')">关闭</button>
         </div>
     </div>
 </div>
@@ -1695,10 +1754,12 @@
 
     async function loadFolderManagerData() {
         // 加载文件夹
+        let folders = [];
         try {
             const response = await fetch('/api/mail/folders');
             const data = await response.json();
             if (data.success) {
+                folders = data.folders;
                 renderFolderManagerList(data.folders);
                 updateRuleFolderSelect(data.folders);
             }
@@ -1720,10 +1781,38 @@
                     rulesByFolder[rule.folder_id].push(rule);
                 });
                 renderFolderRules(rulesByFolder);
+                // 渲染规则列表
+                renderFilterRulesList(data.rules, folders);
             }
         } catch (error) {
             console.error('Load filter rules error:', error);
         }
+    }
+
+    function renderFilterRulesList(rules, folders) {
+        const container = document.getElementById('filterRulesList');
+        if (!container) return;
+
+        if (rules.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">暂无过滤规则</p>';
+            return;
+        }
+
+        // 创建文件夹ID到名称的映射
+        const folderMap = {};
+        folders.forEach(f => folderMap[f.id] = f.folder_name);
+
+        container.innerHTML = rules.map(rule => `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--bg-main); border-radius: var(--radius); margin-bottom: 0.5rem; font-size: 0.85rem;">
+                <div>
+                    <span style="color: var(--primary); font-weight: 500;">${escapeHtml(folderMap[rule.folder_id] || '未知文件夹')}</span>
+                    <span style="color: var(--text-muted); margin: 0 0.5rem;">→</span>
+                    <span style="color: var(--text-main);">${escapeHtml(rule.keyword)}</span>
+                    <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 0.5rem;">优先级:${rule.priority}</span>
+                </div>
+                <button onclick="deleteFilterRule(${rule.id})" style="padding: 0.2rem 0.5rem; font-size: 0.75rem; background: #EF4444; color: white; border: none; border-radius: var(--radius); cursor: pointer;">删除</button>
+            </div>
+        `).join('');
     }
 
     function renderFolderManagerList(folders) {
@@ -2446,17 +2535,9 @@
         const to = document.getElementById('composeTo').value;
         const cc = document.getElementById('composeCc').value;
         const subject = document.getElementById('composeSubject').value;
-        const body = document.getElementById('composeBody').value;
-
-        // 构建HTML内容：用户输入 + 原始引用内容
-        let htmlBody = '';
-        if (replyHtmlBody) {
-            // 回复邮件：用户输入在前，原始内容在后
-            htmlBody = `<div style="font-family: sans-serif; line-height: 1.6;"><pre style="white-space: pre-wrap; font-family: inherit;">${body.split('\n\n━━━━━━')[0]}</pre>${replyHtmlBody}</div>`;
-        } else if (body) {
-            // 新邮件：将纯文本转为HTML
-            htmlBody = `<div style="font-family: sans-serif; line-height: 1.6;"><pre style="white-space: pre-wrap; font-family: inherit;">${body}</pre></div>`;
-        }
+        const composeBodyEl = document.getElementById('composeBody');
+        const htmlBody = composeBodyEl.innerHTML;
+        const body = composeBodyEl.innerText || composeBodyEl.textContent;
 
         if (!to || !subject) {
             alert('请填写收件人和主题');
@@ -2466,53 +2547,56 @@
         // 检查是否有附件
         const hasAttachments = selectedFiles && selectedFiles.length > 0;
 
-        try {
-            let response;
+        // 立即关闭面板
+        closeComposePanel();
 
-            if (hasAttachments) {
-                // 使用FormData发送附件
-                const formData = new FormData();
-                formData.append('to', to);
-                formData.append('cc', cc || '');
-                formData.append('subject', subject);
-                formData.append('body', body);
-                formData.append('html_body', htmlBody);
+        // 在后台发送邮件
+        (async () => {
+            try {
+                let response;
 
-                // 添加附件文件
-                for (let i = 0; i < selectedFiles.length; i++) {
-                    formData.append('attachments', selectedFiles[i]);
+                if (hasAttachments) {
+                    // 使用FormData发送附件
+                    const formData = new FormData();
+                    formData.append('to', to);
+                    formData.append('cc', cc || '');
+                    formData.append('subject', subject);
+                    formData.append('body', body);
+                    formData.append('html_body', htmlBody);
+
+                    // 添加附件文件
+                    for (let i = 0; i < selectedFiles.length; i++) {
+                        formData.append('attachments', selectedFiles[i]);
+                    }
+
+                    response = await fetch('/api/mail/send-with-attachments', {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // 无附件使用JSON
+                    response = await fetch('/api/mail/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
+                    });
                 }
 
-                response = await fetch('/api/mail/send-with-attachments', {
-                    method: 'POST',
-                    body: formData
-                });
-            } else {
-                // 无附件使用JSON
-                response = await fetch('/api/mail/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
-                });
-            }
+                const result = await response.json();
 
-            const result = await response.json();
-
-            if (result.success) {
-                // 先关闭面板
-                closeComposePanel();
-                // 显示成功提示
-                alert('邮件发送成功');
-                // 刷新发件箱
-                if (currentFolder === 'sent') {
-                    loadEmails();
+                if (result.success) {
+                    // 刷新发件箱
+                    if (currentFolder === 'sent') {
+                        loadEmails();
+                    }
+                    console.log('邮件发送成功');
+                } else {
+                    alert('发送失败: ' + (result.message || result.error || '未知错误'));
                 }
-            } else {
-                alert('发送失败: ' + (result.message || result.error || '未知错误'));
+            } catch (error) {
+                alert('发送失败: ' + error.message);
             }
-        } catch (error) {
-            alert('发送失败: ' + error.message);
-        }
+        })();
     }
 
     // Delete email
@@ -2852,7 +2936,8 @@
             const response = await fetch('/api/mail/signature');
             if (response.ok) {
                 const data = await response.json();
-                document.getElementById('emailSignature').value = data.signature || '';
+                // 签名是用户自己创建的内容，存储在本地数据库
+                document.getElementById('emailSignature').innerHTML = data.signature || '';
             }
         } catch (error) {
             console.error('Load signature error:', error);
@@ -2962,7 +3047,7 @@
 
     // Save signature
     async function saveSignature() {
-        const signature = document.getElementById('emailSignature').value;
+        const signature = document.getElementById('emailSignature').innerHTML;
 
         try {
             const response = await fetch('/api/mail/signature', {
@@ -2980,6 +3065,50 @@
             }
         } catch (error) {
             alert('保存失败: ' + error.message);
+        }
+    }
+
+    // 富文本编辑命令
+    function execSignatureCmd(command, value = null) {
+        document.getElementById('emailSignature').focus();
+        document.execCommand(command, false, value);
+    }
+
+    // 插入链接
+    function insertSignatureLink() {
+        const url = prompt('请输入链接地址:', 'https://');
+        if (url && url !== 'https://') {
+            execSignatureCmd('createLink', url);
+        }
+    }
+
+    // 插入图片
+    function insertSignatureImage() {
+        const url = prompt('请输入图片地址:', 'https://');
+        if (url && url !== 'https://') {
+            execSignatureCmd('insertImage', url);
+        }
+    }
+
+    // 写邮件富文本编辑命令
+    function execComposeCmd(command, value = null) {
+        document.getElementById('composeBody').focus();
+        document.execCommand(command, false, value);
+    }
+
+    // 插入链接
+    function insertComposeLink() {
+        const url = prompt('请输入链接地址:', 'https://');
+        if (url && url !== 'https://') {
+            execComposeCmd('createLink', url);
+        }
+    }
+
+    // 插入图片
+    function insertComposeImage() {
+        const url = prompt('请输入图片地址:', 'https://');
+        if (url && url !== 'https://') {
+            execComposeCmd('insertImage', url);
         }
     }
 
@@ -3135,10 +3264,22 @@
         openModal('composeModal');
     }
 
-    function openSettingsModal(e) {
+    // 切换到设置视图
+    function switchToSettings(e) {
         e.preventDefault();
+        document.getElementById('mailList').style.display = 'none';
+        document.getElementById('pagination').style.display = 'none';
+        document.querySelector('.mail-list-header').style.display = 'none';
+        document.getElementById('settingsView').style.display = 'block';
         loadSettings();
-        openModal('settingsModal');
+    }
+
+    // 关闭设置视图
+    function closeSettingsView() {
+        document.getElementById('settingsView').style.display = 'none';
+        document.getElementById('mailList').style.display = 'block';
+        document.getElementById('pagination').style.display = 'flex';
+        document.querySelector('.mail-list-header').style.display = 'flex';
     }
 
     // Utility functions
@@ -3164,6 +3305,22 @@
     let selectedFiles = [];
     let isComposePanelMinimized = false;
     let replyHtmlBody = '';  // 保存回复时的HTML内容
+    let cachedSignature = '';  // 缓存签名
+
+    // 页面加载时获取签名
+    async function loadSignature() {
+        try {
+            const response = await fetch('/api/mail/signature');
+            if (response.ok) {
+                const data = await response.json();
+                cachedSignature = data.signature || '';
+            }
+        } catch (error) {
+            console.error('Load signature error:', error);
+        }
+    }
+    // 立即加载签名
+    loadSignature();
 
     // Toggle CC field visibility
     function toggleCcField() {
@@ -3177,19 +3334,47 @@
         document.getElementById('composeTo').value = to;
         document.getElementById('composeCc').value = cc;
         document.getElementById('composeSubject').value = subject;
-        document.getElementById('composeBody').value = body;
 
-        // 显示HTML引用内容
-        const htmlBodyDiv = document.getElementById('composeHtmlBody');
+        // composeBody现在是contenteditable div
+        const composeBodyEl = document.getElementById('composeBody');
+
+        // 构建内容
+        let content = '';
         if (htmlBody && htmlBody.trim()) {
-            htmlBodyDiv.innerHTML = htmlBody;
-            htmlBodyDiv.style.display = 'block';
+            // 回复/转发邮件：签名在前，然后是引用原文
+            // 用户会在签名和引用内容之间输入
+            if (cachedSignature) {
+                content = cachedSignature + '<br><br>';
+            }
+            content += htmlBody;
+        } else if (body && body.trim()) {
+            // 新邮件或纯文本内容
+            content = `<pre style="white-space: pre-wrap;">${body}</pre>`;
+            // 新邮件：签名在最后
+            if (cachedSignature) {
+                content += '<br><br>' + cachedSignature;
+            }
         } else {
-            htmlBodyDiv.innerHTML = '';
-            htmlBodyDiv.style.display = 'none';
+            // 空白新邮件：只显示签名
+            content = cachedSignature || '';
         }
 
-        replyHtmlBody = htmlBody;  // 保存HTML内容用于发送
+        composeBodyEl.innerHTML = content;
+
+        // 回复/转发邮件时滚动到顶部
+        if (htmlBody && htmlBody.trim()) {
+            composeBodyEl.scrollTop = 0;
+            // 将光标移动到开头
+            composeBodyEl.focus();
+            const range = document.createRange();
+            range.selectNodeContents(composeBodyEl);
+            range.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        replyHtmlBody = '';  // 不再需要单独保存
 
         // Show CC field if has value
         const ccField = document.getElementById('ccField');
@@ -3222,10 +3407,10 @@
         panel.classList.remove('minimized');
         selectedFiles = [];
         isComposePanelMinimized = false;
+        replyHtmlBody = '';
 
-        // 清空HTML引用内容
-        document.getElementById('composeHtmlBody').innerHTML = '';
-        document.getElementById('composeHtmlBody').style.display = 'none';
+        // 清空内容
+        document.getElementById('composeBody').innerHTML = '';
     }
 
     // Minimize compose panel
