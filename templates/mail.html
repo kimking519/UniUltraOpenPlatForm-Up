@@ -658,6 +658,29 @@
         pointer-events: none;
     }
 
+    /* Toast动画 */
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes slideOut {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+
     .compose-attachments {
         padding: 0.5rem 1rem;
         border-top: 1px solid var(--border);
@@ -1170,16 +1193,22 @@
                 <div class="settings-section" style="margin-bottom: 20px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                     <h3 style="margin: 0 0 15px 0; font-size: 15px; color: var(--text-main);">同步设置</h3>
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                        <label style="color: var(--text-main); min-width: 80px;">同步间隔</label>
+                        <label style="color: var(--text-main); min-width: 100px;">同步间隔</label>
                         <input type="number" id="syncInterval" value="30" min="1" max="60" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
                         <span style="color: var(--text-muted);">分钟</span>
                         <button class="btn btn-primary" onclick="saveSyncInterval()">保存</button>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <label style="color: var(--text-main); min-width: 80px;">同步范围</label>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <label style="color: var(--text-main); min-width: 100px;">同步范围</label>
                         <input type="number" id="syncDays" value="90" min="1" max="365" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
                         <span style="color: var(--text-muted);">天</span>
                         <button class="btn btn-primary" onclick="saveSyncDays()">保存</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="color: var(--text-main); min-width: 100px;">发送撤销时间</label>
+                        <input type="number" id="undoSendSeconds" value="5" min="0" max="30" style="width: 80px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <span style="color: var(--text-muted);">秒 (0=立即发送)</span>
+                        <button class="btn btn-primary" onclick="saveUndoSendSeconds()">保存</button>
                     </div>
                 </div>
 
@@ -2531,6 +2560,10 @@
     document.getElementById('relationType').addEventListener('change', updateRelationOptions);
 
     // Send email
+    let pendingEmailData = null;  // 待发送的邮件数据
+    let sendTimeout = null;       // 发送定时器
+    let undoSeconds = 5;          // 撤销时间（秒）
+
     async function sendEmail() {
         const to = document.getElementById('composeTo').value;
         const cc = document.getElementById('composeCc').value;
@@ -2544,59 +2577,195 @@
             return;
         }
 
+        // 确认发送
+        if (!confirm(`确定发送邮件给 ${to} 吗？`)) {
+            return;
+        }
+
         // 检查是否有附件
         const hasAttachments = selectedFiles && selectedFiles.length > 0;
+
+        // 保存邮件数据
+        pendingEmailData = {
+            to, cc, subject, body, htmlBody, hasAttachments,
+            attachments: hasAttachments ? [...selectedFiles] : []
+        };
 
         // 立即关闭面板
         closeComposePanel();
 
-        // 在后台发送邮件
-        (async () => {
-            try {
-                let response;
+        // 显示撤销提示
+        showUndoToast();
+    }
 
-                if (hasAttachments) {
-                    // 使用FormData发送附件
-                    const formData = new FormData();
-                    formData.append('to', to);
-                    formData.append('cc', cc || '');
-                    formData.append('subject', subject);
-                    formData.append('body', body);
-                    formData.append('html_body', htmlBody);
+    // 显示撤销提示
+    function showUndoToast() {
+        // 移除已有的toast
+        const existingToast = document.getElementById('mailToast');
+        if (existingToast) {
+            existingToast.remove();
+        }
 
-                    // 添加附件文件
-                    for (let i = 0; i < selectedFiles.length; i++) {
-                        formData.append('attachments', selectedFiles[i]);
-                    }
+        // 创建toast元素
+        const toast = document.createElement('div');
+        toast.id = 'mailToast';
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            background: #3B82F6;
+            color: white;
+            font-size: 14px;
+            z-index: 10000;
+            animation: slideIn 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        `;
 
-                    response = await fetch('/api/mail/send-with-attachments', {
-                        method: 'POST',
-                        body: formData
-                    });
-                } else {
-                    // 无附件使用JSON
-                    response = await fetch('/api/mail/send', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
-                    });
-                }
+        toast.innerHTML = `
+            <span>邮件将在 <span id="undoCountdown">${undoSeconds}</span> 秒后发送</span>
+            <button onclick="undoSendEmail()" style="background: white; color: #3B82F6; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">撤销</button>
+        `;
 
-                const result = await response.json();
+        document.body.appendChild(toast);
 
-                if (result.success) {
-                    // 刷新发件箱
-                    if (currentFolder === 'sent') {
-                        loadEmails();
-                    }
-                    console.log('邮件发送成功');
-                } else {
-                    alert('发送失败: ' + (result.message || result.error || '未知错误'));
-                }
-            } catch (error) {
-                alert('发送失败: ' + error.message);
+        // 开始倒计时
+        let countdown = undoSeconds;
+        const countdownEl = document.getElementById('undoCountdown');
+
+        sendTimeout = setInterval(() => {
+            countdown--;
+            if (countdownEl) {
+                countdownEl.textContent = countdown;
             }
-        })();
+            if (countdown <= 0) {
+                clearInterval(sendTimeout);
+                executeSendEmail();
+            }
+        }, 1000);
+    }
+
+    // 撤销发送
+    function undoSendEmail() {
+        // 清除定时器
+        if (sendTimeout) {
+            clearInterval(sendTimeout);
+            sendTimeout = null;
+        }
+
+        // 清除待发送数据
+        pendingEmailData = null;
+
+        // 移除toast
+        const toast = document.getElementById('mailToast');
+        if (toast) {
+            toast.remove();
+        }
+
+        // 显示撤销成功提示
+        showToast('已撤销发送', 'info');
+    }
+
+    // 执行发送邮件
+    async function executeSendEmail() {
+        if (!pendingEmailData) return;
+
+        const { to, cc, subject, body, htmlBody, hasAttachments, attachments } = pendingEmailData;
+
+        // 移除倒计时toast
+        const toast = document.getElementById('mailToast');
+        if (toast) {
+            toast.remove();
+        }
+
+        // 发送邮件
+        try {
+            let response;
+
+            if (hasAttachments && attachments.length > 0) {
+                const formData = new FormData();
+                formData.append('to', to);
+                formData.append('cc', cc || '');
+                formData.append('subject', subject);
+                formData.append('body', body);
+                formData.append('html_body', htmlBody);
+
+                for (let i = 0; i < attachments.length; i++) {
+                    formData.append('attachments', attachments[i]);
+                }
+
+                response = await fetch('/api/mail/send-with-attachments', {
+                    method: 'POST',
+                    body: formData
+                });
+            } else {
+                response = await fetch('/api/mail/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to, cc, subject, body, html_body: htmlBody })
+                });
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                if (currentFolder === 'sent') {
+                    loadEmails();
+                }
+                showToast('邮件发送成功', 'success');
+            } else {
+                showToast('发送失败: ' + (result.message || result.error || '未知错误'), 'error');
+            }
+        } catch (error) {
+            showToast('发送失败: ' + error.message, 'error');
+        }
+
+        pendingEmailData = null;
+    }
+
+    // 显示消息提示
+    function showToast(message, type = 'info') {
+        // 移除已有的toast
+        const existingToast = document.getElementById('mailToast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
+        // 创建toast元素
+        const toast = document.createElement('div');
+        toast.id = 'mailToast';
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            z-index: 10000;
+            animation: slideIn 0.3s ease;
+            max-width: 300px;
+        `;
+
+        if (type === 'success') {
+            toast.style.background = '#10B981';
+        } else if (type === 'error') {
+            toast.style.background = '#EF4444';
+        } else {
+            toast.style.background = '#3B82F6';
+        }
+
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        // 3秒后自动消失
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
 
     // Delete email
@@ -2931,6 +3100,18 @@
             console.error('Load sync days error:', error);
         }
 
+        // Load undo send seconds
+        try {
+            const response = await fetch('/api/mail/undo-send-seconds');
+            if (response.ok) {
+                const data = await response.json();
+                undoSeconds = data.seconds || 5;
+                document.getElementById('undoSendSeconds').value = undoSeconds;
+            }
+        } catch (error) {
+            console.error('Load undo send seconds error:', error);
+        }
+
         // Load signature
         try {
             const response = await fetch('/api/mail/signature');
@@ -3037,6 +3218,35 @@
 
             if (result.success) {
                 alert('同步时间范围已保存');
+            } else {
+                alert('保存失败: ' + (result.message || '未知错误'));
+            }
+        } catch (error) {
+            alert('保存失败: ' + error.message);
+        }
+    }
+
+    // Save undo send seconds
+    async function saveUndoSendSeconds() {
+        const seconds = parseInt(document.getElementById('undoSendSeconds').value) || 5;
+
+        if (seconds < 0 || seconds > 30) {
+            alert('撤销时间必须在0-30秒之间');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/mail/undo-send-seconds', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ seconds: seconds })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                undoSeconds = seconds;
+                alert('撤销时间已保存');
             } else {
                 alert('保存失败: ' + (result.message || '未知错误'));
             }

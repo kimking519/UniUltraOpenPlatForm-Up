@@ -606,6 +606,31 @@ def set_sync_days(days: int) -> bool:
         return True
 
 
+def get_undo_send_seconds() -> int:
+    """获取发送撤销时间（秒）"""
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM global_settings WHERE key = 'undo_send_seconds'"
+        ).fetchone()
+        if row:
+            return int(row[0])
+    return 5  # 默认5秒
+
+
+def set_undo_send_seconds(seconds: int) -> bool:
+    """设置发送撤销时间（秒）"""
+    with get_db_connection() as conn:
+        conn.execute("""
+            INSERT INTO global_settings (key, value, updated_at)
+            VALUES ('undo_send_seconds', ?, datetime('now', 'localtime'))
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+        """, (str(seconds),))
+        conn.commit()
+        return True
+
+
 def get_signature() -> str:
     """获取邮件签名"""
     with get_db_connection() as conn:

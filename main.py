@@ -2276,6 +2276,36 @@ async def api_mail_sync_days_set(
         return {"success": False, "message": f"设置失败: {str(e)}"}
 
 
+@app.get("/api/mail/undo-send-seconds")
+async def api_mail_undo_send_seconds_get(current_user: dict = Depends(login_required)):
+    """获取发送撤销时间设置"""
+    from Sills.db_mail import get_undo_send_seconds
+    seconds = get_undo_send_seconds()
+    return {
+        "success": True,
+        "seconds": seconds
+    }
+
+
+@app.post("/api/mail/undo-send-seconds")
+async def api_mail_undo_send_seconds_set(
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """设置发送撤销时间"""
+    from Sills.db_mail import set_undo_send_seconds
+    try:
+        data = await request.json()
+        seconds = data.get('seconds', 5)
+        if not isinstance(seconds, int) or seconds < 0 or seconds > 30:
+            return {"success": False, "message": "撤销时间必须在0-30秒之间"}
+
+        set_undo_send_seconds(seconds)
+        return {"success": True, "message": f"撤销时间已设置为 {seconds} 秒"}
+    except Exception as e:
+        return {"success": False, "message": f"设置失败: {str(e)}"}
+
+
 @app.get("/api/mail/signature")
 async def api_mail_signature_get(current_user: dict = Depends(login_required)):
     """获取邮件签名"""
