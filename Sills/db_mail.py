@@ -75,8 +75,8 @@ def get_mail_list(page: int = 1, limit: int = 20, is_sent: int = 0,
         import re
         content_clean = re.sub(r'<[^>]+>', '', content)
         content_clean = re.sub(r'\s+', ' ', content_clean).strip()
-        item['content_preview'] = content_clean[:500]
-        item['body_truncated'] = len(content_clean) > 500
+        item['content_preview'] = content_clean[:100]
+        item['body_truncated'] = len(content_clean) > 100
         items.append(item)
 
     return {
@@ -144,8 +144,8 @@ def get_trash_list(page: int = 1, limit: int = 20, search: str = None, account_i
         content = item.get('content', '') or ''
         content_clean = re.sub(r'<[^>]+>', '', content)
         content_clean = re.sub(r'\s+', ' ', content_clean).strip()
-        item['content_preview'] = content_clean[:500]
-        item['body_truncated'] = len(content_clean) > 500
+        item['content_preview'] = content_clean[:100]
+        item['body_truncated'] = len(content_clean) > 100
         items.append(item)
 
     return {
@@ -997,8 +997,8 @@ def get_mails_by_folder(folder_id: int, page: int = 1, limit: int = 20,
         import re
         content_clean = re.sub(r'<[^>]+>', '', content)
         content_clean = re.sub(r'\s+', ' ', content_clean).strip()
-        item['content_preview'] = content_clean[:500]
-        item['body_truncated'] = len(content_clean) > 500
+        item['content_preview'] = content_clean[:100]
+        item['body_truncated'] = len(content_clean) > 100
         items.append(item)
 
     return {
