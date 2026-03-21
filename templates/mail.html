@@ -4541,6 +4541,12 @@
                 closeDetailPanel();
             }
 
+            // 关闭设置视图
+            const settingsView = document.getElementById('settingsView');
+            if (settingsView && settingsView.style.display === 'block') {
+                closeSettingsView();
+            }
+
             // 关闭所有模态框（设置、账户等）
             const modals = document.querySelectorAll('.modal');
             modals.forEach(modal => {
