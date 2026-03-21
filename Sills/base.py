@@ -385,6 +385,28 @@ def init_db():
         updated_at DATETIME DEFAULT (datetime('now', 'localtime'))
     );
 
+    -- 邮件文件夹表
+    CREATE TABLE IF NOT EXISTS mail_folder (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_name TEXT NOT NULL,
+        folder_icon TEXT DEFAULT 'folder',
+        sort_order INTEGER DEFAULT 0,
+        account_id INTEGER,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
+    );
+
+    -- 邮件过滤规则表
+    CREATE TABLE IF NOT EXISTS mail_filter_rule (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        folder_id INTEGER NOT NULL,
+        keyword TEXT NOT NULL,
+        priority INTEGER DEFAULT 0,
+        is_enabled INTEGER DEFAULT 1 CHECK(is_enabled IN (0,1)),
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (folder_id) REFERENCES mail_folder(id) ON DELETE CASCADE
+    );
+
     -- 性能优化索引
     CREATE INDEX IF NOT EXISTS idx_cli_name ON uni_cli(cli_name);
     CREATE INDEX IF NOT EXISTS idx_cli_emp ON uni_cli(emp_id);
@@ -421,6 +443,12 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_mail_account ON uni_mail(account_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_message_id ON uni_mail(message_id) WHERE message_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_mail_rel_ref ON uni_mail_rel(ref_type, ref_id);
+
+    -- 文件夹和规则索引
+    CREATE INDEX IF NOT EXISTS idx_mail_folder_account ON mail_folder(account_id);
+    CREATE INDEX IF NOT EXISTS idx_mail_filter_folder ON mail_filter_rule(folder_id);
+    CREATE INDEX IF NOT EXISTS idx_mail_filter_priority ON mail_filter_rule(priority DESC);
+    CREATE INDEX IF NOT EXISTS idx_mail_folder_id ON uni_mail(folder_id);
     """
 
     with get_db_connection() as conn:
@@ -458,6 +486,13 @@ def init_db():
         try:
             conn.execute("ALTER TABLE uni_mail ADD COLUMN from_name TEXT")
             print("[DB] 迁移完成：uni_mail 添加 from_name 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_mail 添加 folder_id 字段
+        try:
+            conn.execute("ALTER TABLE uni_mail ADD COLUMN folder_id INTEGER REFERENCES mail_folder(id) ON DELETE SET NULL")
+            print("[DB] 迁移完成：uni_mail 添加 folder_id 列")
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 

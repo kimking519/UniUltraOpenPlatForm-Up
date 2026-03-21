@@ -31,6 +31,11 @@ def get_mail_list(page: int = 1, limit: int = 20, is_sent: int = 0,
     query = "SELECT * FROM uni_mail WHERE is_sent = ?"
     count_query = "SELECT COUNT(*) FROM uni_mail WHERE is_sent = ?"
 
+    # 收件箱只显示未分类的邮件（folder_id IS NULL）
+    if is_sent == 0:
+        query += " AND folder_id IS NULL"
+        count_query += " AND folder_id IS NULL"
+
     # 用户隔离：按账户ID过滤
     if account_id is not None:
         query += " AND account_id = ?"
@@ -619,3 +624,287 @@ def set_signature(signature: str) -> bool:
         """, (signature,))
         conn.commit()
         return True
+
+
+# ==================== 邮件文件夹管理 ====================
+
+def get_folders(account_id: int = None) -> List[Dict[str, Any]]:
+    """获取文件夹列表"""
+    with get_db_connection() as conn:
+        if account_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM mail_folder WHERE account_id = ? OR account_id IS NULL ORDER BY sort_order, id",
+                (account_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM mail_folder ORDER BY sort_order, id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_folder_by_id(folder_id: int) -> Optional[Dict[str, Any]]:
+    """获取单个文件夹"""
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT * FROM mail_folder WHERE id = ?", (folder_id,)).fetchone()
+        if row:
+            return dict(row)
+    return None
+
+
+def add_folder(folder_data: Dict[str, Any]) -> int:
+    """添加文件夹"""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            INSERT INTO mail_folder (folder_name, folder_icon, sort_order, account_id)
+            VALUES (?, ?, ?, ?)
+        """, (
+            folder_data.get('folder_name'),
+            folder_data.get('folder_icon', 'folder'),
+            folder_data.get('sort_order', 0),
+            folder_data.get('account_id')
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def update_folder(folder_id: int, folder_data: Dict[str, Any]) -> bool:
+    """更新文件夹"""
+    with get_db_connection() as conn:
+        result = conn.execute("""
+            UPDATE mail_folder SET folder_name = ?, folder_icon = ?, sort_order = ?
+            WHERE id = ?
+        """, (
+            folder_data.get('folder_name'),
+            folder_data.get('folder_icon', 'folder'),
+            folder_data.get('sort_order', 0),
+            folder_id
+        ))
+        conn.commit()
+        return result.rowcount > 0
+
+
+def delete_folder(folder_id: int) -> bool:
+    """删除文件夹（关联邮件移回收件箱）"""
+    with get_db_connection() as conn:
+        # 将该文件夹的邮件移回收件箱（folder_id = NULL）
+        conn.execute("UPDATE uni_mail SET folder_id = NULL WHERE folder_id = ?", (folder_id,))
+        # 删除文件夹（规则会级联删除）
+        result = conn.execute("DELETE FROM mail_folder WHERE id = ?", (folder_id,))
+        conn.commit()
+        return result.rowcount > 0
+
+
+def get_mail_count_by_folder(folder_id: int, account_id: int = None) -> int:
+    """获取文件夹中的邮件数量"""
+    with get_db_connection() as conn:
+        if account_id is not None:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM uni_mail WHERE folder_id = ? AND account_id = ? AND is_sent = 0",
+                (folder_id, account_id)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM uni_mail WHERE folder_id = ? AND is_sent = 0",
+                (folder_id,)
+            ).fetchone()
+        return row[0] if row else 0
+
+
+# ==================== 邮件过滤规则管理 ====================
+
+def get_filter_rules(folder_id: int = None) -> List[Dict[str, Any]]:
+    """获取过滤规则列表"""
+    with get_db_connection() as conn:
+        if folder_id:
+            rows = conn.execute(
+                "SELECT r.*, f.folder_name FROM mail_filter_rule r " +
+                "LEFT JOIN mail_folder f ON r.folder_id = f.id " +
+                "WHERE r.folder_id = ? ORDER BY r.priority DESC, r.id",
+                (folder_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT r.*, f.folder_name FROM mail_filter_rule r " +
+                "LEFT JOIN mail_folder f ON r.folder_id = f.id " +
+                "ORDER BY r.priority DESC, r.id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def add_filter_rule(rule_data: Dict[str, Any]) -> int:
+    """添加过滤规则"""
+    with get_db_connection() as conn:
+        cursor = conn.execute("""
+            INSERT INTO mail_filter_rule (folder_id, keyword, priority, is_enabled)
+            VALUES (?, ?, ?, ?)
+        """, (
+            rule_data.get('folder_id'),
+            rule_data.get('keyword'),
+            rule_data.get('priority', 0),
+            rule_data.get('is_enabled', 1)
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+
+def update_filter_rule(rule_id: int, rule_data: Dict[str, Any]) -> bool:
+    """更新过滤规则"""
+    with get_db_connection() as conn:
+        result = conn.execute("""
+            UPDATE mail_filter_rule SET keyword = ?, priority = ?, is_enabled = ?
+            WHERE id = ?
+        """, (
+            rule_data.get('keyword'),
+            rule_data.get('priority', 0),
+            rule_data.get('is_enabled', 1),
+            rule_id
+        ))
+        conn.commit()
+        return result.rowcount > 0
+
+
+def delete_filter_rule(rule_id: int) -> bool:
+    """删除过滤规则"""
+    with get_db_connection() as conn:
+        result = conn.execute("DELETE FROM mail_filter_rule WHERE id = ?", (rule_id,))
+        conn.commit()
+        return result.rowcount > 0
+
+
+# ==================== 自动分类功能 ====================
+
+def auto_classify_emails(account_id: int = None) -> Dict[str, int]:
+    """
+    自动分类邮件（根据规则匹配标题）
+    支持多关键词，用逗号分隔，如：报价,invoice,quote
+
+    Returns:
+        {classified_count: 已分类邮件数, rule_count: 使用规则数}
+    """
+    # 获取所有启用的规则，按优先级降序
+    with get_db_connection() as conn:
+        rules = conn.execute("""
+            SELECT r.*, f.folder_name
+            FROM mail_filter_rule r
+            JOIN mail_folder f ON r.folder_id = f.id
+            WHERE r.is_enabled = 1
+            ORDER BY r.priority DESC, r.id
+        """).fetchall()
+
+        if not rules:
+            return {"classified_count": 0, "rule_count": 0}
+
+        # 获取未分类的收件箱邮件
+        if account_id is not None:
+            emails = conn.execute("""
+                SELECT id, subject FROM uni_mail
+                WHERE is_sent = 0 AND folder_id IS NULL AND account_id = ?
+            """, (account_id,)).fetchall()
+        else:
+            emails = conn.execute("""
+                SELECT id, subject FROM uni_mail
+                WHERE is_sent = 0 AND folder_id IS NULL
+            """).fetchall()
+
+        classified_count = 0
+
+        for email in emails:
+            email_id = email['id']
+            subject = email['subject'] or ''
+
+            # 按优先级顺序匹配规则
+            for rule in rules:
+                keyword_str = rule['keyword'] or ''
+                # 支持多关键词，用逗号分隔
+                keywords = [k.strip().lower() for k in keyword_str.split(',') if k.strip()]
+                if any(kw in subject.lower() for kw in keywords):
+                    # 匹配成功，更新邮件的文件夹
+                    conn.execute(
+                        "UPDATE uni_mail SET folder_id = ? WHERE id = ?",
+                        (rule['folder_id'], email_id)
+                    )
+                    classified_count += 1
+                    break  # 只匹配第一个符合条件的规则
+
+        conn.commit()
+
+    return {"classified_count": classified_count, "rule_count": len(rules)}
+
+
+def get_mails_by_folder(folder_id: int, page: int = 1, limit: int = 20,
+                        search: str = None, account_id: int = None) -> Dict[str, Any]:
+    """获取指定文件夹的邮件列表"""
+    offset = (page - 1) * limit
+    params = [folder_id]
+    count_params = [folder_id]
+
+    query = "SELECT * FROM uni_mail WHERE folder_id = ? AND is_sent = 0"
+    count_query = "SELECT COUNT(*) FROM uni_mail WHERE folder_id = ? AND is_sent = 0"
+
+    if account_id is not None:
+        query += " AND account_id = ?"
+        count_query += " AND account_id = ?"
+        params.append(account_id)
+        count_params.append(account_id)
+
+    if search:
+        query += " AND (subject LIKE ? OR from_addr LIKE ?)"
+        count_query += " AND (subject LIKE ? OR from_addr LIKE ?)"
+        search_param = f"%{search}%"
+        params.extend([search_param, search_param])
+        count_params.extend([search_param, search_param])
+
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+
+    with get_db_connection() as conn:
+        total_count = conn.execute(count_query, count_params).fetchone()[0]
+        rows = conn.execute(query, params).fetchall()
+
+    items = []
+    for row in rows:
+        item = dict(row)
+        content = item.get('content', '') or ''
+        import re
+        content_clean = re.sub(r'<[^>]+>', '', content)
+        content_clean = re.sub(r'\s+', ' ', content_clean).strip()
+        item['content_preview'] = content_clean[:500]
+        item['body_truncated'] = len(content_clean) > 500
+        items.append(item)
+
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": page,
+        "page_size": limit,
+        "total_pages": (total_count + limit - 1) // limit if total_count > 0 else 0
+    }
+
+def get_latest_mail_time(account_id: int = None, is_sent: int = 0) -> Optional[str]:
+    """
+    获取最新邮件的时间（用于增量同步）
+
+    Args:
+        account_id: 账户ID
+        is_sent: 0=收件箱, 1=已发送
+
+    Returns:
+        ISO格式的时间字符串，或None
+    """
+    with get_db_connection() as conn:
+        if account_id is not None:
+            row = conn.execute("""
+                SELECT MAX(received_at) as latest_time FROM uni_mail
+                WHERE is_sent = ? AND account_id = ?
+            """, (is_sent, account_id)).fetchone()
+        else:
+            row = conn.execute("""
+                SELECT MAX(received_at) as latest_time FROM uni_mail
+                WHERE is_sent = ?
+            """, (is_sent,)).fetchone()
+
+        if row and row["latest_time"]:
+            return row["latest_time"]
+    return None
+

@@ -22,7 +22,14 @@ from Sills.db_mail import (
     get_all_mail_accounts, get_mail_account_by_id, add_mail_account,
     update_mail_account, switch_current_account, delete_mail_account,
     # 同步间隔设置
-    get_sync_interval, set_sync_interval
+    get_sync_interval, set_sync_interval,
+    # 文件夹管理
+    get_folders, get_folder_by_id, add_folder, update_folder, delete_folder,
+    get_mail_count_by_folder, get_mails_by_folder,
+    # 过滤规则管理
+    get_filter_rules, add_filter_rule, update_filter_rule, delete_filter_rule,
+    # 自动分类
+    auto_classify_emails
 )
 from Sills.mail_service import sync_inbox, sync_inbox_async, send_email_now
 from Sills.ai_service import intent_recognizer, smart_replier
@@ -2053,6 +2060,17 @@ async def api_mail_sync(current_user: dict = Depends(login_required)):
     return {"success": True, "message": "同步任务已启动"}
 
 
+@app.post("/api/mail/sync-new")
+async def api_mail_sync_new(current_user: dict = Depends(login_required)):
+    """增量同步：只获取新邮件"""
+    from Sills.mail_service import sync_new_emails_async
+    if is_sync_locked():
+        return {"success": False, "message": "同步任务正在进行中，请稍后"}
+
+    result = sync_new_emails_async()
+    return {"success": True, "message": "增量同步任务已启动"}
+
+
 @app.get("/api/mail/sync/status")
 async def api_mail_sync_status(current_user: dict = Depends(login_required)):
     """获取同步状态和进度"""
@@ -2399,6 +2417,156 @@ async def api_mail_account_delete(
             return {"success": False, "message": result.get('message', '删除失败')}
     except Exception as e:
         return {"success": False, "message": f"删除失败: {str(e)}"}
+
+
+# ==================== 邮件文件夹 API (必须在 /api/mail/{mail_id} 之前) ====================
+
+@app.get("/api/mail/folders")
+async def api_get_folders(current_user: dict = Depends(login_required)):
+    """获取文件夹列表"""
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+    folders = get_folders(account_id)
+    # 为每个文件夹添加邮件数量
+    for folder in folders:
+        folder['mail_count'] = get_mail_count_by_folder(folder['id'], account_id)
+    return {"success": True, "folders": folders}
+
+
+@app.post("/api/mail/folder/add")
+async def api_add_folder(request: Request, current_user: dict = Depends(login_required)):
+    """添加文件夹"""
+    data = await request.json()
+    folder_name = data.get('folder_name', '').strip()
+    if not folder_name:
+        return {"success": False, "message": "文件夹名称不能为空"}
+
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+
+    folder_id = add_folder({
+        'folder_name': folder_name,
+        'folder_icon': data.get('folder_icon', 'folder'),
+        'sort_order': data.get('sort_order', 0),
+        'account_id': account_id
+    })
+    return {"success": True, "folder_id": folder_id}
+
+
+@app.post("/api/mail/folder/update")
+async def api_update_folder(request: Request, current_user: dict = Depends(login_required)):
+    """更新文件夹"""
+    data = await request.json()
+    folder_id = data.get('folder_id')
+    if not folder_id:
+        return {"success": False, "message": "缺少文件夹ID"}
+
+    success = update_folder(folder_id, {
+        'folder_name': data.get('folder_name'),
+        'folder_icon': data.get('folder_icon'),
+        'sort_order': data.get('sort_order', 0)
+    })
+    return {"success": success}
+
+
+@app.post("/api/mail/folder/delete")
+async def api_delete_folder(request: Request, current_user: dict = Depends(login_required)):
+    """删除文件夹"""
+    data = await request.json()
+    folder_id = data.get('folder_id')
+    if not folder_id:
+        return {"success": False, "message": "缺少文件夹ID"}
+
+    success = delete_folder(folder_id)
+    return {"success": success}
+
+
+# ==================== 邮件过滤规则 API ====================
+
+@app.get("/api/mail/filter-rules")
+async def api_get_filter_rules(folder_id: int = None, current_user: dict = Depends(login_required)):
+    """获取过滤规则列表"""
+    rules = get_filter_rules(folder_id)
+    return {"success": True, "rules": rules}
+
+
+@app.post("/api/mail/filter-rule/add")
+async def api_add_filter_rule(request: Request, current_user: dict = Depends(login_required)):
+    """添加过滤规则"""
+    data = await request.json()
+    folder_id = data.get('folder_id')
+    keyword = data.get('keyword', '').strip()
+
+    if not folder_id or not keyword:
+        return {"success": False, "message": "文件夹和关键词不能为空"}
+
+    rule_id = add_filter_rule({
+        'folder_id': folder_id,
+        'keyword': keyword,
+        'priority': data.get('priority', 0),
+        'is_enabled': data.get('is_enabled', 1)
+    })
+    return {"success": True, "rule_id": rule_id}
+
+
+@app.post("/api/mail/filter-rule/update")
+async def api_update_filter_rule(request: Request, current_user: dict = Depends(login_required)):
+    """更新过滤规则"""
+    data = await request.json()
+    rule_id = data.get('rule_id')
+    if not rule_id:
+        return {"success": False, "message": "缺少规则ID"}
+
+    success = update_filter_rule(rule_id, {
+        'keyword': data.get('keyword'),
+        'priority': data.get('priority', 0),
+        'is_enabled': data.get('is_enabled', 1)
+    })
+    return {"success": success}
+
+
+@app.post("/api/mail/filter-rule/delete")
+async def api_delete_filter_rule(request: Request, current_user: dict = Depends(login_required)):
+    """删除过滤规则"""
+    data = await request.json()
+    rule_id = data.get('rule_id')
+    if not rule_id:
+        return {"success": False, "message": "缺少规则ID"}
+
+    success = delete_filter_rule(rule_id)
+    return {"success": success}
+
+
+# ==================== 自动分类 API ====================
+
+@app.post("/api/mail/auto-classify")
+async def api_auto_classify(current_user: dict = Depends(login_required)):
+    """自动分类邮件"""
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+
+    result = auto_classify_emails(account_id)
+    return {
+        "success": True,
+        "classified_count": result['classified_count'],
+        "rule_count": result['rule_count']
+    }
+
+
+@app.get("/api/mail/folder/{folder_id}")
+async def api_get_mails_by_folder(
+    folder_id: int,
+    page: int = 1,
+    page_size: int = 20,
+    search: str = None,
+    current_user: dict = Depends(login_required)
+):
+    """获取指定文件夹的邮件列表"""
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+
+    result = get_mails_by_folder(folder_id, page, page_size, search, account_id)
+    return result
 
 
 @app.get("/api/mail/{mail_id}")

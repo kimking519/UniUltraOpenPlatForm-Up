@@ -1098,6 +1098,7 @@
                 </svg>
                 已发送
             </li>
+            <!-- 自定义文件夹将动态加载 -->
         </ul>
         <div class="settings-link">
             <a href="#" onclick="openSettingsModal(event)">
@@ -1127,6 +1128,18 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                     </svg>
                     同步
+                </button>
+                <button class="toolbar-btn" onclick="syncNewEmails()" title="只获取新邮件">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    刷新
+                </button>
+                <button class="toolbar-btn" onclick="autoClassifyEmails()" title="根据规则自动分类邮件">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    自动分类
                 </button>
             </div>
 
@@ -1187,6 +1200,8 @@
 
             <div class="email-actions">
                 <button class="btn btn-primary" onclick="replyEmail()">回复</button>
+                <button class="btn btn-primary" onclick="replyAllEmail()">全部回复</button>
+                <button class="btn btn-secondary" onclick="forwardEmail()">转发</button>
                 <button class="btn btn-secondary" onclick="analyzeEmail()">AI 分析</button>
                 <button class="btn btn-secondary" onclick="suggestReply()">AI 建议回复</button>
                 <button class="btn btn-secondary" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
@@ -1233,6 +1248,7 @@
         </div>
         <div class="compose-body-wrapper">
             <textarea id="composeBody" placeholder="邮件内容..."></textarea>
+            <div id="composeHtmlBody" style="border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.5rem; max-height: 300px; overflow-y: auto;"></div>
         </div>
         <div class="compose-attachments" id="attachmentsArea">
             <div class="attachment-list" id="attachmentList"></div>
@@ -1293,6 +1309,8 @@
 
             <div class="email-actions">
                 <button class="btn btn-primary" onclick="replyEmail()">回复</button>
+                <button class="btn btn-primary" onclick="replyAllEmail()">全部回复</button>
+                <button class="btn btn-secondary" onclick="forwardEmail()">转发</button>
                 <button class="btn btn-secondary" onclick="analyzeEmail()">AI 分析</button>
                 <button class="btn btn-secondary" onclick="suggestReply()">AI 建议回复</button>
                 <button class="btn btn-secondary" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
@@ -1303,8 +1321,8 @@
 
 <!-- Settings Modal -->
 <div class="modal" id="settingsModal">
-    <div class="modal-content" style="max-width: 700px; background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg) 70%, #1e3a5f 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;">
-        <div class="modal-header" style="border-bottom: 1px solid var(--border);">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; display: flex; flex-direction: column; background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg) 70%, #1e3a5f 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;">
+        <div class="modal-header" style="border-bottom: 1px solid var(--border); flex-shrink: 0;">
             <h2 style="color: var(--text-main);">邮件设置</h2>
             <button class="modal-close" onclick="closeModal('settingsModal')">
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1312,7 +1330,7 @@
                 </svg>
             </button>
         </div>
-        <div class="modal-body" style="background: transparent;">
+        <div class="modal-body" style="background: transparent; overflow-y: auto; flex: 1;">
             <!-- 同步间隔设置（独立区域） -->
             <div class="settings-section" style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
                 <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-main);">同步设置</h3>
@@ -1350,8 +1368,32 @@
                 <textarea id="emailSignature" rows="5" placeholder="请输入您的签名，例如：&#10;&#10;此致&#10;敬礼&#10;&#10;张三&#10;xxx公司" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); font-size: 13px; line-height: 1.5; resize: vertical;"></textarea>
                 <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveSignature()">保存签名</button>
             </div>
+
+            <!-- 文件夹管理区域 -->
+            <div class="settings-section" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--text-main);">文件夹管理</h3>
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <input type="text" id="newFolderName" placeholder="新文件夹名称" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <button class="btn btn-primary" onclick="addFolder()">添加</button>
+                </div>
+                <div id="folderManagerList" style="max-height: 200px; overflow-y: auto;"></div>
+            </div>
+
+            <!-- 添加过滤规则 -->
+            <div class="settings-section" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
+                <h3 style="margin: 0 0 5px 0; font-size: 14px; color: var(--text-main);">添加过滤规则</h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">邮件标题包含关键词时自动移入对应文件夹。多个关键词用逗号分隔，如：报价,invoice,quote</p>
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+                    <select id="ruleFolder" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); min-width: 120px;">
+                        <option value="">选择文件夹</option>
+                    </select>
+                    <input type="text" id="ruleKeyword" placeholder="关键词，多个用逗号分隔" style="flex: 1; min-width: 100px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <input type="number" id="rulePriority" placeholder="优先级" value="0" style="width: 70px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <button class="btn btn-primary" onclick="addFilterRule()">添加规则</button>
+                </div>
+            </div>
         </div>
-        <div class="modal-footer" style="background: #1e3a5f; border-top: none; padding: 1rem 1.5rem;">
+        <div class="modal-footer" style="background: #1e3a5f; border-top: none; padding: 1rem 1.5rem; flex-shrink: 0;">
             <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="closeModal('settingsModal')">关闭</button>
         </div>
     </div>
@@ -1363,6 +1405,20 @@
         <div class="modal-header">
             <h2 id="accountModalTitle">添加账户</h2>
             <button class="modal-close" onclick="closeModal('accountModal')">
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="editAccountId">
+            <div class="form-group">
+                <label>账户名称</label>
+                <input type="text" id="accountName" placeholder="例如：工作邮箱">
+            </div>
+            <div class="form-group">
+                <label>邮箱类型</label>
+                <select id="mailType" onchange="fillMailPresets()">
                 <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
@@ -1485,6 +1541,60 @@
     background: #EF4444;
     color: white;
 }
+
+/* Folder Manager Styles */
+.folder-manager-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
+}
+
+.folder-manager-item .folder-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.folder-manager-item .folder-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.folder-manager-item .folder-actions button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: var(--radius);
+    border: none;
+    cursor: pointer;
+}
+
+.filter-rule-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+}
+
+.filter-rule-item .rule-keyword {
+    font-weight: 500;
+    color: var(--primary);
+}
+
+.filter-rule-item .rule-priority {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: 0.5rem;
+}
 </style>
 
 <script>
@@ -1511,6 +1621,7 @@
         loadClients();
         loadOrders();
         loadSettings();
+        loadCustomFolders(); // 加载自定义文件夹
         checkSyncProgress(); // 恢复同步进度
         initComposePanelDrag();
         initComposePanelResize();
@@ -1518,6 +1629,288 @@
         initPasteAttachments();
         initDetailPanelResizer();
     });
+
+    // ==================== 文件夹管理 ====================
+
+    let customFolders = [];
+
+    async function loadCustomFolders() {
+        try {
+            const response = await fetch('/api/mail/folders');
+            const data = await response.json();
+            if (data.success) {
+                customFolders = data.folders;
+                renderCustomFolders();
+            }
+        } catch (error) {
+            console.error('Load folders error:', error);
+        }
+    }
+
+    function renderCustomFolders() {
+        const folderList = document.querySelector('.folder-list');
+        // 移除已有的自定义文件夹
+        folderList.querySelectorAll('.custom-folder').forEach(el => el.remove());
+
+        customFolders.forEach(folder => {
+            const li = document.createElement('li');
+            li.className = 'folder-item custom-folder';
+            li.dataset.folderId = folder.id;
+            li.onclick = () => switchToCustomFolder(folder.id);
+            li.innerHTML = `
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                </svg>
+                ${escapeHtml(folder.folder_name)}
+                ${folder.mail_count > 0 ? `<span class="folder-badge">${folder.mail_count}</span>` : ''}
+            `;
+            folderList.appendChild(li);
+        });
+    }
+
+    function switchToCustomFolder(folderId) {
+        currentFolder = 'folder_' + folderId;
+        currentPage = 1;
+
+        // 更新选中状态
+        document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active'));
+        document.querySelector(`[data-folder-id="${folderId}"]`).classList.add('active');
+
+        loadEmailsByFolder(folderId);
+    }
+
+    async function loadEmailsByFolder(folderId) {
+        const search = document.getElementById('searchInput').value;
+
+        try {
+            const response = await fetch(`/api/mail/folder/${folderId}?page=${currentPage}&page_size=${pageSize}${search ? '&search=' + encodeURIComponent(search) : ''}`);
+            const data = await response.json();
+
+            renderEmailList(data.items);
+            renderPagination(data);
+        } catch (error) {
+            console.error('Load folder emails error:', error);
+        }
+    }
+
+    async function loadFolderManagerData() {
+        // 加载文件夹
+        try {
+            const response = await fetch('/api/mail/folders');
+            const data = await response.json();
+            if (data.success) {
+                renderFolderManagerList(data.folders);
+                updateRuleFolderSelect(data.folders);
+            }
+        } catch (error) {
+            console.error('Load folder manager data error:', error);
+        }
+
+        // 加载规则并按文件夹分组
+        try {
+            const response = await fetch('/api/mail/filter-rules');
+            const data = await response.json();
+            if (data.success) {
+                // 按文件夹ID分组规则
+                const rulesByFolder = {};
+                data.rules.forEach(rule => {
+                    if (!rulesByFolder[rule.folder_id]) {
+                        rulesByFolder[rule.folder_id] = [];
+                    }
+                    rulesByFolder[rule.folder_id].push(rule);
+                });
+                renderFolderRules(rulesByFolder);
+            }
+        } catch (error) {
+            console.error('Load filter rules error:', error);
+        }
+    }
+
+    function renderFolderManagerList(folders) {
+        const container = document.getElementById('folderManagerList');
+        if (folders.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">暂无自定义文件夹</p>';
+            return;
+        }
+
+        container.innerHTML = folders.map(folder => `
+            <div class="folder-manager-item" data-folder-id="${folder.id}">
+                <div class="folder-info">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                    </svg>
+                    <span>${escapeHtml(folder.folder_name)}</span>
+                    <span style="color: var(--text-muted); font-size: 0.75rem;">(${folder.mail_count || 0}封邮件)</span>
+                </div>
+                <div class="folder-actions">
+                    <button onclick="deleteFolder(${folder.id})" style="background: #EF4444; color: white;">删除</button>
+                </div>
+                <div class="folder-rules" id="folderRules_${folder.id}" style="width: 100%; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border);"></div>
+            </div>
+        `).join('');
+    }
+
+    function renderFolderRules(rulesByFolder) {
+        // 为每个文件夹填充规则
+        Object.keys(rulesByFolder).forEach(folderId => {
+            const container = document.getElementById(`folderRules_${folderId}`);
+            if (!container) return;
+
+            const rules = rulesByFolder[folderId];
+            if (rules.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = `
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">过滤规则：</div>
+                ${rules.map(rule => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.25rem 0.5rem; background: var(--bg-main); border-radius: var(--radius); margin-bottom: 0.25rem; font-size: 0.8rem;">
+                        <span><span class="rule-keyword" style="color: var(--primary);">${escapeHtml(rule.keyword)}</span> <span style="color: var(--text-muted);">优先级:${rule.priority}</span></span>
+                        <button onclick="deleteFilterRule(${rule.id})" style="padding: 0.1rem 0.4rem; font-size: 0.7rem; background: #EF4444; color: white; border: none; border-radius: var(--radius); cursor: pointer;">删除</button>
+                    </div>
+                `).join('')}
+            `;
+        });
+    }
+
+    function updateRuleFolderSelect(folders) {
+        const select = document.getElementById('ruleFolder');
+        select.innerHTML = '<option value="">选择文件夹</option>' +
+            folders.map(f => `<option value="${f.id}">${escapeHtml(f.folder_name)}</option>`).join('');
+    }
+
+    async function addFolder() {
+        const name = document.getElementById('newFolderName').value.trim();
+        if (!name) {
+            alert('请输入文件夹名称');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/mail/folder/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder_name: name })
+            });
+            const data = await response.json();
+            if (data.success) {
+                document.getElementById('newFolderName').value = '';
+                await loadFolderManagerData();
+                await loadCustomFolders();
+            } else {
+                alert(data.message || '添加失败');
+            }
+        } catch (error) {
+            console.error('Add folder error:', error);
+            alert('添加失败');
+        }
+    }
+
+    async function deleteFolder(folderId) {
+        if (!confirm('删除文件夹后，其中的邮件将移回收件箱。确定删除？')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/mail/folder/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder_id: folderId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                await loadFolderManagerData();
+                await loadCustomFolders();
+                // 如果当前在删除的文件夹中，切回收件箱
+                if (currentFolder === 'folder_' + folderId) {
+                    switchFolder('inbox');
+                }
+            } else {
+                alert(data.message || '删除失败');
+            }
+        } catch (error) {
+            console.error('Delete folder error:', error);
+            alert('删除失败');
+        }
+    }
+
+    // ==================== 过滤规则管理 ====================
+
+    async function addFilterRule() {
+        const folderId = document.getElementById('ruleFolder').value;
+        const keyword = document.getElementById('ruleKeyword').value.trim();
+        const priority = parseInt(document.getElementById('rulePriority').value) || 0;
+
+        if (!folderId || !keyword) {
+            alert('请选择文件夹并输入关键词');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/mail/filter-rule/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder_id: parseInt(folderId), keyword, priority })
+            });
+            const data = await response.json();
+            if (data.success) {
+                document.getElementById('ruleKeyword').value = '';
+                document.getElementById('rulePriority').value = '0';
+                await loadFolderManagerData();
+            } else {
+                alert(data.message || '添加失败');
+            }
+        } catch (error) {
+            console.error('Add filter rule error:', error);
+            alert('添加失败');
+        }
+    }
+
+    async function deleteFilterRule(ruleId) {
+        try {
+            const response = await fetch('/api/mail/filter-rule/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rule_id: ruleId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                await loadFolderManagerData();
+            } else {
+                alert(data.message || '删除失败');
+            }
+        } catch (error) {
+            console.error('Delete filter rule error:', error);
+            alert('删除失败');
+        }
+    }
+
+    // ==================== 自动分类 ====================
+
+    async function autoClassifyEmails() {
+        if (!confirm('将根据过滤规则自动分类收件箱中的邮件，确定执行？')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/mail/auto-classify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(`分类完成！已分类 ${data.classified_count} 封邮件（共 ${data.rule_count} 条规则）`);
+                await loadCustomFolders();
+                loadEmails();
+            } else {
+                alert('分类失败');
+            }
+        } catch (error) {
+            console.error('Auto classify error:', error);
+            alert('分类失败');
+        }
+    }
 
     // Load emails
     async function loadEmails() {
@@ -1788,6 +2181,77 @@
             progressBar.classList.remove('active');
             progressText.textContent = '';
             textEl.textContent = '同步失败';
+        }
+    }
+
+    // 刷新：增量同步新邮件
+    async function syncNewEmails() {
+        const statusEl = document.getElementById('syncStatus');
+        const textEl = document.getElementById('syncText');
+        const progressBar = document.getElementById('syncProgressBar');
+        const progressFill = document.getElementById('syncProgressFill');
+        const progressText = document.getElementById('syncProgressText');
+
+        statusEl.classList.add('syncing');
+        textEl.textContent = '刷新中...';
+        progressBar.classList.add('active');
+        progressFill.style.width = '0%';
+        progressText.textContent = '检查新邮件...';
+
+        try {
+            const response = await fetch('/api/mail/sync-new', { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success || data.status === 'started') {
+                // 开始轮询进度
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const statusRes = await fetch('/api/mail/sync/status');
+                        const statusData = await statusRes.json();
+
+                        if (statusData.syncing) {
+                            const percent = statusData.total > 0
+                                ? Math.round((statusData.current / statusData.total) * 100)
+                                : statusData.current;
+                            progressFill.style.width = percent + '%';
+                            progressText.textContent = statusData.message || '刷新中...';
+                            textEl.textContent = '刷新中...';
+                        } else {
+                            clearInterval(pollInterval);
+                            progressFill.style.width = '100%';
+                            progressText.textContent = '完成';
+                            textEl.textContent = '就绪';
+                            statusEl.classList.remove('syncing');
+
+                            setTimeout(() => {
+                                progressBar.classList.remove('active');
+                                progressText.textContent = '';
+                            }, 2000);
+
+                            loadEmails();
+                            loadInboxCount();
+                            loadCustomFolders();
+                        }
+                    } catch (err) {
+                        console.error('获取刷新状态失败:', err);
+                    }
+                }, 500);
+
+                setTimeout(() => clearInterval(pollInterval), 30000);
+            } else if (data.status === 'already_running') {
+                progressText.textContent = '已有同步任务';
+                textEl.textContent = '同步进行中...';
+            } else {
+                statusEl.classList.remove('syncing');
+                progressBar.classList.remove('active');
+                progressText.textContent = '';
+                textEl.textContent = data.message || '刷新失败';
+            }
+        } catch (error) {
+            statusEl.classList.remove('syncing');
+            progressBar.classList.remove('active');
+            progressText.textContent = '';
+            textEl.textContent = '刷新失败';
         }
     }
 
@@ -2168,6 +2632,105 @@
         openComposePanel(from, 'Re: ' + subject, originalBody, cc, originalHtml);
     }
 
+    // 全部回复
+    function replyAllEmail() {
+        const from = document.getElementById('detailFrom').textContent;
+        const to = document.getElementById('detailTo').textContent;
+        const ccRow = document.getElementById('detailCcRow');
+        const originalCc = ccRow.style.display !== 'none' ? document.getElementById('detailCc').textContent : '';
+        const subject = document.getElementById('detailSubject').textContent;
+        const bodyEl = document.getElementById('detailBody');
+        const dateEl = document.getElementById('detailDate');
+        const date = dateEl ? dateEl.textContent : '';
+
+        // 解析邮箱地址
+        function extractEmail(str) {
+            const match = str.match(/[\w.-]+@[\w.-]+\.\w+/);
+            return match ? match[0] : str;
+        }
+
+        // 全部回复：收件人 = 原发件人 + 原收件人（排除自己）
+        // 抄送 = 原抄送人
+        let allTo = from;
+        if (to && !to.includes(extractEmail(from))) {
+            allTo = from + ', ' + to;
+        }
+
+        // 格式化引用内容
+        let originalBody = '\n\n━━━━━━━━━━━━━━━━━━━━━━\n';
+        originalBody += `发件人: ${from}\n`;
+        originalBody += `发送时间: ${date}\n`;
+        originalBody += `收件人: ${to}\n`;
+        if (originalCc) {
+            originalBody += `抄送: ${originalCc}\n`;
+        }
+        originalBody += `主题: ${subject}\n`;
+        originalBody += '━━━━━━━━━━━━━━━━━━━━━━\n\n';
+        const textContent = bodyEl.textContent || bodyEl.innerText || '';
+        originalBody += textContent;
+
+        const originalHtml = `
+            <br><br>
+            <div style="border-left: 2px solid #ccc; padding-left: 10px; color: #666;">
+                <p style="margin: 0; color: #888; font-size: 12px;">━━━━━━━━━━━━━━━━━━━━━━</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>发件人:</strong> ${from}</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>发送时间:</strong> ${date}</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>收件人:</strong> ${to}</p>
+                ${originalCc ? `<p style="margin: 5px 0; font-size: 12px;"><strong>抄送:</strong> ${originalCc}</p>` : ''}
+                <p style="margin: 5px 0; font-size: 12px;"><strong>主题:</strong> ${subject}</p>
+                <p style="margin: 0; color: #888; font-size: 12px;">━━━━━━━━━━━━━━━━━━━━━━</p>
+            </div>
+            <br>
+            ${bodyEl.innerHTML}
+        `;
+
+        openComposePanel(allTo, 'Re: ' + subject, originalBody, originalCc, originalHtml);
+    }
+
+    // 转发
+    function forwardEmail() {
+        const from = document.getElementById('detailFrom').textContent;
+        const to = document.getElementById('detailTo').textContent;
+        const ccRow = document.getElementById('detailCcRow');
+        const cc = ccRow.style.display !== 'none' ? document.getElementById('detailCc').textContent : '';
+        const subject = document.getElementById('detailSubject').textContent;
+        const bodyEl = document.getElementById('detailBody');
+        const dateEl = document.getElementById('detailDate');
+        const date = dateEl ? dateEl.textContent : '';
+
+        // 格式化转发内容
+        let forwardBody = '\n\n━━━━━━━━━━━━━━━━━━━━━━\n';
+        forwardBody += `---------- 转发邮件 ----------\n`;
+        forwardBody += `发件人: ${from}\n`;
+        forwardBody += `发送时间: ${date}\n`;
+        forwardBody += `收件人: ${to}\n`;
+        if (cc) {
+            forwardBody += `抄送: ${cc}\n`;
+        }
+        forwardBody += `主题: ${subject}\n`;
+        forwardBody += '━━━━━━━━━━━━━━━━━━━━━━\n\n';
+        const textContent = bodyEl.textContent || bodyEl.innerText || '';
+        forwardBody += textContent;
+
+        const forwardHtml = `
+            <br><br>
+            <div style="border-left: 2px solid #ccc; padding-left: 10px; color: #666;">
+                <p style="margin: 0; color: #888; font-size: 12px;">---------- 转发邮件 ----------</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>发件人:</strong> ${from}</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>发送时间:</strong> ${date}</p>
+                <p style="margin: 5px 0; font-size: 12px;"><strong>收件人:</strong> ${to}</p>
+                ${cc ? `<p style="margin: 5px 0; font-size: 12px;"><strong>抄送:</strong> ${cc}</p>` : ''}
+                <p style="margin: 5px 0; font-size: 12px;"><strong>主题:</strong> ${subject}</p>
+                <p style="margin: 0; color: #888; font-size: 12px;">━━━━━━━━━━━━━━━━━━━━━━</p>
+            </div>
+            <br>
+            ${bodyEl.innerHTML}
+        `;
+
+        // 转发：收件人为空，主题加 Fwd: 前缀
+        openComposePanel('', 'Fwd: ' + subject, forwardBody, '', forwardHtml);
+    }
+
     // AI analyze
     async function analyzeEmail() {
         if (!currentMailId) return;
@@ -2297,6 +2860,9 @@
 
         // Load accounts list
         await loadAccounts();
+
+        // Load folders and rules
+        await loadFolderManagerData();
     }
 
     // Load accounts list
@@ -2612,6 +3178,17 @@
         document.getElementById('composeCc').value = cc;
         document.getElementById('composeSubject').value = subject;
         document.getElementById('composeBody').value = body;
+
+        // 显示HTML引用内容
+        const htmlBodyDiv = document.getElementById('composeHtmlBody');
+        if (htmlBody && htmlBody.trim()) {
+            htmlBodyDiv.innerHTML = htmlBody;
+            htmlBodyDiv.style.display = 'block';
+        } else {
+            htmlBodyDiv.innerHTML = '';
+            htmlBodyDiv.style.display = 'none';
+        }
+
         replyHtmlBody = htmlBody;  // 保存HTML内容用于发送
 
         // Show CC field if has value
@@ -2645,6 +3222,10 @@
         panel.classList.remove('minimized');
         selectedFiles = [];
         isComposePanelMinimized = false;
+
+        // 清空HTML引用内容
+        document.getElementById('composeHtmlBody').innerHTML = '';
+        document.getElementById('composeHtmlBody').style.display = 'none';
     }
 
     // Minimize compose panel

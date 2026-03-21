@@ -190,13 +190,14 @@ class IMAPClient:
         print("[Mail] 未找到发件箱文件夹")
         return None
 
-    def fetch_emails(self, folder: str = 'INBOX', days: int = 90) -> List[Dict[str, Any]]:
+    def fetch_emails(self, folder: str = 'INBOX', days: int = 90, since_date: datetime = None) -> List[Dict[str, Any]]:
         """
         获取邮件列表
 
         Args:
             folder: 邮箱文件夹
             days: 同步时间范围（天）
+            since_date: 增量同步起始时间（优先于days参数）
 
         Returns:
             邮件数据列表
@@ -217,8 +218,16 @@ class IMAPClient:
 
             # 计算日期范围
             from datetime import datetime, timedelta
-            since_date = datetime.now() - timedelta(days=days)
-            date_str = since_date.strftime('%d-%b-%Y')  # IMAP日期格式: 01-Jan-2024
+            if since_date:
+                # 增量同步：从指定时间开始
+                # 稍微往前推1小时，避免遗漏
+                search_date = since_date - timedelta(hours=1)
+                date_str = search_date.strftime('%d-%b-%Y')
+                print(f"[Mail] 增量同步，起始时间: {search_date}")
+            else:
+                # 全量同步
+                search_date = datetime.now() - timedelta(days=days)
+                date_str = search_date.strftime('%d-%b-%Y')  # IMAP日期格式: 01-Jan-2024
 
             # 使用SINCE搜索指定日期之后的邮件
             status, messages = self.client.search(None, f'SINCE {date_str}')
@@ -632,6 +641,131 @@ def sync_inbox_async() -> Dict[str, Any]:
         {"status": "started"}
     """
     thread = threading.Thread(target=sync_inbox)
+    thread.daemon = True
+    thread.start()
+    return {"status": "started"}
+
+
+def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
+    """
+    增量同步：只获取上次同步后的新邮件
+
+    Returns:
+        {"status": "completed", "new_count": int}
+    """
+    from Sills.db_mail import get_latest_mail_time
+    from datetime import datetime
+
+    lock_id = str(uuid.uuid4())
+
+    # 恢复孤立的同步记录
+    recover_orphaned_syncs()
+
+    # 尝试获取锁
+    if not acquire_sync_lock(lock_id):
+        return {"status": "already_running", "message": "Sync already in progress"}
+
+    try:
+        config = get_mail_config()
+        if not config or not config.get('imap_server'):
+            update_sync_progress(0, 1, "邮件配置未找到")
+            return {"status": "error", "message": "Mail config not found"}
+
+        current_account_id = config.get('id')
+        update_sync_progress(0, 100, "检查最新邮件时间...")
+
+        # 获取最新邮件时间
+        latest_time_str = get_latest_mail_time(current_account_id, 0)
+        since_date = None
+        if latest_time_str:
+            try:
+                since_date = datetime.fromisoformat(latest_time_str.replace('Z', '+00:00'))
+                print(f"[Mail] 增量同步，起始时间: {since_date}")
+            except Exception as e:
+                print(f"[Mail] 解析时间失败: {e}")
+
+        imap_client = IMAPClient(config)
+        imap_client.connect()
+
+        # 自动检测发件箱
+        update_sync_progress(10, 100, "检测邮箱文件夹...")
+        sent_folder = imap_client.find_sent_folder()
+
+        # 只同步收件箱
+        folders_to_sync = [('INBOX', 0, '收件箱')]
+
+        total_saved = 0
+        total_processed = 0
+
+        for folder_name, is_sent, folder_label in folders_to_sync:
+            try:
+                update_sync_progress(20, 100, f"获取{folder_label}新邮件...")
+                print(f"[Mail] 增量同步文件夹: {folder_name}")
+                # 使用since_date进行增量同步
+                emails = imap_client.fetch_emails(folder=folder_name, days=7, since_date=since_date)
+                print(f"[Mail] 文件夹 {folder_name} 返回 {len(emails) if emails else 0} 封新邮件")
+
+                if not emails:
+                    continue
+
+                # 标记是否为已发送
+                for email_data in emails:
+                    email_data['is_sent'] = is_sent
+
+                total_emails = len(emails)
+                update_sync_progress(30, 100, f"{folder_label}发现 {total_emails} 封新邮件")
+
+                for idx, email_data in enumerate(emails):
+                    total_processed += 1
+                    progress = min(90, 30 + int((idx / total_emails) * 60))
+                    update_sync_progress(progress, 100, f"处理 {folder_label} {idx + 1}/{total_emails}")
+
+                    # 检查是否已存在
+                    if email_data.get('message_id'):
+                        from Sills.db_mail import get_db_connection
+                        with get_db_connection() as conn:
+                            existing = conn.execute(
+                                "SELECT id FROM uni_mail WHERE message_id = ?",
+                                (email_data['message_id'],)
+                            ).fetchone()
+                            if existing:
+                                continue
+
+                    # 关联当前账户ID
+                    email_data['account_id'] = current_account_id
+
+                    # 保存邮件
+                    save_email(email_data)
+                    total_saved += 1
+
+            except Exception as e:
+                print(f"Sync {folder_name} error: {e}")
+                continue
+
+        update_sync_progress(95, 100, "断开连接...")
+        imap_client.disconnect()
+
+        update_sync_progress(100, 100, f"完成！新增 {total_saved} 封邮件")
+
+        return {
+            "status": "completed",
+            "new_count": total_saved,
+            "message": f"获取了 {total_saved} 封新邮件"
+        }
+
+    except Exception as e:
+        update_sync_progress(0, 100, f"错误: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+    finally:
+        release_sync_lock()
+
+
+def sync_new_emails_async() -> Dict[str, Any]:
+    """
+    异步增量同步（启动后台线程）
+    """
+    thread = threading.Thread(target=sync_new_emails)
     thread.daemon = True
     thread.start()
     return {"status": "started"}
