@@ -426,6 +426,32 @@
         .copy-btn:active {
             transform: translateY(-50%) scale(0.95);
         }
+
+        /* 表格列宽调整样式 */
+        .data-table th {
+            position: relative;
+            user-select: none;
+        }
+
+        .col-resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 1;
+        }
+
+        .col-resizer:hover,
+        .col-resizer.dragging {
+            background: var(--primary, #6366F1);
+        }
+
+        .data-table th.resizing {
+            background: rgba(99, 102, 241, 0.1);
+        }
     </style>
 </head>
 
@@ -759,6 +785,93 @@
             sunIcons.forEach(icon => icon.style.display = isDark ? 'block' : 'none');
             moonIcons.forEach(icon => icon.style.display = isDark ? 'none' : 'block');
         }
+    </script>
+
+    <!-- 表格列宽调整功能 -->
+    <script>
+        (function() {
+            // 初始化表格列宽调整功能
+            function initColumnResize() {
+                const tables = document.querySelectorAll('.data-table');
+                if (tables.length === 0) return;
+
+                tables.forEach(table => {
+                    const thead = table.querySelector('thead');
+                    if (!thead) return;
+
+                    const ths = thead.querySelectorAll('th');
+                    const pageKey = window.location.pathname.replace(/\//g, '_') || '_main';
+
+                    // 恢复保存的列宽
+                    const savedWidths = JSON.parse(localStorage.getItem('tableColWidth_' + pageKey) || '{}');
+
+                    ths.forEach((th, index) => {
+                        // 跳过操作列（最后一列）
+                        if (index === ths.length - 1) return;
+
+                        // 恢复保存的宽度
+                        if (savedWidths[index]) {
+                            th.style.width = savedWidths[index] + 'px';
+                            th.style.minWidth = savedWidths[index] + 'px';
+                        }
+
+                        // 创建拖动条
+                        const resizer = document.createElement('div');
+                        resizer.className = 'col-resizer';
+                        th.appendChild(resizer);
+
+                        // 拖动事件
+                        let startX, startWidth, isResizing = false;
+
+                        resizer.addEventListener('mousedown', (e) => {
+                            isResizing = true;
+                            startX = e.clientX;
+                            startWidth = th.offsetWidth;
+                            resizer.classList.add('dragging');
+                            th.classList.add('resizing');
+                            document.body.style.cursor = 'col-resize';
+                            document.body.style.userSelect = 'none';
+                            e.preventDefault();
+                            e.stopPropagation();
+                        });
+
+                        document.addEventListener('mousemove', (e) => {
+                            if (!isResizing) return;
+
+                            const diff = e.clientX - startX;
+                            const newWidth = Math.max(50, startWidth + diff);
+                            th.style.width = newWidth + 'px';
+                            th.style.minWidth = newWidth + 'px';
+                        });
+
+                        document.addEventListener('mouseup', () => {
+                            if (isResizing) {
+                                isResizing = false;
+                                resizer.classList.remove('dragging');
+                                th.classList.remove('resizing');
+                                document.body.style.cursor = '';
+                                document.body.style.userSelect = '';
+
+                                // 保存列宽
+                                const widths = JSON.parse(localStorage.getItem('tableColWidth_' + pageKey) || '{}');
+                                widths[index] = th.offsetWidth;
+                                localStorage.setItem('tableColWidth_' + pageKey, JSON.stringify(widths));
+                            }
+                        });
+                    });
+                });
+            }
+
+            // 页面加载后初始化
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initColumnResize);
+            } else {
+                initColumnResize();
+            }
+
+            // 暴露全局方法供动态内容使用
+            window.initColumnResize = initColumnResize;
+        })();
     </script>
 
     <!-- Global UI Components -->
