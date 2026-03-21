@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from contextlib import asynccontextmanager
 import asyncio
 import threading
 from Sills.base import init_db, get_db_connection, get_exchange_rates
@@ -51,7 +52,42 @@ from email.mime.base import MIMEBase
 from email import encoders
 import openpyxl
 
-app = FastAPI()
+
+def get_backup_root():
+    """获取备份根目录"""
+    is_windows = platform.system() == "Windows"
+    return r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else "/home/kim/workspace/DbBackup"
+
+
+def start_auto_backup():
+    """启动自动备份定时任务"""
+    import threading
+    import time
+
+    def backup_loop():
+        while True:
+            try:
+                # 每24小时备份一次
+                time.sleep(24 * 60 * 60)
+                # 备份逻辑可以在这里添加
+            except Exception as e:
+                print(f"[Backup] Error: {e}")
+
+    backup_thread = threading.Thread(target=backup_loop, daemon=True)
+    backup_thread.start()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # Startup
+    init_db()
+    start_auto_backup()
+    yield
+    # Shutdown (如果需要清理资源，可以在这里添加)
+
+
+app = FastAPI(lifespan=lifespan)
 
 # 内部服务API密钥（用于skill调用绕过认证）
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "dev-local-key")
@@ -65,17 +101,6 @@ app.add_middleware(SessionMiddleware, secret_key="uni_platform_secret_key_2026")
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-@app.on_event("startup")
-async def startup_event():
-    init_db()
-    # 启动自动备份定时任务
-    start_auto_backup()
-
-def get_backup_root():
-    """获取备份根目录"""
-    is_windows = platform.system() == "Windows"
-    return r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else "/home/kim/workspace/DbBackup"
 
 def get_server_env():
     """检测服务器环境（包括WSL）"""
