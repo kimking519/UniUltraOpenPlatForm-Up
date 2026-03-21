@@ -196,6 +196,87 @@ def get_gemini_api_key() -> str:
         return api_key[:4] + "****" + api_key[-4:]
     return api_key
 
+def detect_language(text: str) -> str:
+    """
+    检测文本语言类型
+
+    Returns:
+        'ko' - 韩语
+        'en' - 英语
+        'zh' - 中文
+        'ja' - 日语
+    """
+    if not text:
+        return 'en'
+
+    # 韩文字符范围
+    korean_pattern = re.compile(r'[\uac00-\ud7af]+')
+    # 中文字符范围
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
+    # 日文假名
+    japanese_pattern = re.compile(r'[\u3040-\u309f\u30a0-\u30ff]+')
+
+    korean_count = len(korean_pattern.findall(text))
+    chinese_count = len(chinese_pattern.findall(text))
+    japanese_count = len(japanese_pattern.findall(text))
+
+    # 计算非ASCII字符比例
+    non_ascii = len(re.findall(r'[^\x00-\x7F]', text))
+
+    if korean_count > 0 and korean_count >= chinese_count:
+        return 'ko'
+    elif japanese_count > 0 and japanese_count >= chinese_count:
+        return 'ja'
+    elif chinese_count > 0:
+        return 'zh'
+    elif non_ascii == 0:
+        return 'en'
+    else:
+        return 'en'
+
+
+def get_language_prompt(language: str) -> str:
+    """根据语言类型返回对应的提示语"""
+    prompts = {
+        'ko': """
+回复格式要求（韩语商务邮件风格）：
+1. 开头使用: 안녕하십니까
+2. 自我介绍: 유니콘테크 Joy Kim입니다. (根据发件人调整)
+3. 正文内容简洁专业
+4. 结尾使用: 감사합니다. 或 오늘도 평온하고 풍요로운 하루 되십시요.
+5. 落款: 김정 올림(Joy Kim) 格式
+
+全程使用韩语，语气专业礼貌。""",
+        'en': """
+回复格式要求（英语商务邮件风格）：
+1. 开头使用: Dear [客户名],
+2. 正文内容简洁专业
+3. 结尾使用: Best regards, 或 Thank you,
+4. 落款: Joy Kim / Unicorn Technology
+
+全程使用英语，语气专业礼貌。""",
+        'zh': """
+回复格式要求（中文商务邮件风格）：
+1. 开头使用: 您好
+2. 自我介绍: 我是Unicorn Technology的Joy Kim
+3. 正文内容简洁专业
+4. 结尾使用: 谢谢 或 顺颂商祺
+5. 落款: Joy Kim 敬上
+
+全程使用中文，语气专业礼貌。""",
+        'ja': """
+回复格式要求（日语商务邮件风格）：
+1. 开头使用: お世話になっております
+2. 自我介绍: Unicorn TechnologyのJoy Kimです
+3. 正文内容简洁专业
+4. 结尾使用: よろしくお願いいたします
+5. 落款: Joy Kim
+
+全程使用日语，语气专业礼貌。"""
+    }
+    return prompts.get(language, prompts['en'])
+
+
 def suggest_email_reply(
     email_content: str,
     user_instruction: str,
@@ -222,14 +303,21 @@ def suggest_email_reply(
         # 清理邮件内容，去除无意义部分
         cleaned_content = clean_email_content(email_content)
 
+        # 检测原邮件语言
+        detected_language = detect_language(cleaned_content + " " + email_subject)
+        language_prompt = get_language_prompt(detected_language)
+
         # 构建系统提示
-        system_instruction = """你是一个专业的邮件回复助手。请根据用户的指示和原邮件内容，生成一封专业、礼貌的邮件回复。
+        system_instruction = f"""你是一个专业的邮件回复助手。请根据用户的指示和原邮件内容，生成一封专业、礼貌的邮件回复。
+
+{language_prompt}
 
 要求：
 1. 回复内容要简洁明了，直接回应用户想要表达的内容
 2. 语气要专业、礼貌
 3. 不要添加多余的开头语如"以下是回复建议"等
-4. 直接输出邮件正文内容，不需要主题"""
+4. 直接输出邮件正文内容，不需要主题
+5. 不要在结尾添加签名，签名会由系统自动添加"""
 
         # 构建用户提示
         prompt = f"""请帮我撰写一封邮件回复。
@@ -263,6 +351,7 @@ def suggest_email_reply(
         return {
             "success": True,
             "reply": response.text,
+            "language": detected_language,
             "usage": {
                 "prompt_tokens": response.usage_metadata.prompt_token_count if response.usage_metadata else 0,
                 "output_tokens": response.usage_metadata.candidates_token_count if response.usage_metadata else 0
