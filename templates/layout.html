@@ -12,7 +12,7 @@
         .sidebar {
             background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.98) 100%);
             position: relative;
-            min-width: 100px !important;
+            min-width: 60px !important;
             max-width: 400px !important;
             flex: 0 0 auto !important;
             width: 260px;
@@ -727,7 +727,7 @@
                 if (!isResizing) return;
 
                 const diff = e.clientX - startX;
-                const newWidth = Math.max(100, Math.min(400, startWidth + diff));
+                const newWidth = Math.max(60, Math.min(400, startWidth + diff));
                 sidebar.style.width = newWidth + 'px';
                 updateSidebarState(newWidth);
             });
