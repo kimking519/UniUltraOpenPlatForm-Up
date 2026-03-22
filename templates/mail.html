@@ -4238,9 +4238,11 @@
             const result = await response.json();
 
             if (result.success) {
-                await loadAccounts();
-                loadEmails(); // 切换账户后刷新邮件列表
-                alert('已切换到新账户');
+                // 关闭设置视图并刷新页面
+                closeSettingsView();
+                setTimeout(() => {
+                    location.reload();
+                }, 100);
             } else {
                 alert('切换失败: ' + (result.message || '未知错误'));
             }
