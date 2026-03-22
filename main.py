@@ -2160,6 +2160,14 @@ async def api_mail_sync_status(current_user: dict = Depends(login_required)):
     }
 
 
+@app.post("/api/mail/sync/cancel")
+async def api_mail_sync_cancel(current_user: dict = Depends(login_required)):
+    """取消同步"""
+    from Sills.mail_service import request_cancel_sync, is_sync_cancelled
+    request_cancel_sync()
+    return {"success": True, "message": "已发送取消请求"}
+
+
 @app.get("/api/mail/config")
 async def api_mail_config_get(current_user: dict = Depends(login_required)):
     """获取邮件配置"""

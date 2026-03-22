@@ -22,6 +22,26 @@ from Sills.db_mail import (
     update_sync_progress, get_sync_days, get_sync_date_range
 )
 
+# 全局取消同步标志
+_cancel_sync_flag = False
+
+
+def request_cancel_sync():
+    """请求取消同步"""
+    global _cancel_sync_flag
+    _cancel_sync_flag = True
+
+
+def is_sync_cancelled() -> bool:
+    """检查是否请求了取消同步"""
+    return _cancel_sync_flag
+
+
+def reset_cancel_flag():
+    """重置取消标志"""
+    global _cancel_sync_flag
+    _cancel_sync_flag = False
+
 
 class IMAPClient:
     """IMAP 邮件接收客户端"""
@@ -1009,6 +1029,9 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
     from Sills.db_mail import get_local_uids
     from datetime import datetime
 
+    # 重置取消标志
+    reset_cancel_flag()
+
     lock_id = str(uuid.uuid4())
 
     # 恢复孤立的同步记录
@@ -1026,6 +1049,11 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
 
         current_account_id = config.get('id')
         update_sync_progress(0, 100, "连接邮件服务器...")
+
+        # 检查取消
+        if is_sync_cancelled():
+            update_sync_progress(0, 100, "同步已取消")
+            return {"status": "cancelled", "message": "同步已取消"}
 
         imap_client = IMAPClient(config)
         imap_client.connect()
@@ -1069,6 +1097,12 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
         all_uids_to_fetch = []  # [(folder_name, is_sent, folder_label, uid), ...]
 
         for folder_name, is_sent, folder_label in folders_to_sync:
+            # 检查取消
+            if is_sync_cancelled():
+                update_sync_progress(0, 100, "同步已取消")
+                imap_client.disconnect()
+                return {"status": "cancelled", "message": "同步已取消", "new_count": total_saved}
+
             try:
                 print(f"[Mail] 检查文件夹: {folder_name}")
                 # 获取服务器上的UID列表（轻量操作）
@@ -1117,6 +1151,12 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
 
         processed_count = 0
         for (folder_name, is_sent, folder_label), uids in uids_by_folder.items():
+            # 检查取消
+            if is_sync_cancelled():
+                update_sync_progress(0, 100, "同步已取消")
+                imap_client.disconnect()
+                return {"status": "cancelled", "message": "同步已取消", "new_count": total_saved}
+
             print(f"[Mail] 同步 {folder_label} 的 {len(uids)} 封邮件...")
 
             # 批量获取邮件
@@ -1128,6 +1168,12 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
             emails = imap_client.fetch_emails_by_uid(folder_name, batch_uids)
 
             for email_data in emails:
+                # 检查取消
+                if is_sync_cancelled():
+                    update_sync_progress(0, 100, "同步已取消")
+                    imap_client.disconnect()
+                    return {"status": "cancelled", "message": "同步已取消", "new_count": total_saved}
+
                 email_data['is_sent'] = is_sent
                 email_data['folder_label'] = folder_label
                 email_data['imap_folder'] = folder_name

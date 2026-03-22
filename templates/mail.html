@@ -1099,6 +1099,44 @@
         color: var(--text-muted);
     }
 
+    .sync-info-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 180px;
+    }
+
+    .sync-detail-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--text-muted);
+    }
+
+    .sync-detail-row > span:empty {
+        display: none;
+    }
+
+    .btn-cancel-sync {
+        padding: 4px 10px;
+        font-size: 12px;
+        background: #FEE2E2;
+        color: #DC2626;
+        border: 1px solid #FECACA;
+        border-radius: var(--radius);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+
+    .btn-cancel-sync:hover {
+        background: #FECACA;
+        border-color: #FCA5A5;
+    }
+
     .sync-status.syncing {
         color: var(--primary);
     }
@@ -1156,18 +1194,25 @@
             批量删除 (<span id="selectedCount">0</span>)
         </button>
         <div class="sync-status" id="syncStatus">
-            <div class="sync-progress-container">
-                <div class="sync-progress-bar" id="syncProgressBar">
-                    <div class="sync-progress-fill" id="syncProgressFill"></div>
+            <div class="sync-info-wrapper">
+                <div class="sync-progress-container">
+                    <div class="sync-progress-bar" id="syncProgressBar">
+                        <div class="sync-progress-fill" id="syncProgressFill"></div>
+                    </div>
+                    <div class="sync-progress-text" id="syncProgressText"></div>
                 </div>
-                <div class="sync-progress-text" id="syncProgressText"></div>
+                <div class="sync-detail-row">
+                    <span id="syncDateRange"></span>
+                    <span id="syncEmailCount"></span>
+                    <span id="syncText">就绪</span>
+                </div>
             </div>
-            <!-- 详细进度信息 -->
-            <div class="sync-detail-info" id="syncDetailInfo" style="display: none; font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
-                <span id="syncDateRange"></span>
-                <span id="syncEmailCount" style="margin-left: 8px;"></span>
-            </div>
-            <span id="syncText">就绪</span>
+            <button class="btn btn-cancel-sync" id="cancelSyncBtn" onclick="cancelSync()" style="display: none;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+                结束同步
+            </button>
         </div>
     </div>
 </div>
@@ -2492,7 +2537,6 @@
     function updateSyncProgressUI(data) {
         const progressFill = document.getElementById('syncProgressFill');
         const progressText = document.getElementById('syncProgressText');
-        const detailInfo = document.getElementById('syncDetailInfo');
         const dateRangeEl = document.getElementById('syncDateRange');
         const emailCountEl = document.getElementById('syncEmailCount');
 
@@ -2503,15 +2547,37 @@
 
         // 更新详细信息
         if (data.sync_start_date && data.sync_end_date) {
-            detailInfo.style.display = 'block';
-            dateRangeEl.textContent = `📅 ${data.sync_start_date} ~ ${data.sync_end_date}`;
+            dateRangeEl.textContent = `${data.sync_start_date} ~ ${data.sync_end_date}`;
             if (data.total_emails > 0) {
-                emailCountEl.textContent = `📧 ${data.synced_emails || 0}/${data.total_emails} (${percent}%)`;
+                emailCountEl.textContent = `${data.synced_emails || 0}/${data.total_emails}`;
             } else {
                 emailCountEl.textContent = '';
             }
         } else {
-            detailInfo.style.display = 'none';
+            dateRangeEl.textContent = '';
+            emailCountEl.textContent = '';
+        }
+    }
+
+    // 显示/隐藏取消按钮
+    function showCancelButton(show) {
+        const cancelBtn = document.getElementById('cancelSyncBtn');
+        if (cancelBtn) {
+            cancelBtn.style.display = show ? 'flex' : 'none';
+        }
+    }
+
+    // 取消同步
+    async function cancelSync() {
+        try {
+            const response = await fetch('/api/mail/sync/cancel', { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                const textEl = document.getElementById('syncText');
+                textEl.textContent = '正在取消...';
+            }
+        } catch (error) {
+            console.error('取消同步失败:', error);
         }
     }
 
@@ -2522,13 +2588,13 @@
         const progressBar = document.getElementById('syncProgressBar');
         const progressFill = document.getElementById('syncProgressFill');
         const progressText = document.getElementById('syncProgressText');
-        const detailInfo = document.getElementById('syncDetailInfo');
 
         statusEl.classList.add('syncing');
         textEl.textContent = '同步中...';
         progressBar.classList.add('active');
         progressFill.style.width = '0%';
         progressText.textContent = '启动同步...';
+        showCancelButton(true);
 
         try {
             const response = await fetch('/api/mail/sync', { method: 'POST' });
@@ -2552,7 +2618,7 @@
                             progressText.textContent = '完成';
                             textEl.textContent = '就绪';
                             statusEl.classList.remove('syncing');
-                            detailInfo.style.display = 'none';
+                            showCancelButton(false);
 
                             setTimeout(() => {
                                 progressBar.classList.remove('active');
@@ -2567,8 +2633,11 @@
                     }
                 }, 500);
 
-                // 30秒超时保护
-                setTimeout(() => clearInterval(pollInterval), 30000);
+                // 10分钟超时保护
+                setTimeout(() => {
+                    clearInterval(pollInterval);
+                    showCancelButton(false);
+                }, 600000);
             } else if (data.status === 'already_running') {
                 progressText.textContent = '已在同步中';
                 textEl.textContent = '同步进行中...';
@@ -2577,7 +2646,7 @@
                 statusEl.classList.add('error');
                 progressBar.classList.remove('active');
                 progressText.textContent = '';
-                detailInfo.style.display = 'none';
+                showCancelButton(false);
                 textEl.textContent = data.message || '同步失败';
             }
         } catch (error) {
@@ -2585,7 +2654,7 @@
             statusEl.classList.add('error');
             progressBar.classList.remove('active');
             progressText.textContent = '';
-            detailInfo.style.display = 'none';
+            showCancelButton(false);
             textEl.textContent = '同步失败';
         }
     }
@@ -2597,14 +2666,13 @@
         const progressBar = document.getElementById('syncProgressBar');
         const progressFill = document.getElementById('syncProgressFill');
         const progressText = document.getElementById('syncProgressText');
-        const detailInfo = document.getElementById('syncDetailInfo');
 
         statusEl.classList.add('syncing');
         textEl.textContent = '刷新中...';
         progressBar.classList.add('active');
         progressFill.style.width = '0%';
         progressText.textContent = '检查新邮件...';
-        detailInfo.style.display = 'none';
+        showCancelButton(true);
 
         try {
             const response = await fetch('/api/mail/sync-new', { method: 'POST' });
@@ -2626,7 +2694,7 @@
                             progressText.textContent = '完成';
                             textEl.textContent = '就绪';
                             statusEl.classList.remove('syncing');
-                            detailInfo.style.display = 'none';
+                            showCancelButton(false);
 
                             setTimeout(() => {
                                 progressBar.classList.remove('active');
@@ -2642,7 +2710,11 @@
                     }
                 }, 500);
 
-                setTimeout(() => clearInterval(pollInterval), 30000);
+                // 10分钟超时保护
+                setTimeout(() => {
+                    clearInterval(pollInterval);
+                    showCancelButton(false);
+                }, 600000);
             } else if (data.status === 'already_running') {
                 progressText.textContent = '已有同步任务';
                 textEl.textContent = '同步进行中...';
@@ -2650,12 +2722,14 @@
                 statusEl.classList.remove('syncing');
                 progressBar.classList.remove('active');
                 progressText.textContent = '';
+                showCancelButton(false);
                 textEl.textContent = data.message || '刷新失败';
             }
         } catch (error) {
             statusEl.classList.remove('syncing');
             progressBar.classList.remove('active');
             progressText.textContent = '';
+            showCancelButton(false);
             textEl.textContent = '刷新失败';
         }
     }
