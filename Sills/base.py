@@ -335,6 +335,8 @@ def init_db():
         username TEXT,
         password TEXT,
         use_tls INTEGER DEFAULT 1,
+        sync_batch_size INTEGER DEFAULT 100,
+        sync_pause_seconds REAL DEFAULT 1.0,
         is_current INTEGER DEFAULT 0 CHECK(is_current IN (0,1)),
         created_at DATETIME DEFAULT (datetime('now', 'localtime'))
     );
@@ -352,12 +354,16 @@ def init_db():
         is_sent INTEGER DEFAULT 0,
         is_read INTEGER DEFAULT 0,
         message_id TEXT,
+        imap_uid INTEGER,
+        imap_folder TEXT,
         account_id INTEGER,
         sync_status TEXT DEFAULT 'completed',
         sync_error TEXT,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE SET NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_mail_uid_folder ON uni_mail(imap_uid, imap_folder);
 
     CREATE TABLE IF NOT EXISTS uni_mail_rel (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -547,6 +553,39 @@ def init_db():
             print("[DB] 迁移完成：uni_mail 添加 is_blacklisted 列")
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
+
+        # 迁移：为 mail_config 添加同步批次配置字段
+        try:
+            conn.execute("ALTER TABLE mail_config ADD COLUMN sync_batch_size INTEGER DEFAULT 100")
+            print("[DB] 迁移完成：mail_config 添加 sync_batch_size 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        try:
+            conn.execute("ALTER TABLE mail_config ADD COLUMN sync_pause_seconds REAL DEFAULT 1.0")
+            print("[DB] 迁移完成：mail_config 添加 sync_pause_seconds 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_mail 添加 IMAP UID 字段（用于增量同步优化）
+        try:
+            conn.execute("ALTER TABLE uni_mail ADD COLUMN imap_uid INTEGER")
+            print("[DB] 迁移完成：uni_mail 添加 imap_uid 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        try:
+            conn.execute("ALTER TABLE uni_mail ADD COLUMN imap_folder TEXT")
+            print("[DB] 迁移完成：uni_mail 添加 imap_folder 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：添加 UID+文件夹索引
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_mail_uid_folder ON uni_mail(imap_uid, imap_folder)")
+            print("[DB] 迁移完成：uni_mail 添加 idx_mail_uid_folder 索引")
+        except sqlite3.OperationalError:
+            pass  # 索引已存在，忽略
 
         conn.executescript(schema)
         conn.execute("""

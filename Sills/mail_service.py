@@ -277,6 +277,144 @@ class IMAPClient:
 
         return emails
 
+    def get_uid_list(self, folder: str = 'INBOX', days: int = 90, date_range: tuple = None) -> List[int]:
+        """
+        获取邮件UID列表（轻量操作，不下载邮件内容）
+
+        Args:
+            folder: 邮箱文件夹
+            days: 同步时间范围（天）
+            date_range: 自定义日期范围 (start_date, end_date)
+
+        Returns:
+            UID列表
+        """
+        if not self.client:
+            raise ConnectionError("Not connected to IMAP server")
+
+        try:
+            status, data = self.client.select(folder)
+            if status != 'OK':
+                print(f"[Mail] 无法选择文件夹 '{folder}': {status}")
+                return []
+
+            from datetime import datetime, timedelta
+
+            # 构建搜索条件
+            if date_range:
+                start_date, end_date = date_range
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt_search = end_dt + timedelta(days=1)
+                start_str = start_dt.strftime('%d-%b-%Y')
+                end_str = end_dt_search.strftime('%d-%b-%Y')
+                search_criteria = f'SINCE {start_str} BEFORE {end_str}'
+            else:
+                search_date = datetime.now() - timedelta(days=days)
+                date_str = search_date.strftime('%d-%b-%Y')
+                search_criteria = f'SINCE {date_str}'
+
+            # 搜索获取序号列表
+            status, messages = self.client.search(None, search_criteria)
+            if status != 'OK':
+                return []
+
+            sequence_nums = messages[0].split()
+            if not sequence_nums:
+                return []
+
+            # 批量获取UID（使用FETCH命令获取UID）
+            # 将序号列表转换为范围以减少请求次数
+            uid_list = []
+            batch_size = 500  # 每批处理的邮件数
+
+            for i in range(0, len(sequence_nums), batch_size):
+                batch = sequence_nums[i:i + batch_size]
+                # 构建序号范围，如 "1:100" 或 "1,2,3,4,5"
+                seq_range = ','.join([s.decode() if isinstance(s, bytes) else str(s) for s in batch])
+                status, uid_data = self.client.fetch(seq_range, '(UID)')
+                if status == 'OK':
+                    for item in uid_data:
+                        if isinstance(item, tuple):
+                            # 解析UID，格式如 b'1 (UID 12345)'
+                            response = item[0].decode() if isinstance(item[0], bytes) else str(item[0])
+                            import re
+                            uid_match = re.search(r'UID (\d+)', response)
+                            if uid_match:
+                                uid_list.append(int(uid_match.group(1)))
+
+            print(f"[Mail] 文件夹 '{folder}' 获取到 {len(uid_list)} 个UID")
+            return uid_list
+
+        except Exception as e:
+            print(f"[Mail] 获取UID列表失败: {e}")
+            return []
+
+    def fetch_emails_by_uid(self, folder: str, uids: List[int]) -> List[Dict[str, Any]]:
+        """
+        根据UID列表获取邮件
+
+        Args:
+            folder: 邮箱文件夹
+            uids: UID列表
+
+        Returns:
+            邮件数据列表
+        """
+        if not self.client:
+            raise ConnectionError("Not connected to IMAP server")
+
+        if not uids:
+            return []
+
+        emails = []
+
+        try:
+            status, data = self.client.select(folder)
+            if status != 'OK':
+                print(f"[Mail] 无法选择文件夹 '{folder}'")
+                return emails
+
+            # 批量获取邮件（每批50封）
+            batch_size = 50
+            for i in range(0, len(uids), batch_size):
+                batch_uids = uids[i:i + batch_size]
+                # 构建UID范围
+                uid_range = ','.join(str(uid) for uid in batch_uids)
+
+                # 使用UID FETCH命令
+                status, msg_data = self.client.uid('fetch', uid_range, '(RFC822)')
+                if status != 'OK':
+                    continue
+
+                # 解析返回的邮件数据
+                j = 0
+                while j < len(msg_data):
+                    item = msg_data[j]
+                    if isinstance(item, tuple) and len(item) >= 2:
+                        raw_email = item[1]
+                        # 解析UID
+                        response = item[0].decode() if isinstance(item[0], bytes) else str(item[0])
+                        import re
+                        uid_match = re.search(r'UID (\d+)', response)
+                        uid = int(uid_match.group(1)) if uid_match else None
+
+                        email_data = self._parse_email(raw_email)
+                        if email_data:
+                            email_data['folder'] = folder
+                            email_data['imap_uid'] = uid
+                            emails.append(email_data)
+                    j += 1
+
+            print(f"[Mail] 根据UID获取到 {len(emails)} 封邮件")
+            return emails
+
+        except Exception as e:
+            print(f"[Mail] 根据UID获取邮件失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return emails
+
     def _parse_email(self, raw_email: bytes) -> Optional[Dict[str, Any]]:
         """解析原始邮件"""
         try:
@@ -562,6 +700,11 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         sync_days = get_sync_days()
         date_range = get_sync_date_range()
 
+        # 获取分批处理配置（默认：每批100封，暂停1秒）
+        batch_size = config.get('sync_batch_size') or 100
+        pause_seconds = config.get('sync_pause_seconds') or 1.0
+        print(f"[Mail] 分批配置: 每批 {batch_size} 封, 暂停 {pause_seconds} 秒")
+
         # 确定同步范围描述和日期
         if date_range[0] and date_range[1]:
             sync_desc = f"{date_range[0]} 至 {date_range[1]}"
@@ -599,25 +742,56 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         total_updated = 0
         total_processed = 0
 
-        # 先获取所有文件夹的邮件并统计总数
+        # === UID预过滤优化：只获取本地没有的邮件 ===
+        from Sills.db_mail import get_local_uids, get_local_message_ids
+
+        # 先获取本地已有的Message-ID作为备用（处理UID为空的情况）
+        local_message_ids = get_local_message_ids(current_account_id)
+        print(f"[Mail] 本地已有 {len(local_message_ids)} 封邮件")
+
+        # 按文件夹获取新邮件
         all_emails_data = []
         for folder_name, is_sent, folder_label in folders_to_sync:
             try:
-                update_sync_progress(5, 100, f"扫描{folder_label}...")
-                print(f"[Mail] 扫描文件夹: {folder_name}")
-                emails = imap_client.fetch_emails(
+                update_sync_progress(5, 100, f"扫描{folder_label}UID...")
+
+                # Step 1: 获取服务器UID列表（轻量操作）
+                server_uids = imap_client.get_uid_list(
                     folder=folder_name,
                     days=sync_days,
                     date_range=date_range if date_range[0] and date_range[1] else None
                 )
+
+                if not server_uids:
+                    print(f"[Mail] {folder_label}: 无邮件")
+                    continue
+
+                # Step 2: 获取本地已有UID（仅此文件夹）
+                local_uids = get_local_uids(folder_name, current_account_id)
+
+                # Step 3: 计算需要获取的UID（服务器有但本地没有的）
+                new_uids = list(set(server_uids) - local_uids)
+                print(f"[Mail] {folder_label}: 服务器 {len(server_uids)} 封, 本地 {len(local_uids)} 封, 新增 {len(new_uids)} 封")
+
+                if not new_uids:
+                    print(f"[Mail] {folder_label}: 无新邮件需要同步")
+                    continue
+
+                # Step 4: 只获取新邮件
+                update_sync_progress(10, 100, f"获取{folder_label}新邮件...")
+                emails = imap_client.fetch_emails_by_uid(folder_name, new_uids)
+
                 if emails:
                     for email_data in emails:
                         email_data['is_sent'] = is_sent
                         email_data['folder_label'] = folder_label
+                        email_data['imap_folder'] = folder_name
                     all_emails_data.extend(emails)
-                    print(f"[Mail] {folder_label}: {len(emails)} 封邮件")
+
             except Exception as e:
                 print(f"[Mail] 扫描 {folder_name} 失败: {e}")
+                import traceback
+                traceback.print_exc()
 
         grand_total_emails = len(all_emails_data)
         print(f"[Mail] 总计 {grand_total_emails} 封邮件待同步")
@@ -625,7 +799,9 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         # 更新总邮件数
         update_sync_progress(10, 100, f"共发现 {grand_total_emails} 封邮件", total_emails=grand_total_emails)
 
-        # 同步邮件
+        # 同步邮件（分批处理）
+        import time
+        batch_count = 0
         for idx, email_data in enumerate(all_emails_data):
             # 检查是否已存在
             is_new_email = True
@@ -664,11 +840,19 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
                 percent = 0
 
             folder_label = email_data.get('folder_label', '')
+            current_batch = (idx // batch_size) + 1
+            total_batches = (grand_total_emails + batch_size - 1) // batch_size
             update_sync_progress(
                 percent, 100,
-                f"处理 {folder_label} {idx + 1}/{grand_total_emails}",
+                f"批次 {current_batch}/{total_batches} - {folder_label} {idx + 1}/{grand_total_emails}",
                 synced_emails=total_processed
             )
+
+            # 分批暂停：每处理完一批后暂停，让系统喘息
+            if (idx + 1) % batch_size == 0 and idx + 1 < grand_total_emails:
+                batch_count += 1
+                print(f"[Mail] 批次 {batch_count} 完成，暂停 {pause_seconds} 秒...")
+                time.sleep(pause_seconds)
 
         update_sync_progress(95, 100, "断开连接...")
         imap_client.disconnect()
@@ -782,7 +966,12 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
                            sync_start_date=sync_start, sync_end_date=sync_end,
                            total_emails=grand_total_emails, synced_emails=0)
 
-        # 同步邮件
+        # 获取分批处理配置
+        batch_size = config.get('sync_batch_size') or 100
+        pause_seconds = config.get('sync_pause_seconds') or 1.0
+
+        # 同步邮件（分批处理）
+        import time
         for idx, email_data in enumerate(all_emails_data):
             # 检查是否已存在
             is_new_email = True
@@ -812,11 +1001,18 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
                 percent = 0
 
             folder_label = email_data.get('folder_label', '')
+            current_batch = (idx // batch_size) + 1
+            total_batches = (grand_total_emails + batch_size - 1) // batch_size if grand_total_emails > 0 else 0
             update_sync_progress(
                 percent, 100,
-                f"处理 {folder_label} {idx + 1}/{grand_total_emails}",
+                f"批次 {current_batch}/{total_batches} - {folder_label} {idx + 1}/{grand_total_emails}",
                 synced_emails=total_processed
             )
+
+            # 分批暂停
+            if (idx + 1) % batch_size == 0 and idx + 1 < grand_total_emails:
+                print(f"[Mail] 增量同步批次完成，暂停 {pause_seconds} 秒...")
+                time.sleep(pause_seconds)
 
         update_sync_progress(95, 100, "断开连接...")
         imap_client.disconnect()

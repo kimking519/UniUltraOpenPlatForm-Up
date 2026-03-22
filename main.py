@@ -2173,6 +2173,36 @@ async def api_mail_config_get(current_user: dict = Depends(login_required)):
     }
 
 
+@app.post("/api/mail/config/batch")
+async def api_mail_config_batch(
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """设置分批同步配置"""
+    from Sills.db_mail import update_mail_account, get_mail_config
+    try:
+        data = await request.json()
+        batch_size = data.get('batch_size', 100)
+        pause_seconds = data.get('pause_seconds', 1.0)
+
+        # 获取当前账户
+        config = get_mail_config()
+        if not config:
+            return {"success": False, "message": "未找到邮件账户"}
+
+        account_id = config.get('id')
+
+        # 更新配置
+        update_mail_account(account_id, {
+            'sync_batch_size': batch_size,
+            'sync_pause_seconds': pause_seconds
+        })
+
+        return {"success": True, "message": f"分批配置已保存"}
+    except Exception as e:
+        return {"success": False, "message": f"设置失败: {str(e)}"}
+
+
 @app.post("/api/mail/config")
 async def api_mail_config_update(
     request: Request,

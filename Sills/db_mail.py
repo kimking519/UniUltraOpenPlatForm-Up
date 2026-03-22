@@ -162,8 +162,9 @@ def save_email(mail_data: Dict[str, Any]) -> int:
     with get_db_connection() as conn:
         cursor = conn.execute("""
             INSERT INTO uni_mail (subject, from_addr, from_name, to_addr, cc_addr, content, html_content,
-                                  received_at, sent_at, is_sent, message_id, sync_status, account_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  received_at, sent_at, is_sent, message_id, sync_status, account_id,
+                                  imap_uid, imap_folder)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             mail_data.get('subject'),
             mail_data.get('from_addr'),
@@ -177,7 +178,9 @@ def save_email(mail_data: Dict[str, Any]) -> int:
             mail_data.get('is_sent', 0),
             message_id,
             mail_data.get('sync_status', 'completed'),
-            mail_data.get('account_id')
+            mail_data.get('account_id'),
+            mail_data.get('imap_uid'),
+            mail_data.get('imap_folder')
         ))
         conn.commit()
         return cursor.lastrowid
@@ -751,6 +754,8 @@ def update_mail_account(account_id: int, config: Dict[str, Any]) -> bool:
             'imap_port': config.get('imap_port'),
             'username': config.get('username'),
             'use_tls': config.get('use_tls'),
+            'sync_batch_size': config.get('sync_batch_size'),
+            'sync_pause_seconds': config.get('sync_pause_seconds'),
         }
 
         for field, value in field_mapping.items():
@@ -1438,4 +1443,41 @@ def get_latest_mail_time(account_id: int = None, is_sent: int = 0) -> Optional[s
         if row and row["latest_time"]:
             return row["latest_time"]
     return None
+
+
+def get_local_uids(folder: str, account_id: int) -> set:
+    """
+    获取本地已存储的邮件UID集合（用于增量同步优化）
+
+    Args:
+        folder: 邮箱文件夹名称（如 'INBOX'）
+        account_id: 账户ID
+
+    Returns:
+        UID集合
+    """
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT imap_uid FROM uni_mail WHERE imap_folder = ? AND account_id = ? AND imap_uid IS NOT NULL",
+            (folder, account_id)
+        ).fetchall()
+        return {row[0] for row in rows if row[0] is not None}
+
+
+def get_local_message_ids(account_id: int) -> set:
+    """
+    获取本地已存储的邮件Message-ID集合（备用方案）
+
+    Args:
+        account_id: 账户ID
+
+    Returns:
+        Message-ID集合
+    """
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT message_id FROM uni_mail WHERE account_id = ? AND message_id IS NOT NULL",
+            (account_id,)
+        ).fetchall()
+        return {row[0] for row in rows if row[0] is not None}
 
