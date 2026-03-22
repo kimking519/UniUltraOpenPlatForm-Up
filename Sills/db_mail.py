@@ -59,7 +59,7 @@ def get_mail_list(page: int = 1, limit: int = 20, is_sent: int = 0,
         params.extend([search_param, search_param, search_param])
         count_params.extend([search_param, search_param, search_param])
 
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY received_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
