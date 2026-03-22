@@ -430,20 +430,20 @@ class IMAPClient:
                 # 构建序号范围，如 "1:100" 或 "1,2,3,4,5"
                 seq_range = ','.join([s.decode() if isinstance(s, bytes) else str(s) for s in batch])
                 status, uid_data = self.client.fetch(seq_range, '(UID)')
-            if status == 'OK':
-                for item in uid_data:
-                    # 处理返回数据，可能是 tuple 或 bytes
-                    if isinstance(item, tuple):
-                        response = item[0].decode() if isinstance(item[0], bytes) else str(item[0])
-                    elif isinstance(item, bytes):
-                        response = item.decode()
-                    else:
-                        response = str(item)
+                if status == 'OK':
+                    for item in uid_data:
+                        # 处理返回数据，可能是 tuple 或 bytes
+                        if isinstance(item, tuple):
+                            response = item[0].decode() if isinstance(item[0], bytes) else str(item[0])
+                        elif isinstance(item, bytes):
+                            response = item.decode()
+                        else:
+                            response = str(item)
 
-                    import re
-                    uid_match = re.search(r'UID (\d+)', response)
-                    if uid_match:
-                        uid_list.append(int(uid_match.group(1)))
+                        import re
+                        uid_match = re.search(r'UID (\d+)', response)
+                        if uid_match:
+                            uid_list.append(int(uid_match.group(1)))
 
             print(f"[Mail] 文件夹 '{folder}' 获取到 {len(uid_list)} 个UID")
             return uid_list
