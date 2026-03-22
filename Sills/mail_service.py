@@ -22,25 +22,23 @@ from Sills.db_mail import (
     update_sync_progress, get_sync_days, get_sync_date_range
 )
 
-# 全局取消同步标志
-_cancel_sync_flag = False
+# 全局取消同步标志（使用线程锁保证线程安全）
+_cancel_sync_flag = threading.Event()
 
 
 def request_cancel_sync():
     """请求取消同步"""
-    global _cancel_sync_flag
-    _cancel_sync_flag = True
+    _cancel_sync_flag.set()
 
 
 def is_sync_cancelled() -> bool:
     """检查是否请求了取消同步"""
-    return _cancel_sync_flag
+    return _cancel_sync_flag.is_set()
 
 
 def reset_cancel_flag():
     """重置取消标志"""
-    global _cancel_sync_flag
-    _cancel_sync_flag = False
+    _cancel_sync_flag.clear()
 
 
 class IMAPClient:

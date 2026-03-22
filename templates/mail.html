@@ -1119,17 +1119,19 @@
     }
 
     .btn-cancel-sync {
-        padding: 4px 10px;
-        font-size: 12px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
         background: #FEE2E2;
         color: #DC2626;
         border: 1px solid #FECACA;
-        border-radius: var(--radius);
+        border-radius: 50%;
         cursor: pointer;
         display: flex;
         align-items: center;
-        white-space: nowrap;
+        justify-content: center;
         transition: all 0.2s;
+        flex-shrink: 0;
     }
 
     .btn-cancel-sync:hover {
@@ -1207,11 +1209,10 @@
                     <span id="syncText">就绪</span>
                 </div>
             </div>
-            <button class="btn btn-cancel-sync" id="cancelSyncBtn" onclick="cancelSync()" style="display: none;">
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+            <button class="btn-cancel-sync" id="cancelSyncBtn" onclick="cancelSync()" style="display: none;" title="结束同步">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
-                结束同步
             </button>
         </div>
     </div>
