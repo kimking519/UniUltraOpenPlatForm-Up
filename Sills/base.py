@@ -467,6 +467,17 @@ def init_db():
         FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
     );
 
+    -- 已同步邮件UID记录表（用于区分"从未同步"和"已删除"）
+    CREATE TABLE IF NOT EXISTS uni_mail_synced_uid (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        imap_uid INTEGER NOT NULL,
+        imap_folder TEXT NOT NULL,
+        synced_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        UNIQUE(account_id, imap_uid, imap_folder),
+        FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
+    );
+
     -- 性能优化索引
     CREATE INDEX IF NOT EXISTS idx_cli_name ON uni_cli(cli_name);
     CREATE INDEX IF NOT EXISTS idx_cli_emp ON uni_cli(emp_id);

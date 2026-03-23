@@ -286,6 +286,52 @@
         box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
     }
 
+    /* Toggle switch */
+    .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: 0.3s;
+        border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: 0.3s;
+        border-radius: 50%;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+        background-color: var(--primary);
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+        transform: translateX(20px);
+    }
+
     .mail-toolbar input[type="text"] {
         flex: 1;
         padding: 0.5rem 1rem;
@@ -1349,6 +1395,15 @@
                                 <button class="btn btn-secondary" onclick="setSyncQuickRange(365)" style="padding: 4px 10px; font-size: 12px;">1年</button>
                                 <button class="btn btn-secondary" onclick="toggleCustomDateRange()" style="padding: 4px 10px; font-size: 12px;">自定义</button>
                             </div>
+                        </div>
+                        <!-- 同步已删除邮件开关 -->
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                            <label style="color: var(--text-main); min-width: 100px;">刷新同步已删除邮件</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="syncDeletedToggle" onchange="saveSyncDeletedSetting()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span style="color: var(--text-muted); font-size: 12px;">关闭后，刷新时不再同步已删除的邮件</span>
                         </div>
                         <!-- 自定义日期范围 -->
                         <div id="customDateRange" style="display: none; margin-top: 10px; padding: 12px; background: var(--bg-secondary); border-radius: var(--radius);">
@@ -2572,6 +2627,11 @@
 
     // Sync emails
     async function syncEmails() {
+        // 添加确认弹框
+        if (!confirm('确定要同步邮件吗？\n\n将按照设置的同步范围下载邮件，可能需要较长时间。')) {
+            return;
+        }
+
         const statusEl = document.getElementById('syncStatus');
         const textEl = document.getElementById('syncText');
         const progressBar = document.getElementById('syncProgressBar');
@@ -3741,6 +3801,17 @@
             console.error('Load sync days error:', error);
         }
 
+        // Load sync deleted setting
+        try {
+            const response = await fetch('/api/mail/sync-deleted');
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('syncDeletedToggle').checked = data.enabled !== false;
+            }
+        } catch (error) {
+            console.error('Load sync deleted setting error:', error);
+        }
+
         // Load undo send seconds
         try {
             const response = await fetch('/api/mail/undo-send-seconds');
@@ -4018,6 +4089,27 @@
             }
         } catch (error) {
             alert('保存失败: ' + error.message);
+        }
+    }
+
+    // Save sync deleted setting
+    async function saveSyncDeletedSetting() {
+        const enabled = document.getElementById('syncDeletedToggle').checked;
+        try {
+            const response = await fetch('/api/mail/sync-deleted', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: enabled })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showToast(enabled ? '已开启同步已删除邮件' : '已关闭同步已删除邮件', 'success');
+            } else {
+                showToast('保存失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (error) {
+            showToast('保存失败: ' + error.message, 'error');
         }
     }
 

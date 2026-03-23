@@ -1648,3 +1648,144 @@ def clear_account_emails(account_id: int) -> dict:
         conn.commit()
         return {"deleted": result.rowcount}
 
+
+# ==================== 已同步UID记录 ====================
+
+def record_synced_uid(account_id: int, imap_uid: int, imap_folder: str) -> bool:
+    """
+    记录已同步的邮件UID
+
+    Args:
+        account_id: 账户ID
+        imap_uid: 邮件UID
+        imap_folder: 文件夹名称
+
+    Returns:
+        是否成功
+    """
+    with get_db_connection() as conn:
+        try:
+            conn.execute("""
+                INSERT OR IGNORE INTO uni_mail_synced_uid (account_id, imap_uid, imap_folder)
+                VALUES (?, ?, ?)
+            """, (account_id, imap_uid, imap_folder))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Record synced UID error: {e}")
+            return False
+
+
+def batch_record_synced_uids(account_id: int, uid_folder_pairs: list) -> bool:
+    """
+    批量记录已同步的邮件UID
+
+    Args:
+        account_id: 账户ID
+        uid_folder_pairs: [(uid, folder), ...] 列表
+
+    Returns:
+        是否成功
+    """
+    if not uid_folder_pairs:
+        return True
+
+    with get_db_connection() as conn:
+        try:
+            for uid, folder in uid_folder_pairs:
+                conn.execute("""
+                    INSERT OR IGNORE INTO uni_mail_synced_uid (account_id, imap_uid, imap_folder)
+                    VALUES (?, ?, ?)
+                """, (account_id, uid, folder))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Batch record synced UIDs error: {e}")
+            return False
+
+
+def get_synced_uids(account_id: int, folder: str = None) -> set:
+    """
+    获取已同步的UID集合
+
+    Args:
+        account_id: 账户ID
+        folder: 文件夹名称，None表示所有文件夹
+
+    Returns:
+        已同步的UID集合（返回(uid, folder)元组集合或仅uid集合）
+    """
+    with get_db_connection() as conn:
+        if folder:
+            rows = conn.execute(
+                "SELECT imap_uid FROM uni_mail_synced_uid WHERE account_id = ? AND imap_folder = ?",
+                (account_id, folder)
+            ).fetchall()
+            return {row[0] for row in rows}
+        else:
+            rows = conn.execute(
+                "SELECT imap_uid, imap_folder FROM uni_mail_synced_uid WHERE account_id = ?",
+                (account_id,)
+            ).fetchall()
+            return {(row[0], row[1]) for row in rows}
+
+
+def is_uid_synced(account_id: int, imap_uid: int, imap_folder: str) -> bool:
+    """
+    检查UID是否已同步过
+
+    Args:
+        account_id: 账户ID
+        imap_uid: 邮件UID
+        imap_folder: 文件夹名称
+
+    Returns:
+        是否已同步过
+    """
+    with get_db_connection() as conn:
+        row = conn.execute("""
+            SELECT 1 FROM uni_mail_synced_uid
+            WHERE account_id = ? AND imap_uid = ? AND imap_folder = ?
+        """, (account_id, imap_uid, imap_folder)).fetchone()
+        return row is not None
+
+
+def get_sync_deleted_setting() -> bool:
+    """
+    获取"同步已删除邮件"开关设置
+
+    Returns:
+        True表示开启（同步已删除邮件），False表示关闭
+    """
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM global_settings WHERE key = 'sync_deleted_emails'"
+        ).fetchone()
+        # 默认开启（True）
+        if row is None:
+            return True
+        return row[0].lower() in ('true', '1', 'yes')
+
+
+def set_sync_deleted_setting(enabled: bool) -> bool:
+    """
+    设置"同步已删除邮件"开关
+
+    Args:
+        enabled: True表示开启，False表示关闭
+
+    Returns:
+        是否成功
+    """
+    with get_db_connection() as conn:
+        try:
+            conn.execute("""
+                INSERT OR REPLACE INTO global_settings (key, value, updated_at)
+                VALUES ('sync_deleted_emails', ?, datetime('now', 'localtime'))
+            """, (str(enabled).lower(),))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Set sync deleted setting error: {e}")
+            return False
+

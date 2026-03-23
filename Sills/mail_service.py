@@ -1039,7 +1039,7 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
     Returns:
         {"status": "completed", "new_count": int}
     """
-    from Sills.db_mail import get_local_uids
+    from Sills.db_mail import get_local_uids, get_sync_deleted_setting, get_synced_uids, batch_record_synced_uids
     from datetime import datetime
 
     # 重置取消标志
@@ -1129,6 +1129,16 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
 
                 # 计算差集：需要同步的新UID
                 new_uids = set(server_uids) - local_uids
+
+                # 如果"同步已删除邮件"开关关闭，排除已同步过但已删除的邮件
+                sync_deleted_enabled = get_sync_deleted_setting()
+                if not sync_deleted_enabled:
+                    # 获取已同步过的UID记录
+                    synced_uids = get_synced_uids(current_account_id, folder_name)
+                    # 只保留从未同步过的UID
+                    new_uids = new_uids - synced_uids
+                    print(f"[Mail] {folder_label}: 已同步过{len(synced_uids)}封, 开关关闭，跳过已删除邮件")
+
                 print(f"[Mail] {folder_label}: 服务器{len(server_uids)}封, 本地{len(local_uids)}封, 新增{len(new_uids)}封")
 
                 for uid in new_uids:
@@ -1180,6 +1190,9 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
             # 使用 fetch_emails_by_uid 批量获取
             emails = imap_client.fetch_emails_by_uid(folder_name, batch_uids)
 
+            # 收集已同步的UID用于记录
+            synced_uid_pairs = []
+
             for email_data in emails:
                 # 检查取消
                 if is_sync_cancelled():
@@ -1197,6 +1210,10 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
                 total_saved += 1
                 processed_count += 1
 
+                # 收集UID用于记录
+                if email_data.get('imap_uid'):
+                    synced_uid_pairs.append((email_data['imap_uid'], folder_name))
+
                 # 更新进度
                 percent = int(30 + (processed_count / grand_total_emails) * 65)
                 update_sync_progress(
@@ -1204,6 +1221,10 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
                     f"{folder_label} {processed_count}/{grand_total_emails}",
                     synced_emails=processed_count
                 )
+
+            # 批量记录已同步的UID
+            if synced_uid_pairs:
+                batch_record_synced_uids(current_account_id, synced_uid_pairs)
 
             # 分批暂停
             if len(uids) >= batch_size:

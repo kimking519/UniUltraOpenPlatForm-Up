@@ -2438,6 +2438,36 @@ async def api_mail_sync_days_set(
         return {"success": False, "message": f"设置失败: {str(e)}"}
 
 
+@app.get("/api/mail/sync-deleted")
+async def api_mail_sync_deleted_get(current_user: dict = Depends(login_required)):
+    """获取"同步已删除邮件"开关设置"""
+    from Sills.db_mail import get_sync_deleted_setting
+    enabled = get_sync_deleted_setting()
+    return {
+        "success": True,
+        "enabled": enabled
+    }
+
+
+@app.post("/api/mail/sync-deleted")
+async def api_mail_sync_deleted_set(
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """设置"同步已删除邮件"开关"""
+    from Sills.db_mail import set_sync_deleted_setting
+    try:
+        data = await request.json()
+        enabled = data.get('enabled', True)
+        if not isinstance(enabled, bool):
+            return {"success": False, "message": "enabled必须为布尔值"}
+
+        set_sync_deleted_setting(enabled)
+        return {"success": True, "message": f"设置已更新"}
+    except Exception as e:
+        return {"success": False, "message": f"设置失败: {str(e)}"}
+
+
 @app.get("/api/mail/sync-range")
 async def api_mail_sync_range_get(current_user: dict = Depends(login_required)):
     """获取同步范围设置（快捷或自定义）"""
