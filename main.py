@@ -3096,6 +3096,14 @@ async def api_mail_cleanup_duplicates(current_user: dict = Depends(login_require
     return {"success": True, **result}
 
 
+@app.post("/api/mail/account/{account_id}/clear")
+async def api_mail_clear_account(account_id: int, current_user: dict = Depends(login_required)):
+    """清空指定账户的所有本地邮件"""
+    from Sills.db_mail import clear_account_emails
+    result = clear_account_emails(account_id)
+    return {"success": True, **result}
+
+
 @app.post("/api/mail/{mail_id}/read")
 async def api_mail_mark_read(mail_id: int, current_user: dict = Depends(login_required)):
     """标记邮件为已读"""

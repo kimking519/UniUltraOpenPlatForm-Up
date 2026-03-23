@@ -1609,3 +1609,22 @@ def cleanup_duplicate_emails(account_id: int = None) -> dict:
         conn.commit()
         return {"deleted": deleted_count, "kept": kept_count}
 
+
+def clear_account_emails(account_id: int) -> dict:
+    """
+    清空指定账户的所有本地邮件
+
+    Args:
+        account_id: 账户ID
+
+    Returns:
+        {"deleted": 删除数量}
+    """
+    with get_db_connection() as conn:
+        result = conn.execute(
+            "DELETE FROM uni_mail WHERE account_id = ?",
+            (account_id,)
+        )
+        conn.commit()
+        return {"deleted": result.rowcount}
+

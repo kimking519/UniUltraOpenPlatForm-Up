@@ -1859,6 +1859,10 @@
     background: #EF4444;
     color: white;
 }
+.btn-warning {
+    background: #F59E0B;
+    color: white;
+}
 
 /* Folder Manager Styles */
 .folder-manager-item {
@@ -3940,6 +3944,7 @@
                 <div class="account-actions">
                     ${!account.is_current ? `<button class="btn btn-switch" onclick="switchAccount(${account.id})">切换</button>` : ''}
                     <button class="btn btn-edit" onclick="editAccount(${account.id})">编辑</button>
+                    <button class="btn btn-warning" onclick="clearAccountEmails(${account.id}, '${escapeHtml(account.account_name || '未命名账户')}')">清空邮件</button>
                     <button class="btn btn-delete" onclick="deleteAccount(${account.id})">删除</button>
                 </div>
             </div>
@@ -4346,6 +4351,31 @@
             }
         } catch (error) {
             alert('删除失败: ' + error.message);
+        }
+    }
+
+    // Clear account emails
+    async function clearAccountEmails(accountId, accountName) {
+        if (!confirm(`确定要清空账户 "${accountName}" 的所有本地邮件吗？\n\n此操作不可恢复！`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/mail/account/${accountId}/clear`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert(`已清空 ${result.deleted} 封邮件`);
+                // 刷新邮件列表
+                loadMailList();
+            } else {
+                alert('清空失败: ' + (result.message || '未知错误'));
+            }
+        } catch (error) {
+            alert('清空失败: ' + error.message);
         }
     }
 
