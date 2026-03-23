@@ -157,18 +157,27 @@ def save_email(mail_data: Dict[str, Any]) -> int:
         message_id = None
 
     with get_db_connection() as conn:
-        # 先检查是否已存在（通过imap_uid + imap_folder + account_id）
         imap_uid = mail_data.get('imap_uid')
         imap_folder = mail_data.get('imap_folder')
         account_id = mail_data.get('account_id')
 
+        # 检查1：通过imap_uid + imap_folder + account_id
         if imap_uid and imap_folder and account_id:
             existing = conn.execute(
                 "SELECT id FROM uni_mail WHERE imap_uid = ? AND imap_folder = ? AND account_id = ?",
                 (imap_uid, imap_folder, account_id)
             ).fetchone()
             if existing:
-                return existing[0]  # 已存在，返回已有ID
+                return existing[0]
+
+        # 检查2：通过message_id（同一封邮件可能在不同文件夹有相同message_id）
+        if message_id:
+            existing = conn.execute(
+                "SELECT id FROM uni_mail WHERE message_id = ?",
+                (message_id,)
+            ).fetchone()
+            if existing:
+                return existing[0]
 
         cursor = conn.execute("""
             INSERT INTO uni_mail (subject, from_addr, from_name, to_addr, cc_addr, content, html_content,
