@@ -4370,7 +4370,7 @@
             if (result.success) {
                 alert(`已清空 ${result.deleted} 封邮件`);
                 // 刷新邮件列表
-                loadMailList();
+                loadEmails();
             } else {
                 alert('清空失败: ' + (result.message || '未知错误'));
             }
