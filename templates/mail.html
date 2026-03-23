@@ -265,43 +265,24 @@
         margin-right: 0.5rem;
     }
 
-    .page-size-btn {
+    .page-size-select {
         padding: 0.4rem 0.75rem;
         border: 1px solid var(--border);
+        border-radius: var(--radius);
         background: var(--bg-main);
-        color: var(--text-muted);
+        color: var(--text-main);
         font-size: 0.8rem;
         cursor: pointer;
-        transition: all 0.2s;
-        margin: 0;
-        border-radius: 0;
+        outline: none;
     }
 
-    .page-size-btn:first-child {
-        border-radius: var(--radius) 0 0 var(--radius);
-    }
-
-    .page-size-btn:last-child {
-        border-radius: 0 var(--radius) var(--radius) 0;
-    }
-
-    .page-size-btn:not(:last-child) {
-        border-right: none;
-    }
-
-    .page-size-btn:hover {
-        background: var(--bg-hover);
-        color: var(--text-main);
-    }
-
-    .page-size-btn.active {
-        background: var(--primary);
-        color: white;
+    .page-size-select:hover {
         border-color: var(--primary);
     }
 
-    .page-size-btn.active + .page-size-btn {
-        border-left-color: var(--primary);
+    .page-size-select:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
     }
 
     .mail-toolbar input[type="text"] {
@@ -1288,10 +1269,15 @@
                 <input type="text" id="searchInput" placeholder="搜索邮件..." onkeyup="searchEmails(event)" autocomplete="off">
                 <div class="page-size-group">
                     <span class="page-size-label">每页</span>
-                    <button class="page-size-btn" data-size="10" onclick="changePageSize(10)">10</button>
-                    <button class="page-size-btn active" data-size="20" onclick="changePageSize(20)">20</button>
-                    <button class="page-size-btn" data-size="50" onclick="changePageSize(50)">50</button>
-                    <button class="page-size-btn" data-size="100" onclick="changePageSize(100)">100</button>
+                    <select id="pageSizeSelect" class="page-size-select" onchange="changePageSize(this.value)">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="300">300</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
                 </div>
                 <button class="toolbar-btn" onclick="syncEmails()">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1932,12 +1918,10 @@
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
         // 恢复每页数量设置
-        document.querySelectorAll('.page-size-btn').forEach(btn => {
-            btn.classList.remove('active');
-            if (parseInt(btn.dataset.size) === pageSize) {
-                btn.classList.add('active');
-            }
-        });
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+        if (pageSizeSelect) {
+            pageSizeSelect.value = pageSize;
+        }
 
         loadInboxCount();
         loadEmails();
@@ -2462,16 +2446,8 @@
         pageSize = parseInt(size);
         localStorage.setItem('mailPageSize', pageSize);
         currentPage = 1;
-
-        // 更新按钮状态
-        document.querySelectorAll('.page-size-btn').forEach(btn => {
-            btn.classList.remove('active');
-            if (parseInt(btn.dataset.size) === pageSize) {
-                btn.classList.add('active');
-            }
-        });
-
         loadEmails();
+    }
     }
 
     // Search emails
