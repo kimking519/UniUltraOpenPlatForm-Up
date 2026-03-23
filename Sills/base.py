@@ -64,15 +64,24 @@ def _get_journal_mode():
     return "WAL"
 
 
+def _get_busy_timeout():
+    """根据运行环境选择合适的 busy_timeout"""
+    # WSL 环境需要更长的超时时间
+    if _is_wsl_environment():
+        return 30000  # 30秒
+    return 5000  # 5秒
+
+
 # 动态生成 PRAGMA 配置
 JOURNAL_MODE = _get_journal_mode()
+BUSY_TIMEOUT = _get_busy_timeout()
 
 PRAGMA_OPTIMIZATIONS = f"""
 PRAGMA journal_mode = {JOURNAL_MODE};
 PRAGMA synchronous = NORMAL;
 PRAGMA cache_size = -64000;
 PRAGMA temp_store = MEMORY;
-PRAGMA busy_timeout = 5000;
+PRAGMA busy_timeout = {BUSY_TIMEOUT};
 PRAGMA foreign_keys = ON;
 """
 
@@ -90,6 +99,33 @@ def get_db_connection():
     with _connection_lock:
         _active_connections.add(conn)
     return conn
+
+
+class ConnectionContext:
+    """自动关闭连接的上下文管理器"""
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        finally:
+            with _connection_lock:
+                _active_connections.discard(self.conn)
+            self.conn.close()
+        return False  # 不抑制异常
+
+
+def get_db_connection_auto_close():
+    """获取自动关闭的数据库连接（用于 with 语句）"""
+    return ConnectionContext(get_db_connection())
 
 
 def get_cached_connection():
