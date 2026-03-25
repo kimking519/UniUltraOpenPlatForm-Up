@@ -231,7 +231,7 @@ async def index(request: Request, current_user: dict = Depends(get_current_user)
     with get_db_connection() as conn:
         cli_count = conn.execute("SELECT COUNT(*) FROM uni_cli").fetchone()[0]
         emp_count = conn.execute("SELECT COUNT(*) FROM uni_emp").fetchone()[0]
-        order_sum = conn.execute("SELECT IFNULL(SUM(paid_amount), 0) FROM uni_order").fetchone()[0]
+        order_sum = conn.execute("SELECT COALESCE(SUM(paid_amount), 0) FROM uni_order").fetchone()[0]
         
     return templates.TemplateResponse("dashboard.html", {
         "request": request, 
@@ -243,6 +243,21 @@ async def index(request: Request, current_user: dict = Depends(get_current_user)
             "order_sum": order_sum
         }
     })
+
+@app.get("/favicon.ico")
+async def favicon():
+    """返回空的 favicon 以避免 404 错误"""
+    from fastapi.responses import Response
+    # 返回空的 1x1 透明 ICO
+    empty_ico = bytes([
+        0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00,
+        0x18, 0x00, 0x30, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00, 0x28, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00
+    ])
+    return Response(content=empty_ico, media_type="image/x-icon")
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str = "", account: str = ""):
@@ -2194,6 +2209,17 @@ async def api_mail_sync(current_user: dict = Depends(login_required)):
 
     result = sync_inbox_async()
     return {"success": True, "message": "同步任务已启动"}
+
+
+@app.post("/api/mail/refresh")
+async def api_mail_refresh(current_user: dict = Depends(login_required)):
+    """刷新邮件：只同步上次同步之后的新邮件"""
+    from Sills.mail_service import refresh_emails_async
+    if is_sync_locked():
+        return {"success": False, "message": "同步任务正在进行中，请稍后"}
+
+    refresh_emails_async()
+    return {"success": True, "message": "刷新任务已启动"}
 
 
 @app.post("/api/mail/sync-new")

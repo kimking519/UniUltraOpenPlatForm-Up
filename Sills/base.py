@@ -674,6 +674,17 @@ def _init_db_sqlite():
         FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
     );
 
+    -- 文件夹同步进度表（记录每个文件夹最后同步的UID和时间）
+    CREATE TABLE IF NOT EXISTS mail_folder_sync_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        folder_name TEXT NOT NULL,
+        last_uid INTEGER DEFAULT 0,
+        last_sync_at DATETIME,
+        UNIQUE(account_id, folder_name),
+        FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
+    );
+
     -- 性能优化索引
     CREATE INDEX IF NOT EXISTS idx_cli_name ON uni_cli(cli_name);
     CREATE INDEX IF NOT EXISTS idx_cli_emp ON uni_cli(emp_id);

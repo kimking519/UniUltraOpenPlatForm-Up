@@ -1202,6 +1202,67 @@ def set_undo_send_seconds(seconds: int) -> bool:
         return True
 
 
+def get_folder_last_uid(account_id: int, folder_name: str) -> int:
+    """
+    获取文件夹最后同步的UID
+
+    Args:
+        account_id: 账户ID
+        folder_name: 文件夹名称
+
+    Returns:
+        最后同步的UID，如果没有记录返回0
+    """
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT last_uid FROM mail_folder_sync_progress WHERE account_id = ? AND folder_name = ?",
+            (account_id, folder_name)
+        ).fetchone()
+        return row[0] if row else 0
+
+
+def update_folder_last_uid(account_id: int, folder_name: str, last_uid: int) -> bool:
+    """
+    更新文件夹最后同步的UID
+
+    Args:
+        account_id: 账户ID
+        folder_name: 文件夹名称
+        last_uid: 最后同步的UID
+
+    Returns:
+        是否成功
+    """
+    with get_db_connection() as conn:
+        conn.execute("""
+            INSERT INTO mail_folder_sync_progress (account_id, folder_name, last_uid, last_sync_at)
+            VALUES (?, ?, ?, datetime('now', 'localtime'))
+            ON CONFLICT(account_id, folder_name) DO UPDATE SET
+                last_uid = excluded.last_uid,
+                last_sync_at = excluded.last_sync_at
+        """, (account_id, folder_name, last_uid))
+        conn.commit()
+        return True
+
+
+def get_all_folder_last_uids(account_id: int) -> dict:
+    """
+    获取所有文件夹的最后同步UID
+
+    Args:
+        account_id: 账户ID
+
+    Returns:
+        {folder_name: last_uid} 字典
+    """
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT folder_name, last_uid FROM mail_folder_sync_progress WHERE account_id = ?",
+            (account_id,)
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+
 def get_signature() -> str:
     """获取邮件签名"""
     with get_db_connection() as conn:

@@ -2760,10 +2760,12 @@
         showCancelButton(true);
 
         try {
-            const response = await fetch('/api/mail/sync-new', { method: 'POST' });
+            // 使用新的刷新API
+            const response = await fetch('/api/mail/refresh', { method: 'POST' });
             const data = await response.json();
 
             if (data.success || data.status === 'started') {
+                let lastSyncedCount = 0;
                 // 开始轮询进度
                 const pollInterval = setInterval(async () => {
                     try {
@@ -2773,6 +2775,7 @@
                         if (statusData.syncing) {
                             updateSyncProgressUI(statusData);
                             textEl.textContent = '刷新中...';
+                            lastSyncedCount = statusData.synced_emails || 0;
                         } else {
                             clearInterval(pollInterval);
                             progressFill.style.width = '100%';
@@ -2780,6 +2783,16 @@
                             textEl.textContent = '就绪';
                             statusEl.classList.remove('syncing');
                             showCancelButton(false);
+
+                            // 获取最终同步的邮件数
+                            const newCount = statusData.synced_emails || lastSyncedCount;
+
+                            // 显示Toast提示
+                            if (newCount > 0) {
+                                showToast(`同步完成，新增 ${newCount} 封邮件`, 'success');
+                            } else {
+                                showToast('同步完成，没有新邮件', 'info');
+                            }
 
                             setTimeout(() => {
                                 progressBar.classList.remove('active');
