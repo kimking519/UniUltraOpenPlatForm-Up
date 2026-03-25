@@ -961,7 +961,10 @@ def acquire_sync_lock(lock_id: str) -> bool:
         if row:
             lock = dict(row)
             if lock.get('expires_at'):
-                expires = datetime.fromisoformat(lock['expires_at'])
+                # PostgreSQL 返回 datetime 对象，SQLite 返回字符串
+                expires = lock['expires_at']
+                if isinstance(expires, str):
+                    expires = datetime.fromisoformat(expires)
                 if expires > now:
                     return False  # 锁仍然有效
 
@@ -1085,7 +1088,10 @@ def is_sync_locked() -> bool:
         if row:
             lock = dict(row)
             if lock.get('expires_at'):
-                expires = datetime.fromisoformat(lock['expires_at'])
+                # PostgreSQL 返回 datetime 对象，SQLite 返回字符串
+                expires = lock['expires_at']
+                if isinstance(expires, str):
+                    expires = datetime.fromisoformat(expires)
                 return expires > datetime.now()
     return False
 
