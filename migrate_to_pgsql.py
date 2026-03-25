@@ -115,7 +115,22 @@ def create_table_pg(pg_conn, table_name, columns):
         col_name = col['name']
         col_type = sqlite_type_to_pg(col['type'])
         not_null = 'NOT NULL' if col['notnull'] else ''
-        default = f"DEFAULT {col['dflt_value']}" if col['dflt_value'] else ''
+
+        # 转换默认值
+        default = ''
+        if col['dflt_value']:
+            dflt = col['dflt_value']
+            # SQLite datetime 转换为 PostgreSQL NOW()
+            if "datetime('now', 'localtime')" in dflt or 'datetime("now", "localtime")' in dflt:
+                default = 'DEFAULT NOW()'
+            elif "datetime('now')" in dflt or 'datetime("now")' in dflt:
+                default = 'DEFAULT NOW()'
+            elif "date('now')" in dflt or 'date("now")' in dflt:
+                default = 'DEFAULT CURRENT_DATE'
+            elif "time('now')" in dflt or 'time("now")' in dflt:
+                default = 'DEFAULT CURRENT_TIME'
+            else:
+                default = f'DEFAULT {dflt}'
 
         col_def = f'"{col_name}" {col_type}'
         if not_null:
