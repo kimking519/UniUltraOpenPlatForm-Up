@@ -1307,6 +1307,76 @@ def get_folder_by_id(folder_id: int) -> Optional[Dict[str, Any]]:
     return None
 
 
+def get_or_create_sent_folder(account_id: int = None) -> int:
+    """
+    获取或创建已发送文件夹
+
+    Args:
+        account_id: 账户ID
+
+    Returns:
+        已发送文件夹ID
+    """
+    with get_db_connection() as conn:
+        # 查找是否已存在已发送文件夹
+        if account_id is not None:
+            row = conn.execute(
+                "SELECT id FROM mail_folder WHERE folder_name = '已发送' AND (account_id = ? OR account_id IS NULL)",
+                (account_id,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id FROM mail_folder WHERE folder_name = '已发送'"
+            ).fetchone()
+
+        if row:
+            return row[0]
+
+        # 创建已发送文件夹
+        cursor = conn.execute(
+            "INSERT INTO mail_folder (folder_name, folder_icon, sort_order, account_id) VALUES (?, ?, ?, ?)",
+            ('已发送', '📤', 10, account_id)
+        )
+        conn.commit()
+        print(f"[DB] 创建已发送文件夹，ID: {cursor.lastrowid}")
+        return cursor.lastrowid
+
+
+def get_or_create_draft_folder(account_id: int = None) -> int:
+    """
+    获取或创建草稿箱文件夹
+
+    Args:
+        account_id: 账户ID
+
+    Returns:
+        草稿箱文件夹ID
+    """
+    with get_db_connection() as conn:
+        # 查找是否已存在草稿箱文件夹
+        if account_id is not None:
+            row = conn.execute(
+                "SELECT id FROM mail_folder WHERE folder_name = '草稿箱' AND (account_id = ? OR account_id IS NULL)",
+                (account_id,)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id FROM mail_folder WHERE folder_name = '草稿箱'"
+            ).fetchone()
+
+        if row:
+            return row[0]
+
+        # 创建草稿箱文件夹
+        cursor = conn.execute(
+            "INSERT INTO mail_folder (folder_name, folder_icon, sort_order, account_id) VALUES (?, ?, ?, ?)",
+            ('草稿箱', '📝', 20, account_id)
+        )
+        conn.commit()
+        print(f"[DB] 创建草稿箱文件夹，ID: {cursor.lastrowid}")
+        return cursor.lastrowid
+
+
 def get_or_create_spam_folder(account_id: int = None) -> int:
     """
     获取或创建垃圾邮件文件夹
