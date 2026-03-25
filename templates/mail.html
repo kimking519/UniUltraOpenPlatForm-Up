@@ -1976,6 +1976,7 @@
     let clients = [];
     let orders = [];
     let pageSize = parseInt(localStorage.getItem('mailPageSize')) || 20;
+    let autoSyncTimer = null;  // 自动同步定时器
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
@@ -2623,6 +2624,41 @@
         } catch (error) {
             console.error('取消同步失败:', error);
         }
+    }
+
+    // 启动自动同步定时器
+    function startAutoSync(intervalMinutes) {
+        // 先清除旧的定时器
+        if (autoSyncTimer) {
+            clearInterval(autoSyncTimer);
+        }
+
+        // 设置新的定时器（intervalMinutes 分钟后执行）
+        const intervalMs = intervalMinutes * 60 * 1000;
+        console.log(`[自动同步] 已启动，间隔 ${intervalMinutes} 分钟`);
+
+        autoSyncTimer = setInterval(async () => {
+            try {
+                // 检查是否正在同步
+                const statusResponse = await fetch('/api/mail/sync/status');
+                const statusData = await statusResponse.json();
+
+                if (!statusData.syncing) {
+                    console.log('[自动同步] 开始同步新邮件...');
+                    // 只同步新邮件，不重新同步全部
+                    const syncResponse = await fetch('/api/mail/sync-new', { method: 'POST' });
+                    const syncResult = await syncResponse.json();
+
+                    if (syncResult.success || syncResult.status === 'started') {
+                        console.log('[自动同步] 同步已启动');
+                    }
+                } else {
+                    console.log('[自动同步] 当前正在同步，跳过本次');
+                }
+            } catch (error) {
+                console.error('[自动同步] 执行失败:', error);
+            }
+        }, intervalMs);
     }
 
     // Sync emails
@@ -3780,15 +3816,20 @@
     // Load settings (accounts list + sync interval + sync months)
     async function loadSettings() {
         // Load sync interval
+        let syncIntervalMinutes = 30;
         try {
             const response = await fetch('/api/mail/sync-interval');
             if (response.ok) {
                 const data = await response.json();
-                document.getElementById('syncInterval').value = data.interval || 30;
+                syncIntervalMinutes = data.interval || 30;
+                document.getElementById('syncInterval').value = syncIntervalMinutes;
             }
         } catch (error) {
             console.error('Load sync interval error:', error);
         }
+
+        // 启动自动同步定时器
+        startAutoSync(syncIntervalMinutes);
 
         // Load sync days
         try {
@@ -4061,7 +4102,9 @@
             const result = await response.json();
 
             if (result.success) {
-                alert('同步间隔已保存');
+                // 重启自动同步定时器
+                startAutoSync(interval);
+                alert('同步间隔已保存，将每隔 ' + interval + ' 分钟自动同步');
             } else {
                 alert('保存失败: ' + (result.message || '未知错误'));
             }
