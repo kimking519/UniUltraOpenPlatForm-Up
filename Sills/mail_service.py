@@ -832,18 +832,54 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
 
         # 自动检测发件箱和垃圾邮件文件夹
         update_sync_progress(5, 100, "检测邮箱文件夹...")
-        sent_folder = imap_client.find_sent_folder()
-        print(f"[Mail] 检测到发件箱: {sent_folder}")
 
-        spam_folder = imap_client.find_spam_folder()
-        print(f"[Mail] 检测到垃圾邮件文件夹: {spam_folder}")
+        # 一次性获取所有文件夹，避免多次调用
+        all_folders = imap_client.list_folders()
+        print(f"[Mail] 服务器共有 {len(all_folders)} 个文件夹:")
+        for raw_name, decoded_name in all_folders:
+            print(f"  - {raw_name} ({decoded_name})")
+
+        # 在获取的文件夹中查找发件箱和垃圾邮件
+        sent_folder = None
+        spam_folder = None
+
+        # 常见的发件箱名称
+        sent_names = ['Sent', 'Sent Items', 'Sent Messages', '已发送', '发件箱',
+                      'INBOX.Sent', 'INBOX/Sent', 'Sent Mail', '&XfJT0ZAB-', '&g0l6P3ux-']  # UTF-7 编码
+        # 常见的垃圾邮件名称
+        spam_names = ['Spam', 'Junk', 'Junk E-mail', '垃圾邮件', '垃圾箱',
+                      'Bulk Mail', '垃圾信', '&V4NXPpCuTvY-', '&g0l6P3ux-']
+
+        for raw_name, decoded_name in all_folders:
+            decoded_lower = decoded_name.lower()
+            # 检测发件箱
+            if not sent_folder:
+                if decoded_name in sent_names or raw_name in sent_names:
+                    sent_folder = raw_name
+                    print(f"[Mail] 找到发件箱: {raw_name} ({decoded_name})")
+                elif 'sent' in decoded_lower or '发件' in decoded_name:
+                    sent_folder = raw_name
+                    print(f"[Mail] 模糊匹配找到发件箱: {raw_name} ({decoded_name})")
+
+            # 检测垃圾邮件
+            if not spam_folder:
+                if decoded_name in spam_names or raw_name in spam_names:
+                    spam_folder = raw_name
+                    print(f"[Mail] 找到垃圾邮件文件夹: {raw_name} ({decoded_name})")
+                elif 'spam' in decoded_lower or 'junk' in decoded_lower or '垃圾' in decoded_name:
+                    spam_folder = raw_name
+                    print(f"[Mail] 模糊匹配找到垃圾邮件: {raw_name} ({decoded_name})")
+
+        if not sent_folder:
+            print("[Mail] ⚠️ 警告：未检测到发件箱，请检查邮箱文件夹命名")
+        if not spam_folder:
+            print("[Mail] ⚠️ 警告：未检测到垃圾邮件文件夹，请检查邮箱文件夹命名")
 
         # 获取或创建本地垃圾邮件文件夹
         from Sills.db_mail import get_or_create_spam_folder
         spam_folder_id = get_or_create_spam_folder(current_account_id) if spam_folder else None
 
-        # 获取所有文件夹，同步除垃圾邮件外的其他文件夹到收件箱
-        all_folders = imap_client.list_folders()
+        # 处理其他文件夹（已在上面的 all_folders 中获取）
         other_folders = []
         for raw_name, decoded_name in all_folders:
             # 跳过已处理的文件夹
@@ -861,14 +897,8 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         folders_to_sync = [('INBOX', 0, '收件箱', None)]
         if sent_folder:
             folders_to_sync.append((sent_folder, 1, '发件箱', None))
-            print(f"[Mail] 将同步发件箱: {sent_folder}")
-        else:
-            print("[Mail] 警告：未检测到发件箱，请检查邮箱文件夹命名")
         if spam_folder:
             folders_to_sync.append((spam_folder, 0, '垃圾邮件', spam_folder_id))
-            print(f"[Mail] 将同步垃圾邮件文件夹: {spam_folder}")
-        else:
-            print("[Mail] 警告：未检测到垃圾邮件文件夹，请检查邮箱文件夹命名")
         # 其他文件夹都归入收件箱
         for folder_name in other_folders:
             folders_to_sync.append((folder_name, 0, '收件箱', None))
