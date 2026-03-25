@@ -34,9 +34,11 @@ def _init_pg_pool():
         try:
             import psycopg2
             from psycopg2 import pool
+            from psycopg2.extras import RealDictCursor
             _pg_pool = pool.ThreadedConnectionPool(
                 minconn=1,
                 maxconn=POOL_SIZE,
+                cursor_factory=RealDictCursor,
                 **PG_CONFIG
             )
             print(f"[DB] PostgreSQL 连接池已初始化: {PG_CONFIG['host']}:{PG_CONFIG['port']}/{PG_CONFIG['database']}")
@@ -136,6 +138,65 @@ def get_db_connection():
         return conn
 
 
+class _DictCursorWrapper:
+    """游标包装器，同时支持数字索引和列名访问"""
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._columns = None
+
+    def _get_columns(self):
+        if self._columns is None and self._cursor.description:
+            self._columns = [desc[0] for desc in self._cursor.description]
+        return self._columns
+
+    def _wrap_row(self, row):
+        """包装单行数据，支持数字索引和列名访问"""
+        if row is None:
+            return None
+
+        columns = self._get_columns()
+
+        # 获取值列表
+        if isinstance(row, dict):
+            values = list(row.values())
+            data = row.copy()
+        elif isinstance(row, (tuple, list)):
+            values = list(row)
+            data = {columns[i]: row[i] for i in range(len(columns))} if columns else {}
+        else:
+            return row
+
+        # 创建支持双重访问的 Row 对象
+        class _Row(dict):
+            def __init__(inner_self, d, vals):
+                super().__init__(d)
+                inner_self._values = vals
+
+            def __getitem__(inner_self, key):
+                if isinstance(key, int):
+                    if 0 <= key < len(inner_self._values):
+                        return inner_self._values[key]
+                    raise IndexError(f"index {key} out of range")
+                return super().__getitem__(key)
+
+        return _Row(data, values)
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        return self._wrap_row(row)
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        return [self._wrap_row(r) for r in rows] if rows else []
+
+    def fetchmany(self, size=None):
+        rows = self._cursor.fetchmany(size) if size else self._cursor.fetchmany()
+        return [self._wrap_row(r) for r in rows] if rows else []
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
 class _PgConnectionWrapper:
     """PostgreSQL 连接包装器，模拟 SQLite 接口"""
 
@@ -144,15 +205,41 @@ class _PgConnectionWrapper:
         self._pool = pool
 
     def execute(self, sql, params=None):
-        """执行 SQL，自动转换占位符"""
+        """执行 SQL，自动转换占位符和 SQLite 函数"""
+        import re
+
         # 将 ? 占位符转换为 %s
         pg_sql = sql.replace('?', '%s')
+
+        # 转换 SQLite 特有函数为 PostgreSQL 兼容
+        # IFNULL -> COALESCE
+        pg_sql = pg_sql.replace('IFNULL', 'COALESCE')
+
+        # datetime('now', 'localtime') -> NOW()
+        pg_sql = pg_sql.replace("datetime('now', 'localtime')", 'NOW()')
+        pg_sql = pg_sql.replace('datetime("now", "localtime")', 'NOW()')
+
+        # GROUP_CONCAT(col ORDER BY x) -> STRING_AGG(col::text, ',' ORDER BY x)
+        # 匹配 GROUP_CONCAT(字段 [ORDER BY ...])
+        def replace_group_concat(match):
+            content = match.group(1)
+            # 检查是否有 ORDER BY
+            order_match = re.search(r'\s+ORDER\s+BY\s+(.+)$', content, re.IGNORECASE)
+            if order_match:
+                col = content[:order_match.start()].strip()
+                order_by = order_match.group(1)
+                return f"STRING_AGG({col}::text, ',' ORDER BY {order_by})"
+            else:
+                return f"STRING_AGG({content}::text, ',')"
+
+        pg_sql = re.sub(r'GROUP_CONCAT\(([^)]+)\)', replace_group_concat, pg_sql, flags=re.IGNORECASE)
+
         cur = self._conn.cursor()
         if params:
             cur.execute(pg_sql, params)
         else:
             cur.execute(pg_sql)
-        return cur
+        return _DictCursorWrapper(cur)
 
     def executescript(self, script):
         """执行脚本（PostgreSQL 不需要 PRAGMA）"""
@@ -755,8 +842,9 @@ def _init_db_sqlite():
 
         conn.executescript(schema)
         conn.execute("""
-            INSERT OR IGNORE INTO uni_emp (emp_id, emp_name, account, password, rule)
+            INSERT INTO uni_emp (emp_id, emp_name, account, password, rule)
             VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
+            ON CONFLICT(emp_id) DO NOTHING
         """)
 
         conn.commit()

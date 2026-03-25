@@ -516,8 +516,9 @@ def add_to_blacklist(email_addr: str, reason: str = None, account_id: int = None
     with get_db_connection() as conn:
         try:
             conn.execute("""
-                INSERT OR IGNORE INTO mail_blacklist (email_addr, reason, account_id)
+                INSERT INTO mail_blacklist (email_addr, reason, account_id)
                 VALUES (?, ?, ?)
+                ON CONFLICT(email_addr) DO NOTHING
             """, (email_addr, reason, account_id))
             conn.commit()
             return True
@@ -1790,8 +1791,9 @@ def record_synced_uid(account_id: int, imap_uid: int, imap_folder: str) -> bool:
     with get_db_connection() as conn:
         try:
             conn.execute("""
-                INSERT OR IGNORE INTO uni_mail_synced_uid (account_id, imap_uid, imap_folder)
+                INSERT INTO uni_mail_synced_uid (account_id, imap_uid, imap_folder)
                 VALUES (?, ?, ?)
+                ON CONFLICT(account_id, imap_uid, imap_folder) DO NOTHING
             """, (account_id, imap_uid, imap_folder))
             conn.commit()
             return True
@@ -1818,8 +1820,9 @@ def batch_record_synced_uids(account_id: int, uid_folder_pairs: list) -> bool:
         try:
             for uid, folder in uid_folder_pairs:
                 conn.execute("""
-                    INSERT OR IGNORE INTO uni_mail_synced_uid (account_id, imap_uid, imap_folder)
+                    INSERT INTO uni_mail_synced_uid (account_id, imap_uid, imap_folder)
                     VALUES (?, ?, ?)
+                    ON CONFLICT(account_id, imap_uid, imap_folder) DO NOTHING
                 """, (account_id, uid, folder))
             conn.commit()
             return True
