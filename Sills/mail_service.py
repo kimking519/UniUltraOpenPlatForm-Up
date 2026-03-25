@@ -1509,7 +1509,7 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
                 imap_client.disconnect()
                 return {"status": "cancelled", "message": "同步已取消"}
 
-            print(f"[Mail] 同步 {folder_label} 的 {len(uids)} 封邮件...")
+            print(f"[Mail] 同步 {folder_label} 的 {len(uids)} 封邮件, is_sent={is_sent}")
 
             # 批量获取邮件
             batch_size = 50
@@ -1524,6 +1524,10 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
                     email_data['account_id'] = current_account_id
                     if local_folder_id:
                         email_data['folder_id'] = local_folder_id
+
+                    # 调试日志
+                    if total_saved < 3:
+                        print(f"[DEBUG] Saving email: folder={folder_name}, is_sent={is_sent}, label={folder_label}, subject={email_data.get('subject', 'N/A')[:30]}")
 
                     save_email(email_data)
                     total_saved += 1
