@@ -3841,8 +3841,8 @@
             console.error('Load sync interval error:', error);
         }
 
-        // 启动自动同步定时器
-        startAutoSync(syncIntervalMinutes);
+        // 不在页面加载时启动自动同步，只有用户手动点击刷新时才同步
+        // startAutoSync(syncIntervalMinutes);
 
         // Load sync days
         try {
@@ -4115,9 +4115,8 @@
             const result = await response.json();
 
             if (result.success) {
-                // 重启自动同步定时器
-                startAutoSync(interval);
-                alert('同步间隔已保存，将每隔 ' + interval + ' 分钟自动同步');
+                // 用户手动设置同步间隔后，提示已保存但不自动启动定时器
+                alert('同步间隔已保存: ' + interval + ' 分钟');
             } else {
                 alert('保存失败: ' + (result.message || '未知错误'));
             }
