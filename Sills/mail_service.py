@@ -861,11 +861,19 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         folders_to_sync = [('INBOX', 0, '收件箱', None)]
         if sent_folder:
             folders_to_sync.append((sent_folder, 1, '发件箱', None))
+            print(f"[Mail] 将同步发件箱: {sent_folder}")
+        else:
+            print("[Mail] 警告：未检测到发件箱，请检查邮箱文件夹命名")
         if spam_folder:
             folders_to_sync.append((spam_folder, 0, '垃圾邮件', spam_folder_id))
+            print(f"[Mail] 将同步垃圾邮件文件夹: {spam_folder}")
+        else:
+            print("[Mail] 警告：未检测到垃圾邮件文件夹，请检查邮箱文件夹命名")
         # 其他文件夹都归入收件箱
         for folder_name in other_folders:
             folders_to_sync.append((folder_name, 0, '收件箱', None))
+
+        print(f"[Mail] 共需同步 {len(folders_to_sync)} 个文件夹: {[f[2] for f in folders_to_sync]}")
 
         total_saved = 0
         total_updated = 0
