@@ -181,6 +181,194 @@
             color: rgba(241, 245, 249, 0.4);
         }
 
+        /* Sidebar Footer */
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .sidebar-footer-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: rgba(241, 245, 249, 0.7);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            text-align: left;
+        }
+
+        .sidebar-footer-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+        }
+
+        .sidebar-footer-item svg {
+            flex-shrink: 0;
+        }
+
+        /* Sidebar User Dropdown */
+        .sidebar-user-dropdown {
+            position: relative;
+        }
+
+        .sidebar-user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .sidebar-user-profile:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .sidebar-user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary, #6366F1) 0%, #8B5CF6 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar-user-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sidebar-user-name {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebar-user-role {
+            display: block;
+            font-size: 0.75rem;
+            color: rgba(241, 245, 249, 0.5);
+        }
+
+        .sidebar-user-dropdown .chevron-icon {
+            color: rgba(241, 245, 249, 0.5);
+            transition: transform 0.2s;
+        }
+
+        .sidebar-user-dropdown:hover .chevron-icon {
+            color: #fff;
+        }
+
+        .sidebar-dropdown-menu {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            right: 0;
+            margin-bottom: 0.5rem;
+            background: rgba(30, 41, 59, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 0.5rem;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition: all 0.2s;
+            z-index: 100;
+        }
+
+        .sidebar-user-dropdown:hover .sidebar-dropdown-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .sidebar-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: rgba(241, 245, 249, 0.8);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .sidebar-dropdown-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .sidebar-dropdown-item.logout {
+            color: #f87171;
+        }
+
+        .sidebar-dropdown-item.logout:hover {
+            background: rgba(248, 113, 113, 0.1);
+        }
+
+        .sidebar-dropdown-divider {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            margin: 0.5rem 0;
+        }
+
+        .sidebar-version {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.75rem;
+            color: rgba(241, 245, 249, 0.4);
+        }
+
+        /* Collapsed sidebar footer */
+        .sidebar.collapsed .sidebar-footer-item span,
+        .sidebar.collapsed .sidebar-user-info,
+        .sidebar.collapsed .sidebar-user-dropdown .chevron-icon,
+        .sidebar.collapsed .sidebar-version span {
+            display: none;
+        }
+
+        .sidebar.collapsed .sidebar-footer-item {
+            justify-content: center;
+            padding: 0.6rem;
+        }
+
+        .sidebar.collapsed .sidebar-user-profile {
+            justify-content: center;
+            padding: 0.6rem;
+        }
+
+        .sidebar.collapsed .sidebar-dropdown-menu {
+            left: 100%;
+            bottom: 0;
+            right: auto;
+            width: 150px;
+            margin-bottom: 0;
+            margin-left: 0.5rem;
+        }
+
         /* Navbar Enhancements */
         .navbar {
             background: rgba(255, 255, 255, 0.8);
@@ -537,8 +725,58 @@
         </nav>
 
         <!-- Sidebar Footer -->
-        <div style="padding: 1rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.08); margin-top: auto;">
-            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: rgba(241,245,249,0.4);">
+        <div class="sidebar-footer">
+            <!-- Theme Toggle -->
+            <button class="sidebar-footer-item" onclick="toggleTheme()" title="切换深色/浅色模式">
+                <svg class="theme-toggle-icon sun-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+                <svg class="theme-toggle-icon moon-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+                </svg>
+                <span>主题切换</span>
+            </button>
+
+            <!-- System Environment -->
+            <div class="sidebar-footer-item" style="cursor: default;">
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+                <span id="system-env">检测中...</span>
+            </div>
+
+            <!-- User Dropdown -->
+            <div class="sidebar-user-dropdown">
+                <div class="sidebar-user-profile">
+                    <div class="sidebar-user-avatar">{{ current_user.emp_name[0] if current_user and current_user.emp_name else 'A' }}</div>
+                    <div class="sidebar-user-info">
+                        <span class="sidebar-user-name">{{ current_user.emp_name if current_user else '管理员' }}</span>
+                        <span class="sidebar-user-role">{{ '管理员' if current_user.rule == '3' else '员工' }}</span>
+                    </div>
+                    <svg class="chevron-icon" width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div class="sidebar-dropdown-menu">
+                    <a href="/settings" class="sidebar-dropdown-item">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                        <span>设置</span>
+                    </a>
+                    <hr class="sidebar-dropdown-divider">
+                    <a href="/logout" class="sidebar-dropdown-item logout">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                        </svg>
+                        <span>退出登录</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Version Info -->
+            <div class="sidebar-version">
                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
@@ -557,77 +795,6 @@
                     </svg>
                 </button>
             </div>
-
-            <div class="navbar-right">
-                <!-- Theme Toggle -->
-                <button class="navbar-action" onclick="toggleTheme()" title="切换深色/浅色模式">
-                    <svg class="theme-toggle-icon sun-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                    </svg>
-                    <svg class="theme-toggle-icon moon-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-                    </svg>
-                </button>
-
-                <!-- Notifications -->
-                <div class="navbar-action" style="font-size: 0.8rem; color: var(--text-muted); padding: 0.5rem 0.75rem; background: var(--bg-glass); border-radius: 6px;">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px; margin-right: 0.3rem;">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                    </svg>
-                    <span id="system-env">检测中...</span>
-                </div>
-
-                <script>
-                    // 检测服务器环境（而不是浏览器环境）
-                    document.addEventListener('DOMContentLoaded', function() {
-                        fetch('/api/server/env')
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.success) {
-                                    document.getElementById('system-env').textContent = data.env;
-                                }
-                            })
-                            .catch(() => {
-                                document.getElementById('system-env').textContent = 'Unknown';
-                            });
-                    });
-                </script>
-
-                <!-- User Dropdown -->
-                <div class="user-dropdown">
-                    <div class="user-profile">
-                        <div class="user-avatar">A</div>
-                        <div class="user-info">
-                            <span class="user-name">管理员</span>
-                            <span class="user-role">Admin</span>
-                        </div>
-                        <svg class="chevron-icon" style="width: 16px; height: 16px;" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd"
-                                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                clip-rule="evenodd" />
-                        </svg>
-                    </div>
-                    <div class="dropdown-menu">
-                        <a href="/settings" class="dropdown-item">
-                            <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            <span>设置</span>
-                        </a>
-                        <hr class="dropdown-divider">
-                        <a href="/logout" class="dropdown-item logout">
-                            <svg class="item-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                            </svg>
-                            <span>退出登录</span>
-                        </a>
-                    </div>
-                </div>
-            </div>
         </header>
 
         <main class="container">
@@ -637,6 +804,20 @@
 
     <script>
         window.addEventListener('DOMContentLoaded', () => {
+            // 检测服务器环境
+            fetch('/api/server/env')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const envEl = document.getElementById('system-env');
+                        if (envEl) envEl.textContent = data.env;
+                    }
+                })
+                .catch(() => {
+                    const envEl = document.getElementById('system-env');
+                    if (envEl) envEl.textContent = 'Unknown';
+                });
+
             const params = new URLSearchParams(window.location.search);
             let alertMsg = [];
 
