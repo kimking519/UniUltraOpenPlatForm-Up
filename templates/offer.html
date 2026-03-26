@@ -272,7 +272,11 @@
                 </button>
                 <button class="dropdown-item" onclick="copyKrwOffers()" style="color: #F59E0B;">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                    一键复制韩元报价
+                    韩元报价
+                </button>
+                <button class="dropdown-item" onclick="copyUsdOffers()" style="color: #10B981;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    美元报价
                 </button>
                 <button class="dropdown-item" onclick="toggleModal('importModal')">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
@@ -1032,15 +1036,14 @@
             });
 
             const data = await response.json();
-            if (data.success && data.clipboard) {
-                // 复制到剪贴板
+            const clipboardContent = data.clipboard_krw || data.clipboard;
+            if (data.success && clipboardContent) {
                 try {
-                    await navigator.clipboard.writeText(data.clipboard);
+                    await navigator.clipboard.writeText(clipboardContent);
                     alert(`已复制 ${selected.length} 条韩元报价信息到剪贴板！`);
                 } catch (err) {
-                    // 降级方案
                     const textarea = document.createElement('textarea');
-                    textarea.value = data.clipboard;
+                    textarea.value = clipboardContent;
                     textarea.style.position = 'fixed';
                     textarea.style.opacity = '0';
                     document.body.appendChild(textarea);
@@ -1048,6 +1051,45 @@
                     document.execCommand('copy');
                     document.body.removeChild(textarea);
                     alert(`已复制 ${selected.length} 条韩元报价信息到剪贴板！`);
+                }
+            } else {
+                alert('复制失败: ' + (data.message || '未知错误'));
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    async function copyUsdOffers() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要复制的报价记录');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/offer/export_csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success && data.clipboard_usd) {
+                try {
+                    await navigator.clipboard.writeText(data.clipboard_usd);
+                    alert(`已复制 ${selected.length} 条美元报价信息到剪贴板！`);
+                } catch (err) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = data.clipboard_usd;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    alert(`已复制 ${selected.length} 条美元报价信息到剪贴板！`);
                 }
             } else {
                 alert('复制失败: ' + (data.message || '未知错误'));

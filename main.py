@@ -1355,8 +1355,9 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
 
     csv_content = '\n'.join(csv_lines)
 
-    # 生成剪贴板内容（报价模板格式）
-    clipboard_sections = []
+    # 生成剪贴板内容（韩元报价模板格式）
+    clipboard_krw_sections = []
+    clipboard_usd_sections = []
     for row_data in rows:
         r = dict(row_data)
         offer_price_rmb = float(r.get('offer_price_rmb') or 0)
@@ -1370,7 +1371,13 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
             else:
                 pkwr = round(offer_price_rmb / krw_rate, 1) if krw_rate else 0
 
-        clipboard_sections.append(f"""================
+        # USD 价格
+        pusd = r.get('price_usd')
+        if not pusd or float(pusd) == 0:
+            pusd = round(offer_price_rmb * usd_rate, 2) if usd_rate else 0
+
+        # 韩元报价格式
+        clipboard_krw_sections.append(f"""================
 Model：{r.get('quoted_mpn') or r.get('inquiry_mpn')}
 Brand：{r.get('quoted_brand') or r.get('inquiry_brand')}
 Amount(pcs)：{r.get('quoted_qty')}
@@ -1380,12 +1387,26 @@ LeadTime：{r.get('delivery_date')}
 Remark: {r.get('remark')}
 ================ """)
 
-    clipboard_content = "\n\n".join(clipboard_sections)
+        # 美元报价格式
+        clipboard_usd_sections.append(f"""================
+Model：{r.get('quoted_mpn') or r.get('inquiry_mpn')}
+Brand：{r.get('quoted_brand') or r.get('inquiry_brand')}
+Amount(pcs)：{r.get('quoted_qty')}
+Price(USD)：{pusd}
+DC：{r.get('date_code')}
+LeadTime：{r.get('delivery_date')}
+Remark: {r.get('remark')}
+================ """)
+
+    clipboard_krw_content = "\n\n".join(clipboard_krw_sections)
+    clipboard_usd_content = "\n\n".join(clipboard_usd_sections)
 
     return {
         "success": True,
         "csv_content": csv_content,
-        "clipboard": clipboard_content,
+        "clipboard": clipboard_krw_content,
+        "clipboard_krw": clipboard_krw_content,
+        "clipboard_usd": clipboard_usd_content,
         "filename": f"报价卡片_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
     }
 
