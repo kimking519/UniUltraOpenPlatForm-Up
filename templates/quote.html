@@ -354,7 +354,7 @@
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'delivery_date')"><span>{{
                             row.delivery_date }}</span></td>
-                    <td style="color: var(--secondary);" class="copyable-cell">{{ row.combined_info }}<button class="copy-btn" onclick="copyToClipboard('{{ row.combined_info }}', this)">复制</button></td>
+                    <td style="color: var(--secondary);" class="copyable-cell" data-field="combined_info">{{ row.combined_info }}<button class="copy-btn" onclick="copyToClipboard('{{ row.combined_info }}', this)">复制</button></td>
                     <td ondblclick="makeEditable(this, '{{ row.quote_id }}', 'remark')"><span>{{ row.remark }}</span>
                     </td>
                     <td ondblclick="makeStatusEditable(this, '{{ row.quote_id }}', '{{ row.status }}')">
@@ -983,23 +983,50 @@
     }
 
     function batchCopy() {
-        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
-        if (selected.length === 0) {
+        const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+        if (checkboxes.length === 0) {
             alert('请先选择要复制的记录');
             return;
         }
-        if (confirm(`确定要复制选中的 ${selected.length} 条记录吗？`)) {
-            fetch('/api/quote/batch_copy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: selected })
-            })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) window.location.reload();
-                    else alert('批量复制失败: ' + (data.message || data.msg || '未知错误'));
-                });
+
+        // 收集所有选中行的需求组合信息
+        const combinedInfos = [];
+        checkboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            // 通过 data-field 属性找到需求组合信息列
+            const cell = row.querySelector('td[data-field="combined_info"]');
+            if (cell) {
+                // 获取第一个文本节点的文本内容（排除按钮文字）
+                const text = cell.childNodes[0]?.textContent?.trim() || cell.textContent.replace('复制', '').trim();
+                if (text) {
+                    combinedInfos.push(text);
+                }
+            }
+        });
+
+        if (combinedInfos.length === 0) {
+            alert('未找到可复制的需求组合信息');
+            return;
         }
+
+        // 合并成一行一个的格式
+        const copyText = combinedInfos.join('\n');
+
+        // 复制到剪贴板
+        navigator.clipboard.writeText(copyText).then(() => {
+            alert(`已复制 ${combinedInfos.length} 条需求组合信息到剪贴板`);
+        }).catch(err => {
+            // 降级方案：使用传统方法
+            const textarea = document.createElement('textarea');
+            textarea.value = copyText;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert(`已复制 ${combinedInfos.length} 条需求组合信息到剪贴板`);
+        });
     }
 
     function makeTransferredEditable(element, id, currentValue) {
