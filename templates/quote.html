@@ -1,6 +1,21 @@
 {% extends "layout.html" %}
 
 {% block content %}
+<!-- Price Modal -->
+<div id="priceModal" class="modal-overlay" style="display: none;">
+    <div class="card" style="width: 800px; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h3 id="priceModalTitle">全球比价结果</h3>
+            <button class="btn" onclick="toggleModal('priceModal')">关闭</button>
+        </div>
+        <div id="priceResultsContent">
+            <div style="text-align: center; padding: 2rem;">
+                <div class="spinner">正在全网搜寻底价...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
     .page-header {
         display: flex;
@@ -395,6 +410,14 @@
                     {% if current_user.rule == '3' %}
                     <td style="position: sticky; right: 0; background: white; z-index: 1;">
                         <div style="display: flex; gap: 0.3rem; justify-content: center;">
+                            <button class="action-btn action-btn-warning"
+                                onclick="checkGlobalPrice('{{ row.quoted_mpn or row.inquiry_mpn }}')"
+                                title="全球比价"
+                                style="padding: 0.3rem 0.4rem; min-width: 24px;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                            </button>
                             <button class="action-btn action-btn-primary"
                                 onclick="transToOffer('{{ row.quote_id }}')"
                                 title="转为报价单"
@@ -1109,6 +1132,68 @@
         } catch (error) {
             console.error('Error:', error);
             showToast('请求失败，请稍后重试', 'error');
+        }
+    }
+
+    async function checkGlobalPrice(mpn) {
+        if (!mpn) {
+            alert('型号为空，无法比价');
+            return;
+        }
+
+        toggleModal('priceModal');
+        const title = document.getElementById('priceModalTitle');
+        title.innerText = `正在比价: ${mpn}`;
+        
+        const content = document.getElementById('priceResultsContent');
+        content.innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="margin-bottom: 1rem;">🚀 正在同步 DigiKey, Mouser, Avnet, 立创, 云汉, 圣禾堂...</div>
+                <div style="color: var(--secondary);">这可能需要 10-20 秒，请稍候</div>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`/api/price/query?mpn=${encodeURIComponent(mpn)}`);
+            const data = await response.json();
+
+            if (data.success && data.results && data.results.length > 0) {
+                let html = `
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>来源渠道</th>
+                                <th>型号 (MPN)</th>
+                                <th>品牌</th>
+                                <th>单价</th>
+                                <th>库存</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                data.results.forEach(res => {
+                    html += `
+                        <tr>
+                            <td><strong>${res.source}</strong></td>
+                            <td>${res.mpn}</td>
+                            <td>${res.brand}</td>
+                            <td style="color: #EF4444; font-weight: bold; font-size: 1rem;">${res.price}</td>
+                            <td>${res.stock}</td>
+                            <td><a href="${res.link}" target="_blank" class="btn btn-primary" style="padding: 0.2rem 0.5rem; font-size: 0.7rem; text-decoration: none;">查看详情</a></td>
+                        </tr>
+                    `;
+                });
+
+                html += `</tbody></table>`;
+                content.innerHTML = html;
+            } else {
+                content.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--secondary);">未找到相关价格信息，建议换个型号试试。</div>`;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            content.innerHTML = `<div style="padding: 2rem; text-align: center; color: #EF4444;">查询出错，请稍后重试。</div>`;
         }
     }
 

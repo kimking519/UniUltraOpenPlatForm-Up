@@ -34,7 +34,6 @@ from Sills.db_mail import (
 )
 from Sills.mail_service import sync_inbox, sync_inbox_async, send_email_now
 from Sills.ai_service import intent_recognizer, smart_replier
-from utils.price_engine import PriceEngine
 
 from typing import Optional
 import uvicorn
@@ -671,30 +670,6 @@ async def order_list_api(current_user: dict = Depends(get_current_user)):
     return {"success": True, "items": items, "total": total}
 
 # ---------------- Quote Module ----------------
-@app.get("/api/price/query")
-async def api_price_query(
-    mpn: str,
-    current_user: dict = Depends(login_required)
-):
-    """全球比价查询"""
-    if not mpn:
-        return {"success": False, "message": "型号不能为空"}
-    
-    try:
-        engine = PriceEngine()
-        # 使用 run_in_executor 避免阻塞异步循环
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, engine.check_all, mpn)
-        
-        return {
-            "success": True,
-            "mpn": mpn,
-            "results": results
-        }
-    except Exception as e:
-        return {"success": False, "message": f"查询失败: {str(e)}"}
-
-
 @app.get("/quote", response_class=HTMLResponse)
 async def quote_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", status: str = "", is_transferred: str = ""):
     # 从 session 获取筛选条件

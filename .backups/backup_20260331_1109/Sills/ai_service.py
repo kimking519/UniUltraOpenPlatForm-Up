@@ -16,34 +16,29 @@ class AIIntentRecognizer:
 
     def analyze(self, email_content: str, subject: str = "") -> Dict[str, Any]:
         """
-        分析文本意图 (升级版：集成 OpenClaw LLM 能力)
+        分析邮件意图
 
         Args:
-            email_content: 邮件或聊天正文内容
+            email_content: 邮件正文内容
             subject: 邮件主题（可选）
-        """
-        # 注意：这里我们通过在 main.py 或全局注入 OpenClaw 的 LLM 调用
-        # 实际运行时，OpenClaw Agent 会拦截并理解这段意图
-        # 如果是 Stub 模式，我们还是保持基础逻辑
-        
-        inquiry_keywords = ['inquiry', 'quote', 'price', '报价', '询价', '价格', 'pcs', 'unit']
-        content_lower = email_content.lower()
-        
-        is_inquiry = any(kw in content_lower for kw in inquiry_keywords)
-        
-        if is_inquiry:
-            return {
-                "intent": "inquiry",
-                "confidence": 0.9,
-                "suggested_action": "parse_and_add_quote",
-                "keywords": inquiry_keywords
+
+        Returns:
+            {
+                "intent": 意图类型,
+                "confidence": 置信度 0.0-1.0,
+                "suggested_action": 建议操作,
+                "keywords": 关键词列表
             }
+        """
+        # Stub 实现 - 返回占位数据
+        # TODO: 后续接入外部 AI 服务
 
         return {
             "intent": "other",
-            "confidence": 0.5,
+            "confidence": 0.0,
             "suggested_action": "review_manually",
-            "keywords": []
+            "keywords": [],
+            "note": "AI 意图识别功能尚未接入，请手动处理"
         }
 
     def detect_inquiry(self, content: str) -> bool:
