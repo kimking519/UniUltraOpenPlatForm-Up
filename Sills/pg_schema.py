@@ -177,6 +177,56 @@ CREATE TABLE IF NOT EXISTS uni_buy (
     CONSTRAINT chk_is_shipped CHECK (is_shipped IN (0,1))
 );
 
+-- 客户订单主表
+CREATE TABLE IF NOT EXISTS uni_order_manager (
+    manager_id TEXT PRIMARY KEY,
+    customer_order_no TEXT UNIQUE NOT NULL,
+    order_date TEXT NOT NULL,
+    cli_id TEXT NOT NULL,
+    total_cost_rmb DOUBLE PRECISION DEFAULT 0,
+    total_price_rmb DOUBLE PRECISION DEFAULT 0,
+    total_price_kwr DOUBLE PRECISION DEFAULT 0,
+    total_price_usd DOUBLE PRECISION DEFAULT 0,
+    profit_rmb DOUBLE PRECISION DEFAULT 0,
+    model_count INTEGER DEFAULT 0,
+    total_qty INTEGER DEFAULT 0,
+    is_paid INTEGER DEFAULT 0,
+    is_finished INTEGER DEFAULT 0,
+    paid_amount DOUBLE PRECISION DEFAULT 0,
+    shipping_fee DOUBLE PRECISION DEFAULT 0,
+    tracking_no TEXT,
+    query_link TEXT,
+    mail_id TEXT,
+    mail_notes TEXT,
+    remark TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON UPDATE CASCADE,
+    CONSTRAINT chk_om_is_paid CHECK (is_paid IN (0,1)),
+    CONSTRAINT chk_om_is_finished CHECK (is_finished IN (0,1))
+);
+
+-- 客户订单与销售订单关联表
+CREATE TABLE IF NOT EXISTS uni_order_manager_rel (
+    id SERIAL PRIMARY KEY,
+    manager_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES uni_order(order_id) ON DELETE CASCADE,
+    UNIQUE(manager_id, order_id)
+);
+
+-- 客户订单附件表
+CREATE TABLE IF NOT EXISTS uni_order_attachment (
+    id SERIAL PRIMARY KEY,
+    manager_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    file_name TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE
+);
+
 -- 邮件配置表
 CREATE TABLE IF NOT EXISTS mail_config (
     id SERIAL PRIMARY KEY,
@@ -306,6 +356,17 @@ CREATE TABLE IF NOT EXISTS uni_mail_synced_uid (
     FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
 );
 
+-- 文件夹同步进度表（记录每个文件夹最后同步的UID和时间）
+CREATE TABLE IF NOT EXISTS mail_folder_sync_progress (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL,
+    folder_name TEXT NOT NULL,
+    last_uid INTEGER DEFAULT 0,
+    last_sync_at TIMESTAMP,
+    UNIQUE(account_id, folder_name),
+    FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE CASCADE
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_cli_name ON uni_cli(cli_name);
 CREATE INDEX IF NOT EXISTS idx_cli_emp ON uni_cli(emp_id);
@@ -323,6 +384,13 @@ CREATE INDEX IF NOT EXISTS idx_order_transferred ON uni_order(is_transferred);
 CREATE INDEX IF NOT EXISTS idx_buy_date ON uni_buy(buy_date);
 CREATE INDEX IF NOT EXISTS idx_buy_order ON uni_buy(order_id);
 CREATE INDEX IF NOT EXISTS idx_buy_vendor ON uni_buy(vendor_id);
+
+-- 客户订单索引
+CREATE INDEX IF NOT EXISTS idx_order_manager_cli ON uni_order_manager(cli_id);
+CREATE INDEX IF NOT EXISTS idx_order_manager_date ON uni_order_manager(order_date);
+CREATE INDEX IF NOT EXISTS idx_order_manager_rel_manager ON uni_order_manager_rel(manager_id);
+CREATE INDEX IF NOT EXISTS idx_order_manager_rel_order ON uni_order_manager_rel(order_id);
+
 CREATE INDEX IF NOT EXISTS idx_daily_date ON uni_daily(record_date);
 CREATE INDEX IF NOT EXISTS idx_daily_currency ON uni_daily(currency_code);
 CREATE INDEX IF NOT EXISTS idx_emp_account ON uni_emp(account);

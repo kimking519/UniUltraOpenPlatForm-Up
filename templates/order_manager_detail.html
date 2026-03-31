@@ -1,0 +1,832 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ manager.customer_order_no }} - 客户订单详情{% endblock %}
+
+{% block content %}
+<div class="om-page-header">
+    <div class="om-breadcrumb">
+        <a href="/order_manager" class="om-breadcrumb-link">客户订单</a>
+        <svg class="om-breadcrumb-sep" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+        <span class="om-breadcrumb-current">{{ manager.customer_order_no }}</span>
+    </div>
+    <div class="om-page-title-wrap">
+        <h1 class="om-page-title">{{ manager.customer_order_no }}</h1>
+        <p class="om-page-subtitle">{{ manager.cli_name }} {% if manager.cli_full_name %}({{ manager.cli_full_name }}){% endif %}</p>
+    </div>
+</div>
+
+<div class="om-detail-layout">
+    <!-- 左侧：基本信息 -->
+    <div class="om-detail-sidebar">
+        <!-- 订单信息卡片 -->
+        <div class="om-card">
+            <div class="om-card-header">
+                <h3 class="om-card-title">订单信息</h3>
+            </div>
+            <div class="om-card-body">
+                <div class="om-info-list">
+                    <div class="om-info-row">
+                        <span class="om-info-label">客户订单号</span>
+                        <span class="om-info-value om-font-mono">{{ manager.customer_order_no }}</span>
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">订单日期</span>
+                        <input type="date" id="order_date" value="{{ manager.order_date }}" onchange="updateField('order_date', this.value)" class="om-input-sm">
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">客户</span>
+                        <span class="om-info-value om-text-primary">{{ manager.cli_name }}</span>
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">付款状态</span>
+                        <select id="is_paid" onchange="updateField('is_paid', this.value)" class="om-select-sm">
+                            <option value="0" {% if manager.is_paid == 0 %}selected{% endif %}>未付款</option>
+                            <option value="1" {% if manager.is_paid == 1 %}selected{% endif %}>已付款</option>
+                        </select>
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">完结状态</span>
+                        <select id="is_finished" onchange="updateField('is_finished', this.value)" class="om-select-sm">
+                            <option value="0" {% if manager.is_finished == 0 %}selected{% endif %}>未完结</option>
+                            <option value="1" {% if manager.is_finished == 1 %}selected{% endif %}>已完结</option>
+                        </select>
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">已付金额</span>
+                        <div class="om-input-group">
+                            <input type="number" id="paid_amount" value="{{ manager.paid_amount }}" step="0.01" onchange="updateField('paid_amount', this.value)" class="om-input-sm">
+                            <span class="om-input-suffix">RMB</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 快递信息卡片 -->
+        <div class="om-card">
+            <div class="om-card-header">
+                <h3 class="om-card-title">快递信息</h3>
+            </div>
+            <div class="om-card-body">
+                <div class="om-info-list">
+                    <div class="om-info-row">
+                        <span class="om-info-label">邮费</span>
+                        <div class="om-input-group">
+                            <input type="number" id="shipping_fee" value="{{ manager.shipping_fee }}" step="0.01" onchange="updateField('shipping_fee', this.value)" class="om-input-sm">
+                            <span class="om-input-suffix">RMB</span>
+                        </div>
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">快递编号</span>
+                        <input type="text" id="tracking_no" value="{{ manager.tracking_no or '' }}" onchange="updateField('tracking_no', this.value)" class="om-input-sm" placeholder="快递单号">
+                    </div>
+                    <div class="om-info-row om-info-row-full">
+                        <span class="om-info-label">查询链接</span>
+                        <div class="om-input-with-btn">
+                            <input type="text" id="query_link" value="{{ manager.query_link or '' }}" onchange="updateField('query_link', this.value)" class="om-input-sm" placeholder="物流查询链接">
+                            {% if manager.query_link %}
+                            <a href="{{ manager.query_link }}" target="_blank" class="om-btn om-btn-outline om-btn-xs">打开</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 邮件信息卡片 -->
+        <div class="om-card">
+            <div class="om-card-header">
+                <h3 class="om-card-title">邮件信息</h3>
+            </div>
+            <div class="om-card-body">
+                <div class="om-info-list">
+                    <div class="om-info-row">
+                        <span class="om-info-label">邮件编号</span>
+                        <input type="text" id="mail_id" value="{{ manager.mail_id or '' }}" onchange="updateField('mail_id', this.value)" class="om-input-sm">
+                    </div>
+                    <div class="om-info-row om-info-row-full">
+                        <span class="om-info-label">邮件备注</span>
+                        <textarea id="mail_notes" rows="2" onchange="updateField('mail_notes', this.value)" class="om-textarea-sm">{{ manager.mail_notes or '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 附件区域 -->
+        <div class="om-card">
+            <div class="om-card-header">
+                <h3 class="om-card-title">附件</h3>
+            </div>
+            <div class="om-card-body">
+                <div class="om-attachment-upload">
+                    <input type="file" id="attachmentFile" name="file" style="display:none" onchange="uploadAttachment()">
+                    <select id="attachmentType" name="file_type" class="om-select-sm">
+                        <option value="PI">PI (形式发票)</option>
+                        <option value="CI">CI (商业发票)</option>
+                        <option value="快递截图">快递截图</option>
+                        <option value="其他">其他</option>
+                    </select>
+                    <button type="button" class="om-btn om-btn-outline om-btn-sm" onclick="document.getElementById('attachmentFile').click()">
+                        <svg class="om-btn-icon-sm" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+                        上传
+                    </button>
+                </div>
+                <div class="om-attachment-list">
+                    {% for att in attachments %}
+                    <div class="om-attachment-item">
+                        <span class="om-att-type">{{ att.file_type }}</span>
+                        <span class="om-att-name">{{ att.file_name }}</span>
+                        <button class="om-btn om-btn-danger om-btn-xs" onclick="deleteAttachment({{ att.id }})">删除</button>
+                    </div>
+                    {% endfor %}
+                    {% if not attachments %}
+                    <p class="om-empty-hint">暂无附件</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 备注 -->
+        <div class="om-card">
+            <div class="om-card-header">
+                <h3 class="om-card-title">备注</h3>
+            </div>
+            <div class="om-card-body">
+                <textarea id="remark" rows="3" onchange="updateField('remark', this.value)" class="om-textarea" placeholder="添加备注...">{{ manager.remark or '' }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧：销售订单明细 -->
+    <div class="om-detail-main">
+        <!-- 汇总卡片 -->
+        <div class="om-card om-card-summary">
+            <div class="om-card-header">
+                <h3 class="om-card-title">订单汇总</h3>
+            </div>
+            <div class="om-card-body">
+                <div class="om-summary-grid">
+                    <div class="om-summary-item">
+                        <span class="om-summary-label">型号数量</span>
+                        <span class="om-summary-value">{{ manager.model_count }}</span>
+                    </div>
+                    <div class="om-summary-item">
+                        <span class="om-summary-label">总数量</span>
+                        <span class="om-summary-value">{{ manager.total_qty }}</span>
+                    </div>
+                    <div class="om-summary-item">
+                        <span class="om-summary-label">总成本</span>
+                        <span class="om-summary-value">{{ "%.2f"|format(manager.total_cost_rmb) }}</span>
+                        <span class="om-summary-unit">RMB</span>
+                    </div>
+                    <div class="om-summary-item om-summary-highlight">
+                        <span class="om-summary-label">总价(RMB)</span>
+                        <span class="om-summary-value">{{ "%.2f"|format(manager.total_price_rmb) }}</span>
+                    </div>
+                    <div class="om-summary-item">
+                        <span class="om-summary-label">总价(KRW)</span>
+                        <span class="om-summary-value">{{ "%.0f"|format(manager.total_price_kwr) }}</span>
+                    </div>
+                    <div class="om-summary-item">
+                        <span class="om-summary-label">总价(USD)</span>
+                        <span class="om-summary-value">{{ "%.2f"|format(manager.total_price_usd) }}</span>
+                    </div>
+                    <div class="om-summary-item om-summary-profit {{ 'om-profit-positive' if manager.profit_rmb > 0 else 'om-profit-negative' }}">
+                        <span class="om-summary-label">利润(RMB)</span>
+                        <span class="om-summary-value">{{ "%.2f"|format(manager.profit_rmb) }}</span>
+                        <span class="om-summary-percent">{% if manager.total_price_rmb > 0 %}{{ "%.1f"|format(manager.profit_rmb / manager.total_price_rmb * 100) }}%{% endif %}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 销售订单明细 -->
+        <div class="om-card">
+            <div class="om-card-header">
+                <h3 class="om-card-title">销售订单明细 <span class="om-card-badge">{{ orders|length }}</span></h3>
+                <button class="om-btn om-btn-primary om-btn-sm" onclick="showAddOrderModal()">
+                    <svg class="om-btn-icon-sm" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                    添加
+                </button>
+            </div>
+            <div class="om-card-body om-card-body-table">
+                <table class="om-detail-table">
+                    <thead>
+                        <tr>
+                            <th>订单号</th>
+                            <th>型号</th>
+                            <th class="om-col-num">数量</th>
+                            <th class="om-col-money">单价</th>
+                            <th class="om-col-money">总价</th>
+                            <th class="om-col-money">成本</th>
+                            <th class="om-col-profit">利润</th>
+                            <th class="om-col-action">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in orders %}
+                        <tr>
+                            <td><a href="/order?search={{ order.order_id }}" target="_blank" class="om-link om-font-mono">{{ order.order_id }}</a></td>
+                            <td class="om-font-medium">{{ order.inquiry_mpn or order.quoted_mpn or '-' }}</td>
+                            <td class="om-num">{{ order.quoted_qty or 1 }}</td>
+                            <td class="om-num">{{ "%.2f"|format(order.price_rmb or 0) }}</td>
+                            <td class="om-num om-font-medium">{{ "%.2f"|format(order.total_price or 0) }}</td>
+                            <td class="om-num">{{ "%.2f"|format(order.cost_price_rmb or 0) }}</td>
+                            <td class="om-num om-font-semibold {{ 'om-text-success' if order.profit > 0 else 'om-text-danger' }}">{{ "%.2f"|format(order.profit or 0) }}</td>
+                            <td>
+                                <button class="om-btn om-btn-outline om-btn-xs" onclick="removeOrder('{{ order.order_id }}')">移除</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not orders %}
+                        <tr>
+                            <td colspan="8" class="om-empty-state om-empty-state-sm">
+                                <p>暂无关联的销售订单</p>
+                                <button class="om-btn om-btn-primary om-btn-sm" onclick="showAddOrderModal()">添加销售订单</button>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加销售订单模态框 -->
+<div id="addOrderModal" class="om-modal">
+    <div class="om-modal-content om-modal-lg">
+        <div class="om-modal-header">
+            <h2 class="om-modal-title">添加销售订单</h2>
+            <button class="om-modal-close" onclick="closeAddOrderModal()">&times;</button>
+        </div>
+        <div class="om-modal-body">
+            <div class="om-search-box">
+                <svg class="om-search-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+                <input type="text" id="orderSearch" placeholder="搜索订单号或型号..." oninput="filterOrders()" class="om-search-input">
+            </div>
+            <div class="om-modal-table-wrap">
+                <table class="om-modal-table">
+                    <thead>
+                        <tr>
+                            <th class="om-col-checkbox"><input type="checkbox" id="selectAllOrders" onchange="toggleSelectAllOrders()" class="om-checkbox"></th>
+                            <th>订单号</th>
+                            <th>型号</th>
+                            <th>客户</th>
+                            <th>日期</th>
+                            <th class="om-col-money">单价(RMB)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="availableOrders">
+                        {% for order in available_orders %}
+                        <tr class="om-modal-row" data-order-id="{{ order.order_id }}" data-search="{{ order.order_id }} {{ order.inquiry_mpn }} {{ order.cli_name }}">
+                            <td><input type="checkbox" class="order-checkbox om-checkbox" value="{{ order.order_id }}"></td>
+                            <td class="om-font-mono">{{ order.order_id }}</td>
+                            <td>{{ order.inquiry_mpn or '-' }}</td>
+                            <td>{{ order.cli_name }}</td>
+                            <td class="om-text-muted">{{ order.order_date }}</td>
+                            <td class="om-num">{{ "%.2f"|format(order.price_rmb or 0) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="om-modal-footer">
+            <button class="om-btn om-btn-primary" onclick="addSelectedOrders()">添加选中</button>
+            <button class="om-btn om-btn-outline" onclick="closeAddOrderModal()">取消</button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ============ 基础变量 ============ */
+:root {
+    --om-primary: #2563EB;
+    --om-primary-light: #3B82F6;
+    --om-primary-bg: #EFF6FF;
+    --om-success: #10B981;
+    --om-success-bg: #D1FAE5;
+    --om-warning: #F59E0B;
+    --om-warning-bg: #FEF3C7;
+    --om-danger: #EF4444;
+    --om-danger-bg: #FEE2E2;
+    --om-gray-50: #F8FAFC;
+    --om-gray-100: #F1F5F9;
+    --om-gray-200: #E2E8F0;
+    --om-gray-300: #CBD5E1;
+    --om-gray-400: #94A3B8;
+    --om-gray-500: #64748B;
+    --om-gray-600: #475569;
+    --om-gray-700: #334155;
+    --om-gray-800: #1E293B;
+    --om-gray-900: #0F172A;
+    --om-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --om-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+    --om-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    --om-radius: 8px;
+    --om-radius-sm: 4px;
+    --om-radius-lg: 12px;
+    --om-transition: 150ms ease;
+}
+
+/* ============ 页面头部 ============ */
+.om-page-header { margin-bottom: 24px; }
+.om-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+.om-breadcrumb-link {
+    color: var(--om-gray-500);
+    text-decoration: none;
+}
+.om-breadcrumb-link:hover { color: var(--om-primary); }
+.om-breadcrumb-sep { width: 16px; height: 16px; color: var(--om-gray-300); }
+.om-breadcrumb-current { color: var(--om-gray-700); font-weight: 500; }
+.om-page-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--om-gray-900);
+    margin: 0 0 4px 0;
+}
+.om-page-subtitle {
+    font-size: 14px;
+    color: var(--om-gray-500);
+    margin: 0;
+}
+
+/* ============ 详情布局 ============ */
+.om-detail-layout {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
+}
+.om-detail-sidebar { display: flex; flex-direction: column; gap: 16px; }
+.om-detail-main { display: flex; flex-direction: column; gap: 16px; }
+
+/* ============ 卡片 ============ */
+.om-card {
+    background: white;
+    border-radius: var(--om-radius-lg);
+    box-shadow: var(--om-shadow-sm);
+    border: 1px solid var(--om-gray-200);
+    overflow: hidden;
+}
+.om-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--om-gray-100);
+    background: var(--om-gray-50);
+}
+.om-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--om-gray-800);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.om-card-badge {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 8px;
+    background: var(--om-primary-bg);
+    color: var(--om-primary);
+    border-radius: 20px;
+}
+.om-card-body { padding: 16px; }
+.om-card-body-table { padding: 0; }
+
+/* ============ 信息列表 ============ */
+.om-info-list { display: flex; flex-direction: column; gap: 12px; }
+.om-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.om-info-row-full { flex-direction: column; align-items: stretch; }
+.om-info-label {
+    font-size: 12px;
+    color: var(--om-gray-500);
+    flex-shrink: 0;
+}
+.om-info-value {
+    font-size: 14px;
+    color: var(--om-gray-800);
+    font-weight: 500;
+    text-align: right;
+}
+.om-input-sm {
+    padding: 6px 10px;
+    font-size: 13px;
+    border: 1px solid var(--om-gray-300);
+    border-radius: var(--om-radius-sm);
+    width: 100%;
+    max-width: 180px;
+}
+.om-select-sm {
+    padding: 6px 10px;
+    font-size: 13px;
+    border: 1px solid var(--om-gray-300);
+    border-radius: var(--om-radius-sm);
+    background: white;
+    cursor: pointer;
+}
+.om-textarea-sm {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 13px;
+    border: 1px solid var(--om-gray-300);
+    border-radius: var(--om-radius-sm);
+    resize: vertical;
+    min-height: 60px;
+}
+.om-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid var(--om-gray-300);
+    border-radius: var(--om-radius-sm);
+    resize: vertical;
+    min-height: 80px;
+}
+.om-input-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.om-input-suffix {
+    font-size: 12px;
+    color: var(--om-gray-400);
+}
+.om-input-with-btn {
+    display: flex;
+    gap: 8px;
+}
+.om-input-with-btn .om-input-sm { flex: 1; max-width: none; }
+
+/* ============ 汇总卡片 ============ */
+.om-card-summary { background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 100%); }
+.om-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+.om-summary-item {
+    text-align: center;
+    padding: 16px 12px;
+    background: white;
+    border-radius: var(--om-radius);
+    border: 1px solid var(--om-gray-100);
+}
+.om-summary-highlight {
+    background: var(--om-primary-bg);
+    border-color: var(--om-primary-light);
+}
+.om-summary-profit {
+    background: linear-gradient(135deg, var(--om-success-bg) 0%, #ECFDF5 100%);
+    border-color: var(--om-success);
+}
+.om-profit-negative {
+    background: linear-gradient(135deg, var(--om-danger-bg) 0%, #FEF2F2 100%);
+    border-color: var(--om-danger);
+}
+.om-summary-label {
+    font-size: 11px;
+    color: var(--om-gray-500);
+    display: block;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.om-summary-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--om-gray-900);
+    display: block;
+}
+.om-summary-unit {
+    font-size: 11px;
+    color: var(--om-gray-400);
+}
+.om-summary-percent {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--om-success);
+    margin-left: 4px;
+}
+.om-profit-negative .om-summary-percent { color: var(--om-danger); }
+
+/* ============ 详情表格 ============ */
+.om-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.om-detail-table th {
+    background: var(--om-gray-50);
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--om-gray-600);
+    border-bottom: 1px solid var(--om-gray-200);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.om-detail-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--om-gray-100);
+}
+.om-detail-table tbody tr:hover { background: var(--om-gray-50); }
+.om-col-num { width: 70px; text-align: center; }
+.om-col-money { min-width: 90px; text-align: right; }
+.om-col-profit { min-width: 90px; text-align: right; }
+.om-col-action { width: 80px; }
+.om-col-checkbox { width: 40px; }
+
+/* ============ 文本样式 ============ */
+.om-num { text-align: right; font-variant-numeric: tabular-nums; }
+.om-text-muted { color: var(--om-gray-500); }
+.om-text-primary { color: var(--om-primary); }
+.om-text-success { color: var(--om-success); }
+.om-text-danger { color: var(--om-danger); }
+.om-font-medium { font-weight: 500; }
+.om-font-semibold { font-weight: 600; }
+.om-font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+.om-link {
+    color: var(--om-primary);
+    text-decoration: none;
+}
+.om-link:hover { text-decoration: underline; }
+
+/* ============ 按钮 ============ */
+.om-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: var(--om-radius);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--om-transition);
+    text-decoration: none;
+}
+.om-btn-primary { background: var(--om-primary); color: white; }
+.om-btn-primary:hover { background: var(--om-primary-light); }
+.om-btn-outline { background: white; color: var(--om-gray-700); border-color: var(--om-gray-300); }
+.om-btn-outline:hover { background: var(--om-gray-50); }
+.om-btn-danger { background: var(--om-danger); color: white; }
+.om-btn-sm { padding: 8px 12px; font-size: 13px; }
+.om-btn-xs { padding: 4px 8px; font-size: 12px; }
+.om-btn-icon-sm { width: 16px; height: 16px; margin-right: 4px; }
+
+/* ============ 附件 ============ */
+.om-attachment-upload {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.om-attachment-list { display: flex; flex-direction: column; gap: 6px; }
+.om-attachment-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--om-gray-50);
+    border-radius: var(--om-radius-sm);
+    border: 1px solid var(--om-gray-200);
+}
+.om-att-type {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    background: var(--om-primary);
+    color: white;
+    border-radius: 3px;
+}
+.om-att-name { flex: 1; font-size: 13px; color: var(--om-gray-700); }
+.om-empty-hint {
+    font-size: 13px;
+    color: var(--om-gray-400);
+    text-align: center;
+    padding: 20px;
+    background: var(--om-gray-50);
+    border-radius: var(--om-radius-sm);
+}
+
+/* ============ 空状态 ============ */
+.om-empty-state { text-align: center; padding: 40px 20px; color: var(--om-gray-400); }
+.om-empty-state-sm { padding: 24px; }
+.om-empty-state p { margin: 0 0 12px 0; }
+
+/* ============ 模态框 ============ */
+.om-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+.om-modal-content {
+    background: white;
+    border-radius: var(--om-radius-lg);
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--om-shadow-md);
+}
+.om-modal-lg { width: 800px; max-width: 95%; }
+.om-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--om-gray-200);
+}
+.om-modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--om-gray-900);
+    margin: 0;
+}
+.om-modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--om-gray-400);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+.om-modal-close:hover { color: var(--om-gray-600); }
+.om-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+.om-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--om-gray-200);
+    background: var(--om-gray-50);
+}
+
+/* ============ 搜索框 ============ */
+.om-search-box {
+    position: relative;
+    margin-bottom: 16px;
+}
+.om-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: var(--om-gray-400);
+}
+.om-search-input {
+    width: 100%;
+    padding: 10px 12px 10px 40px;
+    font-size: 14px;
+    border: 1px solid var(--om-gray-300);
+    border-radius: var(--om-radius);
+}
+.om-search-input:focus {
+    outline: none;
+    border-color: var(--om-primary);
+    box-shadow: 0 0 0 3px var(--om-primary-bg);
+}
+
+/* ============ 模态框表格 ============ */
+.om-modal-table-wrap { max-height: 400px; overflow-y: auto; border: 1px solid var(--om-gray-200); border-radius: var(--om-radius); }
+.om-modal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.om-modal-table th {
+    background: var(--om-gray-50);
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--om-gray-600);
+    border-bottom: 1px solid var(--om-gray-200);
+    position: sticky;
+    top: 0;
+}
+.om-modal-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--om-gray-100);
+}
+.om-modal-row:hover { background: var(--om-gray-50); }
+.om-checkbox { width: 16px; height: 16px; cursor: pointer; }
+
+/* ============ 响应式 ============ */
+@media (max-width: 1200px) {
+    .om-summary-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 1024px) {
+    .om-detail-layout { grid-template-columns: 1fr; }
+    .om-detail-sidebar { order: 2; }
+    .om-detail-main { order: 1; }
+}
+@media (max-width: 768px) {
+    .om-summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+
+<script>
+const managerId = '{{ manager.manager_id }}';
+
+async function updateField(field, value) {
+    const formData = new FormData();
+    formData.append('manager_id', managerId);
+    formData.append('field', field);
+    formData.append('value', value);
+    const response = await fetch('/api/order_manager/update', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (!result.success) { alert('更新失败: ' + result.message); }
+}
+
+function showAddOrderModal() { document.getElementById('addOrderModal').style.display = 'flex'; }
+function closeAddOrderModal() { document.getElementById('addOrderModal').style.display = 'none'; }
+
+function toggleSelectAllOrders() {
+    const checkboxes = document.querySelectorAll('.order-checkbox');
+    const selectAll = document.getElementById('selectAllOrders');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+}
+
+function filterOrders() {
+    const search = document.getElementById('orderSearch').value.toLowerCase();
+    const rows = document.querySelectorAll('.om-modal-row');
+    rows.forEach(row => {
+        const text = row.getAttribute('data-search').toLowerCase();
+        row.style.display = text.includes(search) ? '' : 'none';
+    });
+}
+
+async function addSelectedOrders() {
+    const checkboxes = document.querySelectorAll('.order-checkbox:checked');
+    if (checkboxes.length === 0) { alert('请选择要添加的销售订单'); return; }
+    for (const cb of checkboxes) {
+        const formData = new FormData();
+        formData.append('manager_id', managerId);
+        formData.append('order_id', cb.value);
+        const response = await fetch('/api/order_manager/add_order', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (!result.success) { alert('添加失败: ' + result.message); }
+    }
+    location.reload();
+}
+
+async function removeOrder(orderId) {
+    if (!confirm('确定要从客户订单中移除此销售订单吗？')) return;
+    const formData = new FormData();
+    formData.append('manager_id', managerId);
+    formData.append('order_id', orderId);
+    const response = await fetch('/api/order_manager/remove_order', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.success) { location.reload(); } else { alert('移除失败: ' + result.message); }
+}
+
+async function uploadAttachment() {
+    const fileInput = document.getElementById('attachmentFile');
+    const fileType = document.getElementById('attachmentType').value;
+    if (!fileInput.files[0]) return;
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('file_type', fileType);
+    const response = await fetch(`/api/order_manager/${managerId}/attachment`, { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.success) { location.reload(); } else { alert('上传失败: ' + result.message); }
+}
+
+async function deleteAttachment(attachmentId) {
+    if (!confirm('确定要删除此附件吗？')) return;
+    const response = await fetch(`/api/order_manager/attachment/${attachmentId}`, { method: 'DELETE' });
+    const result = await response.json();
+    if (result.success) { location.reload(); } else { alert('删除失败: ' + result.message); }
+}
+</script>
+{% endblock %}

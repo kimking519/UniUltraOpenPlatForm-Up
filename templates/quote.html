@@ -575,11 +575,11 @@
         <div style="padding: 1rem; border: 1px solid var(--border); border-radius: 4px;">
             <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式二：粘贴文本导入</p>
             <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
-                格式要求与模板一致：<br>客户编号,询价型号,报价型号,询价品牌,询价数量,目标价,成本价,备注<br>
-                (注: 客户编号必须事先存在于系统中，如 C001)
+                格式要求与模板一致：<br>日期,客户名,询价型号,报价型号,询价品牌,询价数量,目标价,成本价,批号,交期,状态,备注<br>
+                (注: 客户名必须事先存在于系统中，日期格式为 YYYY-MM-DD)
             </p>
             <form action="/quote/import" method="post">
-                <textarea name="batch_text" rows="10" placeholder="C001,STM32F103C8T6,,ST,500,8.5,7.0,急单"
+                <textarea name="batch_text" rows="10" placeholder="2026-01-01,示例客户,STM32F103C8T6,,ST,500,8.5,7.0,2912+,1~3days,询价中,急单"
                     style="width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem; margin-bottom: 1rem; font-family: monospace;"></textarea>
                 <div style="display: flex; justify-content: flex-end; gap: 1rem;">
                     <button type="button" class="btn" onclick="toggleModal('importModal')">取消</button>

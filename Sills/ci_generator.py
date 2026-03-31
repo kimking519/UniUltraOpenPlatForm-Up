@@ -62,6 +62,39 @@ def _get_output_base():
     return _get_default_output_base()
 
 
+def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
+    """
+    生成唯一的发票编号和文件路径
+
+    发票编号格式: UNI%Y%m%d，如果已存在则添加01, 02, 03等后缀
+
+    Args:
+        output_dir: 输出目录
+        cli_name: 客户名称
+        doc_type: 文档类型 (CI, PI)
+
+    Returns:
+        tuple: (invoice_no, output_filename, output_path)
+    """
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d")
+    base_invoice_no = f"UNI{date_str}"
+
+    # 尝试不带后缀
+    invoice_no = base_invoice_no
+    output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+    output_path = os.path.join(output_dir, output_filename)
+
+    suffix = 1
+    while os.path.exists(output_path):
+        invoice_no = f"{base_invoice_no}{suffix:02d}"
+        output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
+        suffix += 1
+
+    return invoice_no, output_filename, output_path
+
+
 def get_header_style():
     return {
         "font": Font(name='Arial', size=8, bold=True, color=COLOR_HEADER_FONT),
@@ -130,7 +163,7 @@ def get_orders_for_ci(order_ids):
         return [dict(r) for r in rows]
 
 
-def generate_ci_excel(orders, template_dir, output_path):
+def generate_ci_excel(orders, template_dir, output_path, invoice_no):
     """
     使用切分模板模式生成CI Excel文件
 
@@ -138,6 +171,7 @@ def generate_ci_excel(orders, template_dir, output_path):
         orders: 订单数据列表
         template_dir: 模板目录路径
         output_path: 输出文件路径
+        invoice_no: 发票编号
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -165,7 +199,6 @@ def generate_ci_excel(orders, template_dir, output_path):
     ws = wb.active
 
     # 填写头部信息
-    invoice_no = now.strftime("UNI%Y%m%d%H%M")
     invoice_date = now.strftime("%Y-%m-%d")
 
     ws['B2'] = invoice_no
@@ -368,15 +401,13 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
 
     now = datetime.now()
     date_dir = now.strftime("%Y%m%d")
-    invoice_no = now.strftime("UNI%Y%m%d%H%M%S")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    output_filename = f"COMMERCIAL INVOICE_{cli_name}_{invoice_no}.xlsx"
-    output_path = os.path.join(output_dir, output_filename)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI")
 
     # 确定模板目录
     if not template_dir:
         template_dir = os.path.join(project_root, "templates", "ci_kr")
 
     # 生成 CI
-    return generate_ci_excel(orders, template_dir, output_path)
+    return generate_ci_excel(orders, template_dir, output_path, invoice_no)

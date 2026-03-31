@@ -15,6 +15,12 @@ from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, d
 from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
 from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer, get_order_by_id
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
+from Sills.db_order_manager import (
+    get_manager_list, get_manager_by_id, add_manager, update_manager, delete_manager,
+    add_order_to_manager, remove_order_from_manager, get_manager_orders,
+    get_available_orders_for_manager, batch_import_manager, batch_delete_managers,
+    add_attachment, get_attachments, delete_attachment
+)
 from Sills.db_mail import (
     get_mail_list, get_mail_by_id, save_email, delete_email,
     create_mail_relation, get_mail_relations, remove_mail_relation,
@@ -34,6 +40,7 @@ from Sills.db_mail import (
 )
 from Sills.mail_service import sync_inbox, sync_inbox_async, send_email_now
 from Sills.ai_service import intent_recognizer, smart_replier
+from Sills.db_config import is_postgresql, is_sqlite, get_pg_config, get_sqlite_path
 from utils.price_engine import PriceEngine
 
 from typing import Optional
@@ -125,7 +132,9 @@ def get_server_env():
         return system
 
 def do_backup():
-    """执行备份操作（内部函数，无权限检查）"""
+    """执行备份操作（内部函数，无权限检查）- 支持 SQLite 和 PostgreSQL"""
+    import subprocess
+
     backup_root = get_backup_root()
     date_str = datetime.now().strftime("%Y%m%d%H")  # 精确到小时
     backup_dir = os.path.join(backup_root, f"backup_{date_str}")
@@ -139,14 +148,47 @@ def do_backup():
         shutil.rmtree(backup_dir)
     os.makedirs(backup_dir, exist_ok=True)
 
-    # Copy all .db files from project root
     project_root = os.path.dirname(os.path.abspath(__file__))
-    db_files = [f for f in os.listdir(project_root) if f.endswith(".db")]
+    backup_count = 0
 
-    for db_file in db_files:
-        src = os.path.join(project_root, db_file)
-        dst = os.path.join(backup_dir, db_file)
-        shutil.copy2(src, dst)
+    # 根据数据库类型选择备份方式
+    if is_postgresql():
+        # PostgreSQL 备份：使用 pg_dump
+        pg_config = get_pg_config()
+        dump_file = os.path.join(backup_dir, "uni_platform.sql")
+
+        # 构建 pg_dump 命令
+        cmd = [
+            "pg_dump",
+            "-h", pg_config['host'],
+            "-p", str(pg_config['port']),
+            "-U", pg_config['user'],
+            "-d", pg_config['database'],
+            "-F", "p",  # plain SQL format
+            "-f", dump_file
+        ]
+
+        # 设置环境变量传递密码
+        env = os.environ.copy()
+        env["PGPASSWORD"] = pg_config['password']
+
+        try:
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
+            if result.returncode == 0:
+                backup_count = 1
+                print(f"[备份] PostgreSQL 备份成功: {dump_file}")
+            else:
+                raise Exception(f"pg_dump 失败: {result.stderr}")
+        except FileNotFoundError:
+            raise Exception("pg_dump 命令未找到，请确保 PostgreSQL 客户端已安装并添加到 PATH")
+    else:
+        # SQLite 备份：复制文件
+        db_files = [f for f in os.listdir(project_root) if f.endswith(".db")]
+        for db_file in db_files:
+            src = os.path.join(project_root, db_file)
+            dst = os.path.join(backup_dir, db_file)
+            shutil.copy2(src, dst)
+        backup_count = len(db_files)
 
     # Copy static directory
     static_src = os.path.join(project_root, "static")
@@ -154,7 +196,7 @@ def do_backup():
         static_dst = os.path.join(backup_dir, "static")
         shutil.copytree(static_src, static_dst, dirs_exist_ok=True)
 
-    return len(db_files), backup_dir
+    return backup_count, backup_dir
 
 def cleanup_old_backups(backup_root, days=3):
     """清理超过指定天数的备份目录"""
@@ -1623,6 +1665,174 @@ async def order_export_csv(request: Request, current_user: dict = Depends(login_
         ])
     return {"success": True, "csv_content": output.getvalue()}
 
+# ============ 客户订单管理 ============
+
+@app.get("/order_manager", response_class=HTMLResponse)
+async def order_manager_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", start_date: str = "", end_date: str = "", is_paid: str = "", is_finished: str = ""):
+    results, total = get_manager_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id, start_date=start_date, end_date=end_date, is_paid=is_paid, is_finished=is_finished)
+    total_pages = (total + page_size - 1) // page_size
+    from Sills.db_cli import get_cli_list
+    cli_list, _ = get_cli_list(page=1, page_size=1000)
+    return templates.TemplateResponse("order_manager.html", {
+        "request": request, "active_page": "order_manager", "current_user": current_user,
+        "items": results, "total": total, "page": page, "page_size": page_size,
+        "total_pages": total_pages, "search": search, "cli_id": cli_id,
+        "start_date": start_date, "end_date": end_date, "cli_list": cli_list,
+        "is_paid": is_paid, "is_finished": is_finished
+    })
+
+@app.get("/order_manager/{manager_id}", response_class=HTMLResponse)
+async def order_manager_detail_page(request: Request, manager_id: str, current_user: dict = Depends(login_required)):
+    manager = get_manager_by_id(manager_id)
+    if not manager:
+        return RedirectResponse(url="/order_manager?msg=订单不存在&success=0", status_code=303)
+    orders = get_manager_orders(manager_id)
+    attachments = get_attachments(manager_id)
+    available_orders = get_available_orders_for_manager(cli_id=manager['cli_id'], manager_id=manager_id)
+    from Sills.db_cli import get_cli_list
+    cli_list, _ = get_cli_list(page=1, page_size=1000)
+    return templates.TemplateResponse("order_manager_detail.html", {
+        "request": request, "active_page": "order_manager", "current_user": current_user,
+        "manager": manager, "orders": orders, "attachments": attachments,
+        "available_orders": available_orders, "cli_list": cli_list
+    })
+
+@app.post("/api/order_manager/add")
+async def api_order_manager_add(
+    customer_order_no: str = Form(None), cli_id: str = Form(...), order_date: str = Form(None),
+    shipping_fee: float = Form(0), tracking_no: str = Form(""), query_link: str = Form(""),
+    mail_id: str = Form(""), mail_notes: str = Form(""), remark: str = Form(""),
+    current_user: dict = Depends(login_required)
+):
+    data = {
+        "customer_order_no": customer_order_no, "cli_id": cli_id, "order_date": order_date,
+        "shipping_fee": shipping_fee, "tracking_no": tracking_no, "query_link": query_link,
+        "mail_id": mail_id, "mail_notes": mail_notes, "remark": remark
+    }
+    ok, msg = add_manager(data)
+    import urllib.parse
+    if ok and isinstance(msg, dict):
+        return RedirectResponse(url=f"/order_manager/{msg['manager_id']}?msg=创建成功&success=1", status_code=303)
+    return RedirectResponse(url=f"/order_manager?msg={urllib.parse.quote(str(msg))}&success={1 if ok else 0}", status_code=303)
+
+@app.post("/api/order_manager/update")
+async def api_order_manager_update(manager_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+    if field in ['shipping_fee', 'paid_amount']:
+        try: value = float(value)
+        except: return {"success": False, "message": "必须是数字"}
+    if field in ['is_paid', 'is_finished']:
+        value = int(value)
+    ok, msg = update_manager(manager_id, {field: value})
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order_manager/delete")
+async def api_order_manager_delete(manager_id: str = Form(...), current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
+    ok, msg = delete_manager(manager_id)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order_manager/batch_delete")
+async def api_order_manager_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
+    data = await request.json()
+    ids = data.get("ids", [])
+    ok, msg = batch_delete_managers(ids)
+    return {"success": ok, "message": msg}
+
+@app.get("/api/order_manager/template")
+async def api_order_manager_template(current_user: dict = Depends(get_current_user)):
+    """下载客户订单导入模板"""
+    import io
+    from fastapi.responses import StreamingResponse
+
+    # 创建CSV模板内容
+    csv_content = "订单号,客户编号,日期,备注\nCO20260101001,C001,2026-01-01,示例备注\nCO20260101002,C002,2026-01-01,示例备注\n"
+
+    # 创建流式响应
+    buffer = io.BytesIO(csv_content.encode('utf-8-sig'))  # 使用utf-8-sig以支持Excel正确显示中文
+
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=customer_order_template.csv"}
+    )
+
+@app.post("/api/order_manager/batch_import")
+async def api_order_manager_batch_import(batch_text: str = Form(None), csv_file: UploadFile = File(None), cli_id: str = Form(None), current_user: dict = Depends(login_required)):
+    if batch_text:
+        text = batch_text
+    elif csv_file:
+        content = await csv_file.read()
+        try:
+            text = content.decode('utf-8-sig').strip()
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='replace').strip()
+    else:
+        return RedirectResponse(url="/order_manager?msg=未提供导入内容&success=0", status_code=303)
+    success_count, errors = batch_import_manager(text, cli_id)
+    import urllib.parse
+    err_msg = ""
+    if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
+    return RedirectResponse(url=f"/order_manager?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
+
+@app.post("/api/order_manager/add_order")
+async def api_order_manager_add_order(manager_id: str = Form(...), order_id: str = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = add_order_to_manager(manager_id, order_id)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order_manager/remove_order")
+async def api_order_manager_remove_order(manager_id: str = Form(...), order_id: str = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = remove_order_from_manager(manager_id, order_id)
+    return {"success": ok, "message": msg}
+
+@app.get("/api/order_manager/list")
+async def api_order_manager_list_api(page: int = 1, page_size: int = 20, search: str = "", cli_id: str = "", current_user: dict = Depends(login_required)):
+    results, total = get_manager_list(page=page, page_size=page_size, search_kw=search, cli_id=cli_id)
+    return {"items": results, "total": total, "page": page, "page_size": page_size}
+
+@app.get("/api/order_manager/{manager_id}/orders")
+async def api_order_manager_get_orders(manager_id: str, current_user: dict = Depends(login_required)):
+    orders = get_manager_orders(manager_id)
+    return {"orders": orders}
+
+@app.post("/api/order_manager/{manager_id}/attachment")
+async def api_order_manager_upload_attachment(manager_id: str, file: UploadFile = File(...), file_type: str = Form("其他"), current_user: dict = Depends(login_required)):
+    import os
+    from werkzeug.utils import secure_filename
+
+    manager = get_manager_by_id(manager_id)
+    if not manager:
+        return {"success": False, "message": "客户订单不存在"}
+
+    # 创建存储目录
+    base_path = os.environ.get('ATTACHMENT_PATH', 'E:/1_Business/Attachments')
+    customer_order_no = manager['customer_order_no']
+    dir_path = os.path.join(base_path, customer_order_no)
+    os.makedirs(dir_path, exist_ok=True)
+
+    # 保存文件
+    filename = secure_filename(file.filename)
+    file_path = os.path.join(dir_path, filename)
+    content = await file.read()
+    with open(file_path, 'wb') as f:
+        f.write(content)
+
+    # 记录到数据库
+    ok, msg = add_attachment(manager_id, file_path, file_type, filename)
+    return {"success": ok, "message": msg, "file_path": file_path}
+
+@app.get("/api/order_manager/{manager_id}/attachments")
+async def api_order_manager_get_attachments(manager_id: str, current_user: dict = Depends(login_required)):
+    attachments = get_attachments(manager_id)
+    return {"attachments": attachments}
+
+@app.delete("/api/order_manager/attachment/{attachment_id}")
+async def api_order_manager_delete_attachment(attachment_id: int, current_user: dict = Depends(login_required)):
+    ok, msg = delete_attachment(attachment_id)
+    return {"success": ok, "message": msg}
+
+# ============ 采购管理 ============
+
 @app.get("/buy", response_class=HTMLResponse)
 async def buy_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", order_id: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_shipped: str = ""):
     # 日期默认不选择，保持为空
@@ -1993,7 +2203,9 @@ async def api_backup_list(current_user: dict = Depends(login_required)):
 
 @app.post("/api/backup/restore")
 async def api_backup_restore(backup_path: str = Form(...), current_user: dict = Depends(login_required)):
-    """从备份目录恢复数据库"""
+    """从备份目录恢复数据库 - 支持 SQLite 和 PostgreSQL"""
+    import subprocess
+
     if current_user['rule'] != '3':
         return {"success": False, "message": "仅管理员可执行恢复"}
 
@@ -2009,23 +2221,59 @@ async def api_backup_restore(backup_path: str = Form(...), current_user: dict = 
         close_all_connections()
         clear_cache()
 
-        # 恢复所有 .db 文件
-        for db_file in os.listdir(backup_path):
-            if db_file.endswith(".db"):
-                src = os.path.join(backup_path, db_file)
-                dst = os.path.join(project_root, db_file)
-                # 删除目标文件（包括 WAL 和 SHM 文件）
-                if os.path.exists(dst):
-                    os.remove(dst)
-                wal_file = dst + "-wal"
-                shm_file = dst + "-shm"
-                if os.path.exists(wal_file):
-                    os.remove(wal_file)
-                if os.path.exists(shm_file):
-                    os.remove(shm_file)
-                # 复制备份文件
-                shutil.copy2(src, dst)
-                restored_count += 1
+        # 根据数据库类型选择恢复方式
+        if is_postgresql():
+            # PostgreSQL 恢复：使用 psql 执行 SQL 文件
+            sql_file = os.path.join(backup_path, "uni_platform.sql")
+            if not os.path.exists(sql_file):
+                return {"success": False, "message": "备份目录中没有找到 uni_platform.sql 文件"}
+
+            pg_config = get_pg_config()
+
+            # 构建 psql 命令
+            cmd = [
+                "psql",
+                "-h", pg_config['host'],
+                "-p", str(pg_config['port']),
+                "-U", pg_config['user'],
+                "-d", pg_config['database'],
+                "-f", sql_file
+            ]
+
+            # 设置环境变量传递密码
+            env = os.environ.copy()
+            env["PGPASSWORD"] = pg_config['password']
+
+            try:
+                result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
+                if result.returncode == 0:
+                    restored_count = 1
+                    print(f"[恢复] PostgreSQL 恢复成功")
+                else:
+                    # psql 可能返回错误但部分成功，检查是否有输出
+                    if "ERROR" in result.stderr:
+                        return {"success": False, "message": f"psql 执行出错: {result.stderr[:500]}"}
+                    restored_count = 1  # 警告但视为成功
+            except FileNotFoundError:
+                return {"success": False, "message": "psql 命令未找到，请确保 PostgreSQL 客户端已安装并添加到 PATH"}
+        else:
+            # SQLite 恢复：复制文件
+            for db_file in os.listdir(backup_path):
+                if db_file.endswith(".db"):
+                    src = os.path.join(backup_path, db_file)
+                    dst = os.path.join(project_root, db_file)
+                    # 删除目标文件（包括 WAL 和 SHM 文件）
+                    if os.path.exists(dst):
+                        os.remove(dst)
+                    wal_file = dst + "-wal"
+                    shm_file = dst + "-shm"
+                    if os.path.exists(wal_file):
+                        os.remove(wal_file)
+                    if os.path.exists(shm_file):
+                        os.remove(shm_file)
+                    # 复制备份文件
+                    shutil.copy2(src, dst)
+                    restored_count += 1
 
         if restored_count == 0:
             return {"success": False, "message": "备份目录中没有找到数据库文件"}
@@ -2033,7 +2281,8 @@ async def api_backup_restore(backup_path: str = Form(...), current_user: dict = 
         # 再次清除缓存
         clear_cache()
 
-        return {"success": True, "message": f"恢复成功！已恢复 {restored_count} 个数据库文件（请刷新页面）"}
+        db_type = "PostgreSQL" if is_postgresql() else "SQLite"
+        return {"success": True, "message": f"恢复成功！已恢复 {db_type} 数据库（请刷新页面）"}
     except Exception as e:
         return {"success": False, "message": f"恢复失败: {str(e)}"}
 

@@ -68,6 +68,39 @@ def _get_output_base():
     return _get_default_output_base()
 
 
+def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
+    """
+    生成唯一的发票编号和文件路径
+
+    发票编号格式: UNI%Y%m%d，如果已存在则添加01, 02, 03等后缀
+
+    Args:
+        output_dir: 输出目录
+        cli_name: 客户名称
+        doc_type: 文档类型 (CI, PI)
+
+    Returns:
+        tuple: (invoice_no, output_filename, output_path)
+    """
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d")
+    base_invoice_no = f"UNI{date_str}"
+
+    # 尝试不带后缀
+    invoice_no = base_invoice_no
+    output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+    output_path = os.path.join(output_dir, output_filename)
+
+    suffix = 1
+    while os.path.exists(output_path):
+        invoice_no = f"{base_invoice_no}{suffix:02d}"
+        output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
+        suffix += 1
+
+    return invoice_no, output_filename, output_path
+
+
 def _safe_write_cell(ws, row, col, value):
     """安全写入单元格 - 必须先取消合并再获取单元格"""
     # 关键：先取消该单元格所在的所有合并区域，再获取单元格
@@ -169,17 +202,15 @@ def generate_ci_us(order_ids, output_base=None, template_dir=None):
 
     now = datetime.now()
     date_dir = now.strftime("%Y%m%d")
-    invoice_no = now.strftime("UNI%Y%m%d%H%M%S")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    output_filename = f"COMMERCIAL INVOICE_{cli_name}_{invoice_no}.xlsx"
-    output_path = os.path.join(output_dir, output_filename)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI")
 
     # 生成文档
-    return _generate_ci_us_excel(orders, template_dir, output_path)
+    return _generate_ci_us_excel(orders, template_dir, output_path, now)
 
 
-def _generate_ci_us_excel(orders, template_dir, output_path):
+def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
     """生成美元版CI Excel文件"""
     data_count = len(orders)
     first_order = orders[0]
@@ -197,7 +228,6 @@ def _generate_ci_us_excel(orders, template_dir, output_path):
     ws = wb.active
 
     # 填写头部信息
-    invoice_no = now.strftime("UNI%Y%m%d%H%M")
     ws['B2'] = invoice_no
     ws['F2'] = now.strftime("%Y-%m-%d")
 
@@ -392,11 +422,9 @@ def generate_pi(order_ids, output_base=None, template_dir=None):
 
     now = datetime.now()
     date_dir = now.strftime("%Y%m%d")
-    invoice_no = now.strftime("UNI%Y%m%d%H%M%S")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    output_filename = f"Proforma Invoice_{cli_name}_{invoice_no}_KR.xlsx"
-    output_path = os.path.join(output_dir, output_filename)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_KR")
 
     # 获取汇率
     krw_val, _ = get_exchange_rates()
@@ -414,10 +442,10 @@ def generate_pi(order_ids, output_base=None, template_dir=None):
             price_kwr = float(price_kwr)
         order["calculated_price_kwr"] = price_kwr
 
-    return _generate_pi_kr_excel(orders, template_dir, output_path)
+    return _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no)
 
 
-def _generate_pi_kr_excel(orders, template_dir, output_path):
+def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
     """
     生成PI-KR Excel文件 - 双模板拼接方式
 
@@ -440,7 +468,7 @@ def _generate_pi_kr_excel(orders, template_dir, output_path):
 
     if not use_new_template:
         # 回退到旧模板
-        return _generate_pi_excel_legacy(orders, template_dir, output_path)
+        return _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no)
 
     # 加载模板
     wb1 = openpyxl.load_workbook(template1_path)
@@ -451,7 +479,7 @@ def _generate_pi_kr_excel(orders, template_dir, output_path):
 
     # ---- 1. 填写头部信息 ----
     # Row 8: Invoice No. (D8)
-    ws1.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
+    ws1.cell(8, 4).value = invoice_no
     # Row 9: Date (D9)
     ws1.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
@@ -632,7 +660,7 @@ def _generate_pi_kr_excel(orders, template_dir, output_path):
     }
 
 
-def _generate_pi_excel_legacy(orders, template_dir, output_path):
+def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
     """生成PI Excel文件"""
     data_count = len(orders)
     first_order = orders[0]
@@ -659,7 +687,7 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path):
     ws = wb.active
 
     # ---- 1. 填写头部信息 ----
-    ws.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
+    ws.cell(8, 4).value = invoice_no
     ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
@@ -895,11 +923,9 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
 
     now = datetime.now()
     date_dir = now.strftime("%Y%m%d")
-    invoice_no = now.strftime("UNI%Y%m%d%H%M%S")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    output_filename = f"Proforma Invoice_{cli_name}_{invoice_no}_US.xlsx"
-    output_path = os.path.join(output_dir, output_filename)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_US")
 
     # 获取汇率 (USD汇率用于计算)
     _, usd_val = get_exchange_rates()
@@ -918,10 +944,10 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
             price_usd = float(price_usd)
         order["calculated_price_usd"] = price_usd
 
-    return _generate_pi_us_excel(orders, template_dir, output_path)
+    return _generate_pi_us_excel(orders, template_dir, output_path, invoice_no)
 
 
-def _generate_pi_us_excel(orders, template_dir, output_path):
+def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
     """
     生成PI-US Excel文件 - 双模板拼接方式
 
@@ -952,7 +978,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path):
                     break
         if not template_path or not os.path.exists(template_path):
             return False, f"US模板文件不存在于 {template_dir}"
-        return _generate_pi_us_excel_legacy(orders, template_path, output_path)
+        return _generate_pi_us_excel_legacy(orders, template_path, output_path, invoice_no)
 
     # 加载模板
     wb1 = openpyxl.load_workbook(template1_path)
@@ -963,7 +989,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path):
 
     # ---- 1. 填写头部信息 ----
     # Row 8: Invoice No. (D8)
-    ws1.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
+    ws1.cell(8, 4).value = invoice_no
     # Row 9: Date (D9)
     ws1.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
@@ -1136,7 +1162,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path):
     }
 
 
-def _generate_pi_us_excel_legacy(orders, template_path, output_path):
+def _generate_pi_us_excel_legacy(orders, template_path, output_path, invoice_no):
     """旧版PI-US生成逻辑 - 兼容旧版本模板"""
     data_count = len(orders)
     first_order = orders[0]
@@ -1146,7 +1172,7 @@ def _generate_pi_us_excel_legacy(orders, template_path, output_path):
     ws = wb.active
 
     # 填写头部信息
-    ws.cell(8, 4).value = now.strftime("UNI%Y%m%d%H")
+    ws.cell(8, 4).value = invoice_no
     ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")

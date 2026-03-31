@@ -322,9 +322,9 @@
                     <td>{{ item.date_code or '' }}</td>
                     <td>{{ item.delivery_date or '' }}</td>
                     <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_price_rmb')"
-                        style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ "%.2f"|format(item.buy_price_rmb or 0) }}</td>
+                        style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ "%.4f"|format(item.buy_price_rmb or 0) }}</td>
                     <td ondblclick="editField(this, '{{ item.buy_id }}', 'sales_price_rmb')"
-                        style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ "%.2f"|format(item.sales_price_rmb or 0) }}</td>
+                        style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ "%.4f"|format(item.sales_price_rmb or 0) }}</td>
                     <td ondblclick="editField(this, '{{ item.buy_id }}', 'buy_qty')"
                         style="cursor: pointer; color: var(--primary); font-weight: 600;">{{ item.buy_qty }}</td>
                     <td style="font-weight: 700;">{{ item.total_amount }}</td>
@@ -589,7 +589,7 @@
     function calcTotal() {
         const p = parseFloat(document.getElementById('in_price').value) || 0;
         const q = parseInt(document.getElementById('in_qty').value) || 0;
-        document.getElementById('out_total').value = (p * q).toFixed(2);
+        document.getElementById('out_total').value = (p * q).toFixed(4);
     }
 
     async function toggleNode(buyId, field, value) {
@@ -699,7 +699,7 @@
                     const rmbFormData = new FormData();
                     rmbFormData.append('buy_id', buyId);
                     rmbFormData.append('field', 'buy_price_rmb');
-                    rmbFormData.append('value', newRmb.toFixed(2));
+                    rmbFormData.append('value', newRmb.toFixed(4));
 
                     await fetch('/api/buy/update', {
                         method: 'POST',

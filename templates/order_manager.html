@@ -1,0 +1,662 @@
+{% extends "layout.html" %}
+
+{% block title %}客户订单 - UniUltra 开放平台{% endblock %}
+
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        white-space: nowrap;
+    }
+    .page-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+    .header-filters {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+    .header-filters input,
+    .header-filters select {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.8rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--card-bg);
+        color: var(--text-main);
+    }
+    .header-filters input[type="text"] { width: 140px; }
+    .header-filters input[type="date"] { width: 120px; }
+    .header-filters select { min-width: 80px; }
+    .page-actions-dropdown {
+        margin-left: auto;
+        position: relative;
+    }
+    .dropdown-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+    }
+    .dropdown-toggle:hover { transform: scale(1.1); }
+    .page-actions-dropdown .dropdown-menu {
+        display: none !important;
+        position: absolute;
+        right: 0;
+        top: 100%;
+        margin-top: 0.5rem;
+        background: var(--card-bg);
+        border: var(--glass-border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+        z-index: 100;
+        padding: 0.5rem;
+        gap: 0.5rem;
+        flex-wrap: nowrap !important;
+    }
+    .page-actions-dropdown .dropdown-menu.show {
+        display: flex !important;
+        flex-direction: row !important;
+    }
+    .page-actions-dropdown .dropdown-item {
+        display: inline-flex !important;
+        flex-direction: row !important;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.5rem 0.75rem;
+        color: var(--text-main);
+        text-decoration: none;
+        cursor: pointer;
+        font-size: 0.85rem;
+        border: none;
+        background: var(--bg-glass);
+        border-radius: var(--radius);
+        white-space: nowrap;
+    }
+    .page-actions-dropdown .dropdown-item:hover { background: rgba(99, 102, 241, 0.1); }
+    .page-actions-dropdown .dropdown-item.danger { color: #EF4444; }
+    .page-actions-dropdown .dropdown-item.danger:hover { background: rgba(239, 68, 68, 0.1); }
+    .dropdown-divider { display: none !important; }
+
+    .data-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+
+    .data-table th {
+        background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
+        padding: 0.5rem 0.6rem;
+        text-align: left;
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #1a1a1a;
+        border-bottom: 2px solid #94a3b8;
+        border-right: 1px solid #cbd5e1;
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .data-table th:last-child { border-right: none; }
+
+    .data-table td {
+        padding: 0.4rem 0.5rem;
+        border-bottom: 1px solid #e2e8f0;
+        border-right: 1px solid #e2e8f0;
+    }
+
+    .data-table td:last-child { border-right: none; }
+
+    .data-table tbody tr:nth-child(odd) { background: #f1f5f9; }
+    .data-table tbody tr:nth-child(even) { background: #ffffff; }
+    .data-table tbody tr:hover { background: #e0f2fe; }
+
+    [data-theme="dark"] .data-table th {
+        background: linear-gradient(180deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%);
+        border-bottom: 2px solid #475569;
+        border-right: 1px solid #475569;
+    }
+
+    [data-theme="dark"] .data-table td {
+        border-bottom: 1px solid #334155;
+        border-right: 1px solid #334155;
+    }
+
+    [data-theme="dark"] .data-table tbody tr:nth-child(odd) { background: rgba(51, 65, 85, 0.5); }
+    [data-theme="dark"] .data-table tbody tr:nth-child(even) { background: rgba(30, 41, 59, 0.3); }
+    [data-theme="dark"] .data-table tbody tr:hover { background: rgba(99, 102, 241, 0.2); }
+
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .profit { color: #10B981; font-weight: 600; }
+    .loss { color: #EF4444; font-weight: 600; }
+    .link { color: var(--primary); text-decoration: none; cursor: pointer; }
+    .link:hover { text-decoration: underline; }
+
+    .status-badge {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.7rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+    .status-badge:hover { opacity: 0.8; }
+    .status-badge.paid, .status-badge.finished {
+        background: #D1FAE5;
+        color: #065F46;
+    }
+    .status-badge.unpaid, .status-badge.unfinished {
+        background: #FEE2E2;
+        color: #991B1B;
+    }
+    [data-theme="dark"] .status-badge.paid, [data-theme="dark"] .status-badge.finished {
+        background: rgba(16, 185, 129, 0.2);
+        color: #6EE7B7;
+    }
+    [data-theme="dark"] .status-badge.unpaid, [data-theme="dark"] .status-badge.unfinished {
+        background: rgba(239, 68, 68, 0.2);
+        color: #FCA5A5;
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.7rem;
+        border: none;
+        border-radius: var(--radius);
+        cursor: pointer;
+        margin-right: 0.25rem;
+    }
+    .btn-info { background: #0EA5E9; color: white; }
+    .btn-info:hover { background: #0284C7; }
+    .btn-danger { background: #EF4444; color: white; }
+    .btn-danger:hover { background: #DC2626; }
+
+    .pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        background: var(--card-bg);
+        border-top: 1px solid var(--border);
+        font-size: 0.8rem;
+    }
+    .pagination a, .pagination span {
+        padding: 0.3rem 0.6rem;
+        color: var(--text-main);
+        text-decoration: none;
+        border-radius: var(--radius);
+    }
+    .pagination a:hover { background: rgba(99, 102, 241, 0.1); }
+
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        max-width: 500px;
+        width: 90%;
+        max-height: 90vh;
+        overflow: auto;
+        box-shadow: var(--shadow-lg);
+    }
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: var(--text-main);
+    }
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: var(--text-muted);
+        line-height: 1;
+    }
+    .modal-close:hover { color: var(--text-main); }
+    .modal-body { padding: 1rem; }
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding: 1rem;
+        border-top: 1px solid var(--border);
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 0.25rem; }
+    .form-group.full-width { grid-column: span 2; }
+    .form-group label {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--text-muted);
+    }
+    .form-group input, .form-group select, .form-group textarea {
+        padding: 0.5rem;
+        font-size: 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--card-bg);
+        color: var(--text-main);
+    }
+    .form-group textarea { resize: vertical; min-height: 60px; }
+    .required { color: #EF4444; }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+        border: none;
+        border-radius: var(--radius);
+        cursor: pointer;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: #4F46E5; }
+    .btn-secondary { background: var(--bg-glass); color: var(--text-main); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: var(--text-muted);
+    }
+</style>
+
+<div class="page-header">
+    <h1>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+        </svg>
+        客户订单管理
+    </h1>
+    <!-- 筛选项放到标题右边 -->
+    <div class="header-filters">
+        <select id="filter_cli" onchange="applyFilter()">
+            <option value="">全部客户</option>
+            {% for c in cli_list %}
+            <option value="{{ c.cli_id }}" {% if cli_id==c.cli_id %}selected{% endif %}>{{ c.cli_name }}</option>
+            {% endfor %}
+        </select>
+        <select id="filter_paid" onchange="applyFilter()">
+            <option value="">付款状态</option>
+            <option value="0" {% if is_paid=='0' %}selected{% endif %}>未付款</option>
+            <option value="1" {% if is_paid=='1' %}selected{% endif %}>已付款</option>
+        </select>
+        <select id="filter_finished" onchange="applyFilter()">
+            <option value="">完结状态</option>
+            <option value="0" {% if is_finished=='0' %}selected{% endif %}>未完结</option>
+            <option value="1" {% if is_finished=='1' %}selected{% endif %}>已完结</option>
+        </select>
+        <input type="date" id="start_date" value="{{ start_date }}" onchange="applyFilter()">
+        <input type="date" id="end_date" value="{{ end_date }}" onchange="applyFilter()">
+        <input type="text" id="search_input" value="{{ search }}" placeholder="订单号/客户名...">
+    </div>
+    <!-- 按钮整合到加号下拉菜单 -->
+    <div class="page-actions-dropdown">
+        <button class="dropdown-toggle" onclick="toggleActionDropdown(this, event)" title="更多操作">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+        </button>
+        <div class="dropdown-menu">
+            <button class="dropdown-item" onclick="toggleModal('addModal')">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                新增客户订单
+            </button>
+            <button class="dropdown-item" onclick="toggleModal('importModal')">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                批量导入
+            </button>
+            <div class="dropdown-divider"></div>
+            <button class="dropdown-item danger" onclick="batchDelete()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                批量删除
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="data-card">
+    <div class="table-container" style="overflow-x: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 30px;"><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
+                    <th>日期</th>
+                    <th>客户订单号</th>
+                    <th>客户名</th>
+                    <th>总成本</th>
+                    <th>总价(RMB)</th>
+                    <th>总价(KRW)</th>
+                    <th>总价(USD)</th>
+                    <th>型号数</th>
+                    <th>数量</th>
+                    <th>利润</th>
+                    <th>付款</th>
+                    <th>完结</th>
+                    <th>已付金额</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr data-id="{{ item.manager_id }}">
+                    <td><input type="checkbox" class="row-checkbox" value="{{ item.manager_id }}"></td>
+                    <td>{{ item.order_date or '-' }}</td>
+                    <td><a href="/order_manager/{{ item.manager_id }}" class="link">{{ item.customer_order_no }}</a></td>
+                    <td>{{ item.cli_name or '-' }}</td>
+                    <td class="num">{{ "%.2f"|format(item.total_cost_rmb or 0) }}</td>
+                    <td class="num">{{ "%.2f"|format(item.total_price_rmb or 0) }}</td>
+                    <td class="num">{{ "%.0f"|format(item.total_price_kwr or 0) }}</td>
+                    <td class="num">{{ "%.2f"|format(item.total_price_usd or 0) }}</td>
+                    <td class="num">{{ item.model_count or 0 }}</td>
+                    <td class="num">{{ item.total_qty or 0 }}</td>
+                    <td class="num {{ 'profit' if (item.profit_rmb or 0) > 0 else 'loss' }}">{{ "%.2f"|format(item.profit_rmb or 0) }}</td>
+                    <td>
+                        <span class="status-badge {{ 'paid' if item.is_paid == 1 else 'unpaid' }}" onclick="toggleStatus('{{ item.manager_id }}', 'is_paid', {{ 0 if item.is_paid == 1 else 1 }})">
+                            {{ '已付款' if item.is_paid == 1 else '未付款' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="status-badge {{ 'finished' if item.is_finished == 1 else 'unfinished' }}" onclick="toggleStatus('{{ item.manager_id }}', 'is_finished', {{ 0 if item.is_finished == 1 else 1 }})">
+                            {{ '已完结' if item.is_finished == 1 else '未完结' }}
+                        </span>
+                    </td>
+                    <td class="num">{{ "%.2f"|format(item.paid_amount or 0) }}</td>
+                    <td>
+                        <a href="/order_manager/{{ item.manager_id }}" class="btn-sm btn-info">详情</a>
+                        <button class="btn-sm btn-danger" onclick="deleteItem('{{ item.manager_id }}')">删除</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not items %}
+                <tr>
+                    <td colspan="15" class="empty-state">暂无客户订单数据</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 分页 -->
+    <div class="pagination">
+        <span>共 {{ total }} 条，第 {{ page }}/{{ total_pages }} 页</span>
+        <div>
+            {% if page > 1 %}
+            <a href="?page=1&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">首页</a>
+            <a href="?page={{ page - 1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">上一页</a>
+            {% endif %}
+            {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">下一页</a>
+            <a href="?page={{ total_pages }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">末页</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 新增模态框 -->
+<div id="addModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>新增客户订单</h2>
+            <button class="modal-close" onclick="toggleModal('addModal')">&times;</button>
+        </div>
+        <form id="addForm" method="POST" action="/api/order_manager/add">
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>客户订单号</label>
+                        <input type="text" name="customer_order_no" placeholder="留空自动生成">
+                    </div>
+                    <div class="form-group">
+                        <label>订单日期</label>
+                        <input type="date" name="order_date" value="{{ today }}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label>客户 <span class="required">*</span></label>
+                        <select name="cli_id" required>
+                            <option value="">请选择客户</option>
+                            {% for cli in cli_list %}
+                            <option value="{{ cli.cli_id }}">{{ cli.cli_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>邮费</label>
+                        <input type="number" name="shipping_fee" value="0" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label>快递编号</label>
+                        <input type="text" name="tracking_no">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label>查询链接</label>
+                        <input type="text" name="query_link" placeholder="物流查询链接">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label>备注</label>
+                        <textarea name="remark" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">保存</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleModal('addModal')">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 导入模态框 -->
+<div id="importModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>批量导入客户订单</h2>
+            <button class="modal-close" onclick="toggleModal('importModal')">&times;</button>
+        </div>
+        <form id="importForm" method="POST" action="/api/order_manager/batch_import" enctype="multipart/form-data">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>CSV格式说明</label>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                        格式：订单号,客户编号,日期,备注
+                    </p>
+                    <a href="/api/order_manager/template" class="btn btn-secondary" style="display: inline-block; margin-bottom: 0.5rem; padding: 0.3rem 0.6rem; font-size: 0.8rem;">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        下载导入模板
+                    </a>
+                    <textarea name="batch_text" rows="6" placeholder="CO20260101001,C001,2026-01-01,备注&#10;CO20260101002,C002,2026-01-01,备注"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>或上传CSV文件</label>
+                    <input type="file" name="csv_file" accept=".csv,.txt">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">导入</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleModal('importModal')">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// 筛选功能
+function applyFilter() {
+    const search = document.getElementById('search_input').value;
+    const cliId = document.getElementById('filter_cli').value;
+    const isPaid = document.getElementById('filter_paid').value;
+    const isFinished = document.getElementById('filter_finished').value;
+    const startDate = document.getElementById('start_date').value;
+    const endDate = document.getElementById('end_date').value;
+
+    let url = '/order_manager?';
+    if (search) url += 'search=' + encodeURIComponent(search) + '&';
+    if (cliId) url += 'cli_id=' + cliId + '&';
+    if (isPaid) url += 'is_paid=' + isPaid + '&';
+    if (isFinished) url += 'is_finished=' + isFinished + '&';
+    if (startDate) url += 'start_date=' + startDate + '&';
+    if (endDate) url += 'end_date=' + endDate + '&';
+
+    window.location.href = url;
+}
+
+// 回车触发搜索
+document.getElementById('search_input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') applyFilter();
+});
+
+// 下拉菜单
+function toggleActionDropdown(btn, event) {
+    event.stopPropagation();
+    const menu = btn.nextElementSibling;
+    const isOpen = menu.classList.contains('show');
+
+    // 关闭所有其他菜单
+    document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+
+    if (!isOpen) {
+        menu.classList.add('show');
+    }
+}
+
+// 点击其他地方关闭菜单
+document.addEventListener('click', function() {
+    document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+});
+
+// 模态框
+function toggleModal(id) {
+    const modal = document.getElementById(id);
+    modal.classList.toggle('show');
+}
+
+// 全选
+function toggleSelectAll(checked) {
+    document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = checked);
+}
+
+// 切换状态
+async function toggleStatus(managerId, field, value) {
+    const formData = new FormData();
+    formData.append('manager_id', managerId);
+    formData.append('field', field);
+    formData.append('value', value);
+
+    const response = await fetch('/api/order_manager/update', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.success) {
+        location.reload();
+    } else {
+        alert(result.message);
+    }
+}
+
+// 删除
+async function deleteItem(managerId) {
+    if (!confirm('确定要删除此客户订单吗？关联的销售订单不会被删除。')) return;
+
+    const formData = new FormData();
+    formData.append('manager_id', managerId);
+
+    const response = await fetch('/api/order_manager/delete', { method: 'POST', body: formData });
+    const result = await response.json();
+    if (result.success) {
+        location.reload();
+    } else {
+        alert(result.message);
+    }
+}
+
+// 批量删除
+async function batchDelete() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要删除的记录');
+        return;
+    }
+    if (!confirm(`确定要删除选中的 ${checkboxes.length} 条记录吗？`)) return;
+
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    const response = await fetch('/api/order_manager/batch_delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+    });
+    const result = await response.json();
+    if (result.success) {
+        location.reload();
+    } else {
+        alert(result.message);
+    }
+}
+</script>
+{% endblock %}
