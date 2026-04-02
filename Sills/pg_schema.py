@@ -205,15 +205,15 @@ CREATE TABLE IF NOT EXISTS uni_order_manager (
     CONSTRAINT chk_om_is_finished CHECK (is_finished IN (0,1))
 );
 
--- 客户订单与销售订单关联表
+-- 客户订单与报价订单关联表
 CREATE TABLE IF NOT EXISTS uni_order_manager_rel (
     id SERIAL PRIMARY KEY,
     manager_id TEXT NOT NULL,
-    order_id TEXT NOT NULL,
+    offer_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
-    FOREIGN KEY (order_id) REFERENCES uni_order(order_id) ON DELETE CASCADE,
-    UNIQUE(manager_id, order_id)
+    FOREIGN KEY (offer_id) REFERENCES uni_offer(offer_id) ON DELETE CASCADE,
+    UNIQUE(manager_id, offer_id)
 );
 
 -- 客户订单附件表
@@ -389,7 +389,7 @@ CREATE INDEX IF NOT EXISTS idx_buy_vendor ON uni_buy(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_order_manager_cli ON uni_order_manager(cli_id);
 CREATE INDEX IF NOT EXISTS idx_order_manager_date ON uni_order_manager(order_date);
 CREATE INDEX IF NOT EXISTS idx_order_manager_rel_manager ON uni_order_manager_rel(manager_id);
-CREATE INDEX IF NOT EXISTS idx_order_manager_rel_order ON uni_order_manager_rel(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_manager_rel_offer ON uni_order_manager_rel(offer_id);
 
 CREATE INDEX IF NOT EXISTS idx_daily_date ON uni_daily(record_date);
 CREATE INDEX IF NOT EXISTS idx_daily_currency ON uni_daily(currency_code);

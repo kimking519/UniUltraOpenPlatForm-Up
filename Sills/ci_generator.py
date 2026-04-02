@@ -67,11 +67,12 @@ def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
     生成唯一的发票编号和文件路径
 
     发票编号格式: UNI%Y%m%d，如果已存在则添加01, 02, 03等后缀
+    文件名格式: COMMERCIAL INVOICE_{cli_name}_{invoice_no}.xlsx
 
     Args:
         output_dir: 输出目录
         cli_name: 客户名称
-        doc_type: 文档类型 (CI, PI)
+        doc_type: 文档类型 (CI)
 
     Returns:
         tuple: (invoice_no, output_filename, output_path)
@@ -80,15 +81,18 @@ def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
     date_str = now.strftime("%Y%m%d")
     base_invoice_no = f"UNI{date_str}"
 
+    # CI固定使用 COMMERCIAL INVOICE 前缀
+    doc_prefix = "COMMERCIAL INVOICE"
+
     # 尝试不带后缀
     invoice_no = base_invoice_no
-    output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+    output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
     output_path = os.path.join(output_dir, output_filename)
 
     suffix = 1
     while os.path.exists(output_path):
         invoice_no = f"{base_invoice_no}{suffix:02d}"
-        output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
         output_path = os.path.join(output_dir, output_filename)
         suffix += 1
 
@@ -392,6 +396,8 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
         return False, f"订单属于不同客户 ({', '.join(cli_names)})，无法生成同一份CI"
 
     cli_name = list(cli_names)[0]
+    # 获取客户英文名，用于文件名
+    cli_name_en = orders[0].get("cli_name_en") or orders[0].get("cli_name") or "Unknown"
 
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
@@ -411,3 +417,104 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
 
     # 生成 CI
     return generate_ci_excel(orders, template_dir, output_path, invoice_no)
+
+
+def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    基于报价生成韩国版 Commercial Invoice
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    # 获取报价数据
+    offers = get_offers_for_ci(offer_ids)
+
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    # 检查客户一致性
+    cli_names = set(o.get("cli_name") or "未知客户" for o in offers)
+    if len(cli_names) > 1:
+        return False, f"报价属于不同客户 ({', '.join(cli_names)})，无法生成同一份CI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if not output_base:
+        output_base = _get_output_base()
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI")
+
+    # 确定模板目录
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "ci_kr")
+
+    # 获取汇率
+    krw_val, _ = get_exchange_rates()
+
+    # 计算韩元价格
+    for offer in offers:
+        price_rmb = offer.get("offer_price_rmb")
+        if price_rmb and float(price_rmb or 0) > 0:
+            offer["price_kwr"] = round(float(price_rmb) * krw_val, 1)
+        else:
+            offer["price_kwr"] = 0
+
+    # 适配报价数据为订单格式
+    adapted_offers = []
+    for offer in offers:
+        adapted = {
+            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
+            "date_code": offer.get("date_code", ""),
+            "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
+            "inquiry_qty": offer.get("inquiry_qty", 0),
+            "delivery_date": offer.get("delivery_date", ""),
+            "price_kwr": offer.get("price_kwr", 0),
+            "price_rmb": offer.get("offer_price_rmb", 0),
+            "cli_name_en": offer.get("cli_name_en", "") or offer.get("cli_name", ""),
+            "cli_name": offer.get("cli_name", ""),
+            "contact_name": offer.get("contact_name", ""),
+            "email": offer.get("email", ""),
+            "phone": offer.get("phone", ""),
+            "address": offer.get("address", ""),
+        }
+        adapted_offers.append(adapted)
+
+    # 生成 CI
+    return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no)
+
+
+def get_offers_for_ci(offer_ids):
+    """获取报价列表（用于生成CI文档）"""
+    if not offer_ids:
+        return []
+    placeholders = ','.join(['?'] * len(offer_ids))
+    with get_db_connection() as conn:
+        rows = conn.execute(f"""
+            SELECT o.offer_id, o.offer_date,
+                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb, o.price_usd as offer_price_usd,
+                   o.quoted_qty, o.date_code, o.delivery_date, o.inquiry_qty, o.inquiry_mpn,
+                   c.cli_id, c.cli_name, c.cli_name_en, c.contact_name, c.address, c.email, c.phone,
+                   c.cli_full_name, c.region
+            FROM uni_offer o
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            WHERE o.offer_id IN ({placeholders})
+            ORDER BY o.offer_id
+        """, offer_ids).fetchall()
+        return [dict(r) for r in rows]

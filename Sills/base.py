@@ -396,6 +396,21 @@ def _init_db_postgresql():
 
     with get_db_connection() as conn:
         cur = conn.cursor()
+
+        # 迁移：uni_order_manager_rel 表从 order_id 改为 offer_id
+        try:
+            # 检查是否存在 order_id 列
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'uni_order_manager_rel' AND column_name = 'order_id'
+            """)
+            if cur.fetchone():
+                # 删除旧表并重建
+                cur.execute("DROP TABLE IF EXISTS uni_order_manager_rel CASCADE")
+                print("[DB] 迁移：uni_order_manager_rel 表已删除，将重建为关联报价订单")
+        except Exception as e:
+            print(f"[DB] 迁移检查: {e}")
+
         # 执行 schema
         cur.execute(PG_SCHEMA)
         # 插入默认管理员
@@ -505,10 +520,12 @@ def _init_db_sqlite():
         offer_statement TEXT,
         remark TEXT,
         is_transferred TEXT DEFAULT '未转',
+        manager_id TEXT,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (quote_id) REFERENCES uni_quote(quote_id),
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id),
         FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id),
+        FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE SET NULL,
         UNIQUE(quote_id)
     );
 
@@ -554,6 +571,54 @@ def _init_db_sqlite():
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (order_id) REFERENCES uni_order(order_id),
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id)
+    );
+
+    -- 客户订单主表
+    CREATE TABLE IF NOT EXISTS uni_order_manager (
+        manager_id TEXT PRIMARY KEY,
+        customer_order_no TEXT UNIQUE NOT NULL,
+        order_date TEXT NOT NULL,
+        cli_id TEXT NOT NULL,
+        total_cost_rmb REAL DEFAULT 0,
+        total_price_rmb REAL DEFAULT 0,
+        total_price_kwr REAL DEFAULT 0,
+        total_price_usd REAL DEFAULT 0,
+        profit_rmb REAL DEFAULT 0,
+        model_count INTEGER DEFAULT 0,
+        total_qty INTEGER DEFAULT 0,
+        is_paid INTEGER DEFAULT 0 CHECK(is_paid IN (0,1)),
+        is_finished INTEGER DEFAULT 0 CHECK(is_finished IN (0,1)),
+        paid_amount REAL DEFAULT 0,
+        shipping_fee REAL DEFAULT 0,
+        tracking_no TEXT,
+        query_link TEXT,
+        mail_id TEXT,
+        mail_notes TEXT,
+        remark TEXT,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON UPDATE CASCADE
+    );
+
+    -- 客户订单与报价订单关联表（原销售订单关联表已迁移）
+    CREATE TABLE IF NOT EXISTS uni_order_manager_rel (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        manager_id TEXT NOT NULL,
+        offer_id TEXT NOT NULL,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
+        FOREIGN KEY (offer_id) REFERENCES uni_offer(offer_id) ON DELETE CASCADE,
+        UNIQUE(manager_id, offer_id)
+    );
+
+    -- 客户订单附件表
+    CREATE TABLE IF NOT EXISTS uni_order_attachment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        manager_id TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        file_name TEXT,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE
     );
 
     -- 邮件系统配置表（必须在uni_mail之前创建）
@@ -707,6 +772,12 @@ def _init_db_sqlite():
     CREATE INDEX IF NOT EXISTS idx_buy_order ON uni_buy(order_id);
     CREATE INDEX IF NOT EXISTS idx_buy_vendor ON uni_buy(vendor_id);
 
+    -- 客户订单索引
+    CREATE INDEX IF NOT EXISTS idx_order_manager_cli ON uni_order_manager(cli_id);
+    CREATE INDEX IF NOT EXISTS idx_order_manager_date ON uni_order_manager(order_date);
+    CREATE INDEX IF NOT EXISTS idx_order_manager_rel_manager ON uni_order_manager_rel(manager_id);
+    CREATE INDEX IF NOT EXISTS idx_order_manager_rel_order ON uni_order_manager_rel(order_id);
+
     CREATE INDEX IF NOT EXISTS idx_daily_date ON uni_daily(record_date);
     CREATE INDEX IF NOT EXISTS idx_daily_currency ON uni_daily(currency_code);
 
@@ -850,6 +921,24 @@ def _init_db_sqlite():
                 pass  # 约束已存在或数据有重复，忽略
             else:
                 print(f"[DB] 迁移警告：{e}")
+
+        # 迁移：uni_order_manager_rel 表从关联销售订单改为关联报价订单
+        try:
+            # 检查表是否存在且有 order_id 列
+            old_schema = conn.execute("PRAGMA table_info(uni_order_manager_rel)").fetchall()
+            has_order_id = any(col[1] == 'order_id' for col in old_schema)
+
+            if has_order_id:
+                # 备份旧数据（可选，这里直接清空因为关联关系改变）
+                conn.execute("DROP TABLE IF EXISTS uni_order_manager_rel_backup")
+                conn.execute("ALTER TABLE uni_order_manager_rel RENAME TO uni_order_manager_rel_backup")
+                print("[DB] 迁移：uni_order_manager_rel 表已备份为 uni_order_manager_rel_backup")
+                # 新表将由 executescript(schema) 创建
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e):
+                pass  # 表不存在，将由 schema 创建
+            else:
+                print(f"[DB] 迁移警告 (uni_order_manager_rel): {e}")
 
         conn.executescript(schema)
         conn.execute("""

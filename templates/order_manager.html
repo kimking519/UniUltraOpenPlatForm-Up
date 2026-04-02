@@ -366,6 +366,10 @@
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                 批量导入
             </button>
+            <button class="dropdown-item" onclick="batchToPurchase()" style="color: #10B981;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zM3 7a1 1 0 000 2h7a1 1 0 100-2H3zM3 11a1 1 0 100 2h4a1 1 0 100-2H3zM15 8a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V8z"/></svg>
+                一键转采购
+            </button>
             <div class="dropdown-divider"></div>
             <button class="dropdown-item danger" onclick="batchDelete()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -390,6 +394,7 @@
                     <th>总价(USD)</th>
                     <th>型号数</th>
                     <th>数量</th>
+                    <th>采购进度</th>
                     <th>利润</th>
                     <th>付款</th>
                     <th>完结</th>
@@ -401,7 +406,7 @@
                 {% for item in items %}
                 <tr data-id="{{ item.manager_id }}">
                     <td><input type="checkbox" class="row-checkbox" value="{{ item.manager_id }}"></td>
-                    <td>{{ item.order_date or '-' }}</td>
+                    <td>{{ (item.order_date or '').replace('/', '-') }}</td>
                     <td><a href="/order_manager/{{ item.manager_id }}" class="link">{{ item.customer_order_no }}</a></td>
                     <td>{{ item.cli_name or '-' }}</td>
                     <td class="num">{{ "%.2f"|format(item.total_cost_rmb or 0) }}</td>
@@ -410,6 +415,9 @@
                     <td class="num">{{ "%.2f"|format(item.total_price_usd or 0) }}</td>
                     <td class="num">{{ item.model_count or 0 }}</td>
                     <td class="num">{{ item.total_qty or 0 }}</td>
+                    <td class="num">
+                        <span class="status-badge {{ 'finished' if item.purchase_complete else 'unfinished' }}">{{ item.purchase_progress }}</span>
+                    </td>
                     <td class="num {{ 'profit' if (item.profit_rmb or 0) > 0 else 'loss' }}">{{ "%.2f"|format(item.profit_rmb or 0) }}</td>
                     <td>
                         <span class="status-badge {{ 'paid' if item.is_paid == 1 else 'unpaid' }}" onclick="toggleStatus('{{ item.manager_id }}', 'is_paid', {{ 0 if item.is_paid == 1 else 1 }})">
@@ -430,7 +438,7 @@
                 {% endfor %}
                 {% if not items %}
                 <tr>
-                    <td colspan="15" class="empty-state">暂无客户订单数据</td>
+                    <td colspan="16" class="empty-state">暂无客户订单数据</td>
                 </tr>
                 {% endif %}
             </tbody>
@@ -524,19 +532,19 @@
         <form id="importForm" method="POST" action="/api/order_manager/batch_import" enctype="multipart/form-data">
             <div class="modal-body">
                 <div class="form-group">
-                    <label>CSV格式说明</label>
+                    <label>Excel格式说明</label>
                     <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">
-                        格式：订单号,客户编号,日期,备注
+                        格式：日期(yyyy-mm-dd),客户名,订单号,备注
                     </p>
                     <a href="/api/order_manager/template" class="btn btn-secondary" style="display: inline-block; margin-bottom: 0.5rem; padding: 0.3rem 0.6rem; font-size: 0.8rem;">
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                         下载导入模板
                     </a>
-                    <textarea name="batch_text" rows="6" placeholder="CO20260101001,C001,2026-01-01,备注&#10;CO20260101002,C002,2026-01-01,备注"></textarea>
+                    <textarea name="batch_text" rows="6" placeholder="2026-01-01,示例客户,CO20260101001,备注&#10;2026-01-01,示例客户,CO20260101002,备注"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>或上传CSV文件</label>
-                    <input type="file" name="csv_file" accept=".csv,.txt">
+                    <label>或上传Excel文件</label>
+                    <input type="file" name="csv_file" accept=".xlsx,.xls,.csv,.txt">
                 </div>
             </div>
             <div class="modal-footer">
@@ -621,7 +629,17 @@ async function toggleStatus(managerId, field, value) {
 
 // 删除
 async function deleteItem(managerId) {
-    if (!confirm('确定要删除此客户订单吗？关联的销售订单不会被删除。')) return;
+    // 先获取关联数量
+    const checkResponse = await fetch(`/api/order_manager/${managerId}/orders`);
+    const orders = await checkResponse.json();
+    const relCount = orders.length;
+
+    if (relCount > 0) {
+        alert(`无法删除：该客户订单关联了 ${relCount} 条销售订单，请先移除关联`);
+        return;
+    }
+
+    if (!confirm('确定要删除此客户订单吗？')) return;
 
     const formData = new FormData();
     formData.append('manager_id', managerId);
@@ -656,6 +674,35 @@ async function batchDelete() {
         location.reload();
     } else {
         alert(result.message);
+    }
+}
+
+async function batchToPurchase() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要转采购的客户订单');
+        return;
+    }
+    if (!confirm(`确定要将选中的 ${checkboxes.length} 个客户订单的所有型号转采购吗？`)) return;
+
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    try {
+        const response = await fetch('/api/order_manager/batch_to_purchase', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manager_ids: ids })
+        });
+        const result = await response.json();
+        if (result.success) {
+            alert(result.message);
+            window.location.href = '/buy';
+        } else {
+            alert('转采购失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('请求失败，请稍后重试');
     }
 }
 </script>

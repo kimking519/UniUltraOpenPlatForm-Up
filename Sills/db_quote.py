@@ -114,6 +114,94 @@ def add_quote(data):
     except Exception as e:
         return False, str(e)
 
+def batch_import_quote_from_rows(rows_data):
+    """批量导入需求（从已解析的行数据）
+
+    Args:
+        rows_data: 已解析的行数据列表（可以是CSV解析或Excel解析的结果）
+
+    新格式：日期,客户名,询价型号,报价型号,询价品牌,询价数量,目标价,成本价,批号,交期,状态,备注
+    旧格式：客户编号,询价型号,报价型号,询价品牌,询价数量,目标价,成本价,批号,交期,状态,备注
+    """
+    success_count = 0
+    errors = []
+
+    if not rows_data:
+        return 0, ["无数据"]
+
+    # 跳过标题行（如果第一行包含"日期"或"客户名"等关键字）
+    if rows_data and ('日期' in str(rows_data[0][0]) or '客户名' in str(rows_data[0][0]) or '客户编号' in str(rows_data[0][0])):
+        rows_data = rows_data[1:]
+
+    # 构建客户名到客户编号的映射
+    cli_name_to_id = {}
+    with get_db_connection() as conn:
+        rows = conn.execute("SELECT cli_id, cli_name FROM uni_cli").fetchall()
+        for row in rows:
+            cli_name_to_id[row['cli_name']] = row['cli_id']
+
+    for row in rows_data:
+        parts = [str(p).strip() if p is not None else "" for p in row]
+        if len(parts) < 1: continue
+
+        try:
+            first_field = parts[0]
+            is_new_format = False
+
+            # 检测是否为日期格式 (仅接受 YYYY-MM-DD)
+            import re
+            if re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', first_field):
+                is_new_format = True
+
+            if is_new_format:
+                # 新格式：日期,客户名,询价型号,...
+                cli_field = parts[1] if len(parts) > 1 else ""
+                # 尝试通过客户名查找客户编号
+                cli_id = cli_name_to_id.get(cli_field, cli_field)  # 如果找不到，假设输入的是客户编号
+
+                data = {
+                    "quote_date": parts[0] if len(parts) > 0 else "",
+                    "cli_id": cli_id,
+                    "inquiry_mpn": parts[2] if len(parts) > 2 else "",
+                    "quoted_mpn": parts[3] if len(parts) > 3 else "",
+                    "inquiry_brand": parts[4] if len(parts) > 4 else "",
+                    "inquiry_qty": int(float(parts[5])) if len(parts) > 5 and parts[5] else 0,
+                    "target_price_rmb": float(parts[6]) if len(parts) > 6 and parts[6] else 0.0,
+                    "cost_price_rmb": float(parts[7]) if len(parts) > 7 and parts[7] else 0.0,
+                    "date_code": parts[8] if len(parts) > 8 else "",
+                    "delivery_date": parts[9] if len(parts) > 9 else "",
+                    "status": parts[10] if len(parts) > 10 else "询价中",
+                    "remark": parts[11] if len(parts) > 11 else ""
+                }
+            else:
+                # 旧格式：客户编号,询价型号,...
+                data = {
+                    "cli_id": parts[0],
+                    "inquiry_mpn": parts[1] if len(parts) > 1 else "",
+                    "quoted_mpn": parts[2] if len(parts) > 2 else "",
+                    "inquiry_brand": parts[3] if len(parts) > 3 else "",
+                    "inquiry_qty": int(float(parts[4])) if len(parts) > 4 and parts[4] else 0,
+                    "target_price_rmb": float(parts[5]) if len(parts) > 5 and parts[5] else 0.0,
+                    "cost_price_rmb": float(parts[6]) if len(parts) > 6 and parts[6] else 0.0,
+                    "date_code": parts[7] if len(parts) > 7 else "",
+                    "delivery_date": parts[8] if len(parts) > 8 else "",
+                    "status": parts[9] if len(parts) > 9 else "询价中",
+                    "remark": parts[10] if len(parts) > 10 else ""
+                }
+
+            if not data["cli_id"] or not data["inquiry_mpn"]:
+                errors.append(f"{','.join(parts)}: 缺少必填的客户或型号")
+                continue
+
+            ok, msg = add_quote(data)
+            if ok: success_count += 1
+            else: errors.append(f"{data['inquiry_mpn']}: {msg}")
+        except Exception as e:
+            errors.append(f"{','.join(parts)}: 数据格式解析失败 ({str(e)})")
+
+    return success_count, errors
+
+
 def batch_import_quote_text(text):
     lines = text.strip().split('\n')
     success_count = 0
@@ -142,9 +230,9 @@ def batch_import_quote_text(text):
             first_field = parts[0]
             is_new_format = False
 
-            # 检测是否为日期格式 (YYYY-MM-DD 或 YYYY/MM/DD)
+            # 检测是否为日期格式 (仅接受 YYYY-MM-DD)
             import re
-            if re.match(r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$', first_field):
+            if re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', first_field):
                 is_new_format = True
 
             if is_new_format:

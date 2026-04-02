@@ -283,7 +283,7 @@
                 {% for row in items %}
                 <tr data-id="{{ row.order_id }}">
                     <td><input type="checkbox" class="row-checkbox" value="{{ row.order_id }}"></td>
-                    <td>{{ row.order_date }}</td>
+                    <td>{{ row.order_date.replace('/', '-') if row.order_date else '' }}</td>
                     <td class="copyable-cell" onclick="editField('{{ row.order_id }}', 'order_no', '{{ row.order_no or row.order_id }}')"
                         style="cursor: pointer; color: var(--primary);">{{ row.order_no or row.order_id }}<button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.order_no or row.order_id }}', this)">复制</button></td>
                     <td>{{ row.offer_id }}</td>

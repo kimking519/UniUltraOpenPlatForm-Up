@@ -289,7 +289,7 @@
                     <th style="width: 30px;"><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
                     <th>日期</th>
                     <th>采购编号</th>
-                    <th>对应销售单</th>
+                    <th>对应客户单</th>
                     <th>客户 ID</th>
                     <th>客户名称</th>
                     <th>报价型号</th>
@@ -312,7 +312,7 @@
                     <td><input type="checkbox" class="row-checkbox" value="{{ item.buy_id }}"></td>
                     <td>{{ item.buy_date }}</td>
                     <td class="copyable-cell">{{ item.buy_id }}<button class="copy-btn" onclick="copyToClipboard('{{ item.buy_id }}', this)">复制</button></td>
-                    <td ondblclick="editField(this, '{{ item.buy_id }}', 'order_id')">{{ item.order_no }}</td>
+                    <td>{% if item.manager_id %}<a href="/order_manager/{{ item.manager_id }}" target="_blank" style="color: var(--primary);">{{ item.customer_order_no }}</a>{% else %}{{ item.order_no }}{% endif %}</td>
                     <td>{{ item.cli_id }}</td>
                     <td>{{ item.cli_name }}</td>
                     <td class="copyable-cell" ondblclick="editField(this, '{{ item.buy_id }}', 'buy_mpn')"

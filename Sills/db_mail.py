@@ -261,25 +261,41 @@ def batch_save_emails(emails_data: list) -> int:
             imap_folder = mail_data.get('imap_folder')
             account_id = mail_data.get('account_id')
 
-            # 检查重复
-            skip = False
+            # 检查重复并更新is_sent/is_draft
+            existing_id = None
             if imap_uid and imap_folder and account_id:
                 existing = conn.execute(
-                    "SELECT id FROM uni_mail WHERE imap_uid = ? AND imap_folder = ? AND account_id = ?",
+                    "SELECT id, is_sent, is_draft FROM uni_mail WHERE imap_uid = ? AND imap_folder = ? AND account_id = ?",
                     (imap_uid, imap_folder, account_id)
                 ).fetchone()
                 if existing:
-                    skip = True
+                    existing_id = existing[0]
+                    # 如果is_sent或is_draft不同，更新它们
+                    new_is_sent = mail_data.get('is_sent', 0)
+                    new_is_draft = mail_data.get('is_draft', 0)
+                    if existing[1] != new_is_sent or existing[2] != new_is_draft:
+                        conn.execute(
+                            "UPDATE uni_mail SET is_sent = ?, is_draft = ? WHERE id = ?",
+                            (new_is_sent, new_is_draft, existing_id)
+                        )
 
-            if not skip and message_id:
+            if not existing_id and message_id:
                 existing = conn.execute(
-                    "SELECT id FROM uni_mail WHERE message_id = ?",
+                    "SELECT id, is_sent, is_draft FROM uni_mail WHERE message_id = ?",
                     (message_id,)
                 ).fetchone()
                 if existing:
-                    skip = True
+                    existing_id = existing[0]
+                    # 如果is_sent或is_draft不同，更新它们
+                    new_is_sent = mail_data.get('is_sent', 0)
+                    new_is_draft = mail_data.get('is_draft', 0)
+                    if existing[1] != new_is_sent or existing[2] != new_is_draft:
+                        conn.execute(
+                            "UPDATE uni_mail SET is_sent = ?, is_draft = ? WHERE id = ?",
+                            (new_is_sent, new_is_draft, existing_id)
+                        )
 
-            if skip:
+            if existing_id:
                 continue
 
             conn.execute("""

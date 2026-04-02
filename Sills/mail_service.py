@@ -193,12 +193,13 @@ class IMAPClient:
         # 常见的发件箱名称（按优先级）
         sent_names = [
             'Sent', 'Sent Items', 'Sent Messages', '已发送', '发件箱', '发送',
-            'INBOX.Sent', 'INBOX/Sent', 'Sent Mail'
+            'INBOX.Sent', 'INBOX/Sent', 'Sent Mail',
+            'SENT', 'SENT ITEMS', 'SENT MESSAGES'  # 添加大写版本
         ]
 
-        # 先精确匹配解码后的名称
+        # 先精确匹配解码后的名称（不区分大小写）
         for raw_name, decoded_name in folders:
-            if decoded_name in sent_names:
+            if decoded_name in sent_names or decoded_name.lower() in [n.lower() for n in sent_names]:
                 print(f"[Mail] 找到发件箱: {raw_name} ({decoded_name})")
                 return raw_name
 
@@ -210,6 +211,7 @@ class IMAPClient:
                 return raw_name
 
         print("[Mail] 未找到发件箱文件夹")
+        print(f"[Mail] 可用文件夹列表: {[decoded for raw, decoded in folders]}")
         return None
 
     def find_spam_folder(self) -> Optional[str]:
@@ -256,12 +258,13 @@ class IMAPClient:
         draft_names = [
             'Drafts', 'Draft', '草稿', '草稿箱',
             'INBOX.Drafts', 'INBOX/Drafts',
-            '&g0l6P3ux-'  # IMAP UTF-7 编码
+            '&g0l6P3ux-',  # IMAP UTF-7 编码
+            'DRAFTS', 'DRAFT'  # 添加大写版本
         ]
 
-        # 先精确匹配解码后的名称
+        # 先精确匹配解码后的名称（不区分大小写）
         for raw_name, decoded_name in folders:
-            if decoded_name in draft_names or raw_name in draft_names:
+            if decoded_name in draft_names or decoded_name.lower() in [n.lower() for n in draft_names]:
                 print(f"[Mail] 找到草稿箱: {raw_name} ({decoded_name})")
                 return raw_name
 
@@ -273,6 +276,7 @@ class IMAPClient:
                 return raw_name
 
         print("[Mail] 未找到草稿箱文件夹")
+        print(f"[Mail] 可用文件夹列表: {[decoded for raw, decoded in folders]}")
         return None
 
     def find_system_folder(self) -> Optional[str]:
@@ -987,9 +991,15 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         # 已发送通过is_sent=1区分，草稿箱通过is_draft=1区分，都不需要folder_id
         folders_to_sync = [('INBOX', 0, 0, '收件箱', None)]
         if sent_folder:
+            print(f"[Mail] 添加发件箱到同步列表: {sent_folder}")
             folders_to_sync.append((sent_folder, 1, 0, '发件箱', None))
+        else:
+            print("[Mail] 警告: 未检测到发件箱文件夹，已发送邮件将不会被同步")
         if draft_folder:
+            print(f"[Mail] 添加草稿箱到同步列表: {draft_folder}")
             folders_to_sync.append((draft_folder, 0, 1, '草稿箱', None))
+        else:
+            print("[Mail] 警告: 未检测到草稿箱文件夹，草稿邮件将不会被同步")
         if spam_folder:
             folders_to_sync.append((spam_folder, 0, 0, '垃圾邮件', spam_folder_id))
         # 其他文件夹都归入收件箱
@@ -1229,9 +1239,15 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
         # 已发送通过is_sent=1区分，草稿箱通过is_draft=1区分，都不需要folder_id
         folders_to_sync = [('INBOX', 0, 0, '收件箱', None)]
         if sent_folder:
+            print(f"[Mail] 添加发件箱到同步列表: {sent_folder}")
             folders_to_sync.append((sent_folder, 1, 0, '发件箱', None))
+        else:
+            print("[Mail] 警告: 未检测到发件箱文件夹，已发送邮件将不会被同步")
         if draft_folder:
+            print(f"[Mail] 添加草稿箱到同步列表: {draft_folder}")
             folders_to_sync.append((draft_folder, 0, 1, '草稿箱', None))
+        else:
+            print("[Mail] 警告: 未检测到草稿箱文件夹，草稿邮件将不会被同步")
         if spam_folder:
             folders_to_sync.append((spam_folder, 0, 0, '垃圾邮件', spam_folder_id))
         # 其他文件夹都归入收件箱

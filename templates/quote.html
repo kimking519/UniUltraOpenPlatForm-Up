@@ -350,7 +350,7 @@
                     <td style="text-align: center;"><input type="checkbox" class="row-checkbox"
                             value="{{ row.quote_id }}"></td>
                     {% endif %}
-                    <td>{{ row.quote_date }}</td>
+                    <td>{{ row.quote_date.replace('/', '-') if row.quote_date else '' }}</td>
                     <td class="copyable-cell">{{ row.quote_id }}<button class="copy-btn" onclick="copyToClipboard('{{ row.quote_id }}', this)">复制</button></td>
 
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
@@ -557,16 +557,16 @@
         <h3 style="margin-bottom: 1.5rem;">批量导入需求表数据</h3>
 
         <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--light); border-radius: 4px;">
-            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式一：上传 CSV 文件 (推荐)</p>
+            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式一：上传 Excel 文件 (推荐)</p>
             <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
-                1. 点击这里 <a href="/static/template_quote.csv" download
-                    style="color: var(--primary); font-weight: 600;">下载 Excel 标准模板 (CSV格式)</a><br>
+                1. 点击这里 <a href="/api/quote/template" download
+                    style="color: var(--primary); font-weight: 600;">下载 Excel 标准模板 (XLSX格式)</a><br>
                 2. 在 Excel 中用该模板录入数据并保存<br>
                 3. 上传保存的模板文件
             </p>
             <form action="/quote/import/csv" method="post" enctype="multipart/form-data"
                 style="display: flex; gap: 1rem; align-items: center;">
-                <input type="file" name="csv_file" accept=".csv" required
+                <input type="file" name="csv_file" accept=".xlsx,.csv" required
                     style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
                 <button type="submit" class="btn btn-primary">上传并导入</button>
             </form>

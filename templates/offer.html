@@ -262,9 +262,25 @@
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                     生成Excel报价单
                 </button>
+                <button class="dropdown-item" onclick="generatePI()" style="background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); color: white;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    生成PI-KR
+                </button>
+                <button class="dropdown-item" onclick="generatePIUS()" style="background: linear-gradient(135deg, #10B981 0%, #34D399 100%); color: white;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    生成PI-US
+                </button>
+                <button class="dropdown-item" onclick="generateCIKR()" style="background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); color: white;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    生成CI-KR
+                </button>
+                <button class="dropdown-item" onclick="generateCIUS()" style="background: linear-gradient(135deg, #EF4444 0%, #F87171 100%); color: white;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    生成CI-US
+                </button>
                 <button class="dropdown-item" onclick="batchToOrder()">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
-                    批量转销售订单
+                    批量转客户订单
                 </button>
                 <button class="dropdown-item" onclick="exportSelectedOffers()">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -391,8 +407,8 @@
                     {% if current_user.rule == '3' %}
                     <td style="position: sticky; right: 0; background: white; z-index: 1;">
                         <div style="display: flex; gap: 0.3rem;">
-                            <button class="btn" style="color: #10b981; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #10b981; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="转订单"
-                                onclick="convertToOrder('{{ row.offer_id }}')">
+                            <button class="btn" style="color: #10b981; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #10b981; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="转入客户订单"
+                                onclick="showCustomerOrderModalForOne('{{ row.offer_id }}')">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                             </button>
                             <button class="btn" style="color: #ef4444; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #ef4444; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="删除"
@@ -887,25 +903,6 @@
             });
     }
 
-    function convertToOrder(offer_id) {
-        if (confirm(`确定要将报价 ${offer_id} 转为销售订单吗？`)) {
-            fetch('/api/offer/batch_to_order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: [offer_id] })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    alert(data.message);
-                    window.location.href = '/order';
-                } else {
-                    alert('转换失败：' + data.message);
-                }
-            });
-        }
-    }
-
     function deleteOffer(offer_id) {
         if (confirm(`确定要删除报价 ${offer_id} 吗？`)) {
             const formData = new FormData();
@@ -951,19 +948,108 @@
             return;
         }
 
-        if (!confirm(`确定要把选中的 ${selected.length} 条报价转为销售订单吗？`)) return;
+        // 获取选中报价的客户信息
+        let cliId = null;
+        let cliName = null;
+        const firstRow = document.querySelector('.row-checkbox:checked');
+        if (firstRow) {
+            const row = firstRow.closest('tr');
+            cliName = row.querySelector('td:nth-child(5)')?.textContent?.trim();
+        }
+
+        // 打开客户订单选择弹窗
+        showCustomerOrderModal(selected, cliId, cliName);
+    }
+
+    let selectedOfferIds = [];
+    let customerOrders = [];
+
+    function showCustomerOrderModalForOne(offerId) {
+        // 单条报价转客户订单
+        showCustomerOrderModal([offerId], null, null);
+    }
+
+    async function showCustomerOrderModal(offerIds, cliId, cliName) {
+        selectedOfferIds = offerIds;
+
+        // 获取已有客户订单列表
+        try {
+            const response = await fetch('/api/order_manager/list?page_size=50');
+            const data = await response.json();
+            customerOrders = data.items || [];
+        } catch (e) {
+            customerOrders = [];
+        }
+
+        // 创建弹窗HTML
+        let modalHtml = `
+            <div id="customerOrderModal" class="modal" style="display:flex; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
+                <div class="modal-content" style="background:white; border-radius:12px; max-width:600px; width:90%; max-height:80vh; overflow:auto;">
+                    <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid #e2e8f0;">
+                        <h3 style="margin:0; font-size:18px;">转入客户订单</h3>
+                        <button onclick="closeCustomerOrderModal()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+                    </div>
+                    <div class="modal-body" style="padding:20px;">
+                        <p style="margin-bottom:16px; color:#64748b;">已选中 <strong>${offerIds.length}</strong> 条报价，请选择目标客户订单：</p>
+                        <div style="margin-bottom:16px;">
+                            <input type="text" id="searchCustomerOrder" placeholder="搜索客户订单号..." oninput="filterCustomerOrders()"
+                                style="width:100%; padding:10px 12px; border:1px solid #e2e8f0; border-radius:6px;">
+                        </div>
+                        <div id="customerOrderList" style="max-height:300px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
+                            ${customerOrders.map(o => `
+                                <div class="customer-order-item" data-search="${o.customer_order_no} ${o.cli_name}"
+                                    onclick="selectCustomerOrder('${o.manager_id}')"
+                                    style="padding:12px 16px; border-bottom:1px solid #f1f5f9; cursor:pointer; display:flex; justify-content:space-between; align-items:center;"
+                                    onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                                    <div>
+                                        <div style="font-weight:500;">${o.customer_order_no}</div>
+                                        <div style="font-size:12px; color:#64748b;">${o.cli_name} · ${o.order_date}</div>
+                                    </div>
+                                    <div style="font-size:12px; color:#64748b;">${o.model_count || 0} 型号</div>
+                                </div>
+                            `).join('')}
+                            ${customerOrders.length === 0 ? '<div style="padding:20px; text-align:center; color:#94a3b8;">暂无客户订单</div>' : ''}
+                        </div>
+                        <div style="margin-top:16px; padding-top:16px; border-top:1px solid #e2e8f0;">
+                            <a href="/order_manager" target="_blank" style="color:#3b82f6; font-size:14px;">+ 新建客户订单</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    function closeCustomerOrderModal() {
+        const modal = document.getElementById('customerOrderModal');
+        if (modal) modal.remove();
+    }
+
+    function filterCustomerOrders() {
+        const search = document.getElementById('searchCustomerOrder').value.toLowerCase();
+        const items = document.querySelectorAll('.customer-order-item');
+        items.forEach(item => {
+            const text = item.getAttribute('data-search').toLowerCase();
+            item.style.display = text.includes(search) ? '' : 'none';
+        });
+    }
+
+    async function selectCustomerOrder(managerId) {
+        if (!confirm('确定要将选中的报价转入此客户订单吗？')) return;
 
         try {
-            const response = await fetch('/api/offer/batch_to_order', {
+            const response = await fetch('/api/order_manager/batch_convert_offers', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: selected })
+                body: JSON.stringify({ offer_ids: selectedOfferIds, manager_id: managerId })
             });
 
             const data = await response.json();
             if (data.success) {
                 alert(data.message);
-                window.location.href = '/order';
+                closeCustomerOrderModal();
+                window.location.reload();
             } else {
                 alert('转换失败: ' + data.message);
             }
@@ -1119,6 +1205,122 @@
             const data = await response.json();
             if (data.success) {
                 alert(`✅ 报价单生成成功！\n文件路径: ${data.file_path}\n报价条数: ${data.count}\n客户: ${data.cli_name}`);
+            } else {
+                alert('生成失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    // 生成PI-KR
+    async function generatePI() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要生成PI的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价生成PI-KR吗？`)) return;
+
+        try {
+            const response = await fetch('/api/offer/generate_pi', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ offer_ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ PI-KR生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+            } else {
+                alert('生成失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    // 生成PI-US
+    async function generatePIUS() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要生成PI-US的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价生成PI-US吗？`)) return;
+
+        try {
+            const response = await fetch('/api/offer/generate_pi_us', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ offer_ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ PI-US生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+            } else {
+                alert('生成失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    // 生成CI-KR
+    async function generateCIKR() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要生成CI-KR的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价生成CI-KR吗？`)) return;
+
+        try {
+            const response = await fetch('/api/offer/generate_ci_kr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ offer_ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ CI-KR生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+            } else {
+                alert('生成失败: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('请求失败，请稍后重试');
+        }
+    }
+
+    // 生成CI-US
+    async function generateCIUS() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要生成CI-US的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要为选中的 ${selected.length} 条报价生成CI-US吗？`)) return;
+
+        try {
+            const response = await fetch('/api/offer/generate_ci_us', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ offer_ids: selected })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ CI-US生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
             } else {
                 alert('生成失败: ' + data.message);
             }

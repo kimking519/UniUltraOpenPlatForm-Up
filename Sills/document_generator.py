@@ -68,16 +68,19 @@ def _get_output_base():
     return _get_default_output_base()
 
 
-def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
+def _generate_unique_invoice_no(output_dir, cli_name, doc_type="PI"):
     """
     生成唯一的发票编号和文件路径
 
     发票编号格式: UNI%Y%m%d，如果已存在则添加01, 02, 03等后缀
+    文件名格式:
+      - PI: Proforma Invoice_{cli_name}_{invoice_no}.xlsx
+      - CI: COMMERCIAL INVOICE_{cli_name}_{invoice_no}.xlsx
 
     Args:
         output_dir: 输出目录
         cli_name: 客户名称
-        doc_type: 文档类型 (CI, PI)
+        doc_type: 文档类型 (PI, CI_KR, CI_US)
 
     Returns:
         tuple: (invoice_no, output_filename, output_path)
@@ -86,15 +89,21 @@ def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
     date_str = now.strftime("%Y%m%d")
     base_invoice_no = f"UNI{date_str}"
 
+    # 确定文档类型前缀
+    if doc_type.startswith("CI"):
+        doc_prefix = "COMMERCIAL INVOICE"
+    else:
+        doc_prefix = "Proforma Invoice"
+
     # 尝试不带后缀
     invoice_no = base_invoice_no
-    output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+    output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
     output_path = os.path.join(output_dir, output_filename)
 
     suffix = 1
     while os.path.exists(output_path):
         invoice_no = f"{base_invoice_no}{suffix:02d}"
-        output_filename = f"{doc_type}_{cli_name}_{invoice_no}.xlsx"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
         output_path = os.path.join(output_dir, output_filename)
         suffix += 1
 
@@ -189,6 +198,8 @@ def generate_ci_us(order_ids, output_base=None, template_dir=None):
         return False, f"订单属于不同客户 ({', '.join(cli_names)})，无法生成同一份CI"
 
     cli_name = list(cli_names)[0]
+    # 获取客户英文名，用于文件名
+    cli_name_en = orders[0].get("cli_name_en") or orders[0].get("cli_name") or "Unknown"
 
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
@@ -204,10 +215,10 @@ def generate_ci_us(order_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI")
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
 
     # 生成文档
-    return _generate_ci_us_excel(orders, template_dir, output_path, now)
+    return _generate_ci_us_excel(orders, template_dir, output_path, invoice_no)
 
 
 def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
@@ -409,6 +420,8 @@ def generate_pi(order_ids, output_base=None, template_dir=None):
         return False, f"订单属于不同客户 ({', '.join(cli_names)})，无法生成同一份PI"
 
     cli_name = list(cli_names)[0]
+    # 获取客户英文名，用于文件名
+    cli_name_en = orders[0].get("cli_name_en") or orders[0].get("cli_name") or "Unknown"
 
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
@@ -424,7 +437,7 @@ def generate_pi(order_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_KR")
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
 
     # 获取汇率
     krw_val, _ = get_exchange_rates()
@@ -910,6 +923,8 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
         return False, f"订单属于不同客户 ({', '.join(cli_names)})，无法生成同一份PI"
 
     cli_name = list(cli_names)[0]
+    # 获取客户英文名，用于文件名
+    cli_name_en = orders[0].get("cli_name_en") or orders[0].get("cli_name") or "Unknown"
 
     # 确定输出目录
     project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
@@ -925,7 +940,7 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_US")
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
 
     # 获取汇率 (USD汇率用于计算)
     _, usd_val = get_exchange_rates()
@@ -1602,3 +1617,494 @@ def _generate_koquote_excel_legacy(offers, template_path, output_path, exchange_
         "total_qty": total_qty,
         "total_amount": total_amount
     }
+
+
+# ============================================================
+# 基于报价的 PI/CI 生成函数
+# ============================================================
+
+def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    基于报价生成 Proforma Invoice (KRW版本)
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if openpyxl is None:
+        return False, "缺少依赖: 请安装 openpyxl -> pip install openpyxl"
+
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    offers = get_offers_for_document(offer_ids)
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    cli_names = set(o.get("cli_name") or "未知客户" for o in offers)
+    if len(cli_names) > 1:
+        return False, f"报价属于不同客户 ({', '.join(cli_names)})，无法生成同一份PI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    if not output_base:
+        output_base = _get_output_base()
+
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "pi")
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+
+    # 获取汇率
+    krw_val, _ = get_exchange_rates()
+
+    # 计算KWR价格 - 报价使用 offer_price_rmb
+    for offer in offers:
+        price_rmb = offer.get("offer_price_rmb")
+        if price_rmb and float(price_rmb or 0) > 0:
+            price_kwr = round(float(price_rmb) * krw_val, 1)
+        else:
+            price_kwr = 0
+        offer["calculated_price_kwr"] = price_kwr
+
+    # 复用订单PI生成逻辑，适配报价字段
+    return _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no)
+
+
+def _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no):
+    """基于报价生成PI-KR Excel文件"""
+    from openpyxl.utils import get_column_letter
+    from copy import copy
+
+    data_count = len(offers)
+    first_offer = offers[0]
+    now = datetime.now()
+
+    # 模板文件路径
+    template1_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_KR - 1.xlsx")
+    template2_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_KR - 2.xlsx")
+
+    use_new_template = os.path.exists(template1_path) and os.path.exists(template2_path)
+
+    if not use_new_template:
+        return _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no)
+
+    wb1 = openpyxl.load_workbook(template1_path)
+    ws1 = wb1.active
+
+    wb2 = openpyxl.load_workbook(template2_path)
+    ws2 = wb2.active
+
+    # 填写头部信息
+    ws1.cell(8, 4).value = invoice_no
+    ws1.cell(9, 4).value = now.strftime("%Y-%m-%d")
+
+    cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
+    ws1.cell(12, 3).value = cli_name_en
+    ws1.cell(13, 3).value = first_offer.get("contact_name", "") or ""
+    ws1.cell(14, 3).value = first_offer.get("email", "") or ""
+    ws1.cell(15, 3).value = first_offer.get("phone", "") or ""
+    ws1.cell(16, 3).value = first_offer.get("address", "") or ""
+
+    # 处理数据行
+    header_row = 18
+    first_data_row = 19
+    template_data_rows = 2
+
+    rows_diff = data_count - template_data_rows
+    if rows_diff > 0:
+        ws1.insert_rows(first_data_row + template_data_rows, rows_diff)
+        style_row = first_data_row
+        for i in range(rows_diff):
+            new_row = first_data_row + template_data_rows + i
+            for col in range(1, 9):
+                src_cell = ws1.cell(row=style_row, column=col)
+                dest_cell = ws1.cell(row=new_row, column=col)
+                if src_cell.has_style:
+                    dest_cell.font = copy(src_cell.font)
+                    dest_cell.border = copy(src_cell.border)
+                    dest_cell.fill = copy(src_cell.fill)
+                    dest_cell.alignment = copy(src_cell.alignment)
+    elif rows_diff < 0:
+        ws1.delete_rows(first_data_row + data_count, -rows_diff)
+
+    # 取消合并单元格
+    merged_to_remove = []
+    for merged_range in list(ws1.merged_cells.ranges):
+        if first_data_row <= merged_range.min_row < first_data_row + data_count:
+            merged_to_remove.append(merged_range)
+    for merged_range in merged_to_remove:
+        try:
+            ws1.unmerge_cells(str(merged_range))
+        except:
+            pass
+
+    # 写入数据 - 报价字段映射
+    for idx, offer in enumerate(offers):
+        row = first_data_row + idx
+
+        ws1.cell(row, 1).value = idx + 1
+        ws1.cell(row, 2).value = offer.get("inquiry_mpn", "") or offer.get("quoted_mpn", "")
+        ws1.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
+        ws1.cell(row, 4).value = offer.get("date_code", "") or ""
+
+        qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or ""
+        ws1.cell(row, 5).value = qty
+        if qty:
+            ws1.cell(row, 5).number_format = '#,##0'
+
+        ws1.cell(row, 6).value = offer.get("delivery_date", "") or ""
+
+        price_kwr = offer.get("calculated_price_kwr", "") or ""
+        ws1.cell(row, 7).value = price_kwr
+        if price_kwr:
+            ws1.cell(row, 7).number_format = '#,##0'
+
+        if qty and price_kwr:
+            ws1.cell(row, 8).value = f"=G{row}*E{row}"
+            ws1.cell(row, 8).number_format = '#,##0'
+
+    last_data_row = first_data_row + data_count - 1
+    template2_start_row = 11
+    insert_start_row = last_data_row + 2
+
+    # 拼接 template2
+    for src_row_idx in range(template2_start_row, ws2.max_row + 1):
+        dest_row_idx = insert_start_row + (src_row_idx - template2_start_row)
+        ws1.insert_rows(dest_row_idx)
+
+        for src_col in range(1, 9):
+            src_cell = ws2.cell(row=src_row_idx, column=src_col)
+            dest_cell = ws1.cell(row=dest_row_idx, column=src_col)
+
+            if src_cell.value is not None:
+                dest_cell.value = src_cell.value
+
+            if src_cell.has_style:
+                dest_cell.font = copy(src_cell.font)
+                dest_cell.border = copy(src_cell.border)
+                dest_cell.fill = copy(src_cell.fill)
+                dest_cell.number_format = src_cell.number_format
+                dest_cell.alignment = copy(src_cell.alignment)
+
+    # 处理 template2 合并单元格
+    for merged_range in ws2.merged_cells.ranges:
+        if merged_range.min_row >= template2_start_row:
+            new_min_row = insert_start_row + (merged_range.min_row - template2_start_row)
+            new_max_row = insert_start_row + (merged_range.max_row - template2_start_row)
+            try:
+                ws1.merge_cells(
+                    start_row=new_min_row,
+                    start_column=merged_range.min_col,
+                    end_row=new_max_row,
+                    end_column=merged_range.max_col
+                )
+            except:
+                pass
+
+    # 更新 TOTAL 行
+    total_row = insert_start_row
+    for merged_range in list(ws1.merged_cells.ranges):
+        if merged_range.min_row == total_row:
+            try:
+                ws1.unmerge_cells(str(merged_range))
+            except:
+                pass
+
+    ws1.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws1.cell(total_row, 8).number_format = '#,##0'
+
+    try:
+        ws1.merge_cells(f"A{total_row}:G{total_row}")
+    except:
+        pass
+
+    # 复制图片
+    row_offset = insert_start_row - (template2_start_row - 1)
+    for img in ws2._images:
+        from copy import deepcopy
+        new_img = deepcopy(img)
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            original_from_row = img.anchor._from.row
+            if original_from_row >= template2_start_row - 1:
+                new_img.anchor._from.row = original_from_row + row_offset
+            if hasattr(img.anchor, 'to'):
+                original_to_row = img.anchor.to.row
+                if original_to_row >= template2_start_row - 1:
+                    new_img.anchor.to.row = original_to_row + row_offset
+        ws1.add_image(new_img)
+
+    thank_you_row = insert_start_row + 18
+    ws1.print_area = f"$A$1:$H${thank_you_row}"
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    wb1.save(output_path)
+    wb1.close()
+    wb2.close()
+
+    return True, {
+        "excel_path": output_path,
+        "invoice_no": invoice_no,
+        "cli_name": first_offer.get("cli_name", ""),
+        "count": data_count
+    }
+
+
+def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no):
+    """旧模板生成逻辑"""
+    data_count = len(offers)
+    first_offer = offers[0]
+    now = datetime.now()
+
+    template_path = None
+    if os.path.isdir(template_dir):
+        preferred_template = "Proforma_Invoice_TAEJU_UNI2025110502_v2.xlsx"
+        preferred_path = os.path.join(template_dir, preferred_template)
+        if os.path.exists(preferred_path):
+            template_path = preferred_path
+        else:
+            for f in os.listdir(template_dir):
+                if f.endswith(".xlsx") and not f.startswith("~"):
+                    template_path = os.path.join(template_dir, f)
+                    break
+
+    if not template_path or not os.path.exists(template_path):
+        return False, f"模板文件不存在于 {template_dir}"
+
+    wb = openpyxl.load_workbook(template_path)
+    ws = wb.active
+
+    ws.cell(8, 4).value = invoice_no
+    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
+
+    cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
+    ws.cell(12, 3).value = cli_name_en
+    ws.cell(13, 3).value = first_offer.get("contact_name", "") or ""
+    ws.cell(14, 3).value = first_offer.get("email", "") or ""
+    ws.cell(15, 3).value = first_offer.get("phone", "") or ""
+    ws.cell(16, 3).value = first_offer.get("address", "") or ""
+
+    header_row = 18
+    first_data_row = 19
+    template_data_rows = 2
+
+    rows_diff = data_count - template_data_rows
+    if rows_diff > 0:
+        ws.insert_rows(first_data_row + template_data_rows, rows_diff)
+    elif rows_diff < 0:
+        ws.delete_rows(first_data_row + data_count, -rows_diff)
+
+    # 写入报价数据
+    for idx, offer in enumerate(offers):
+        row = first_data_row + idx
+
+        ws.cell(row, 1).value = idx + 1
+        ws.cell(row, 2).value = offer.get("inquiry_mpn", "") or offer.get("quoted_mpn", "")
+        ws.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
+        ws.cell(row, 4).value = offer.get("date_code", "") or ""
+
+        qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or ""
+        ws.cell(row, 5).value = qty
+        if qty:
+            ws.cell(row, 5).number_format = '#,##0'
+
+        ws.cell(row, 6).value = offer.get("delivery_date", "") or ""
+
+        price_kwr = offer.get("calculated_price_kwr", "") or ""
+        ws.cell(row, 7).value = price_kwr
+        if price_kwr:
+            ws.cell(row, 7).number_format = '#,##0'
+
+        if qty and price_kwr:
+            ws.cell(row, 8).value = f"=G{row}*E{row}"
+            ws.cell(row, 8).number_format = '#,##0'
+
+    ws.print_area = f"$A$1:$H${ws.max_row}"
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    wb.save(output_path)
+
+    return True, {
+        "excel_path": output_path,
+        "invoice_no": invoice_no,
+        "cli_name": first_offer.get("cli_name", ""),
+        "count": data_count
+    }
+
+
+def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    基于报价生成 Proforma Invoice (USD版本)
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if openpyxl is None:
+        return False, "缺少依赖: 请安装 openpyxl -> pip install openpyxl"
+
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    offers = get_offers_for_document(offer_ids)
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    cli_names = set(o.get("cli_name") or "未知客户" for o in offers)
+    if len(cli_names) > 1:
+        return False, f"报价属于不同客户 ({', '.join(cli_names)})，无法生成同一份PI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    if not output_base:
+        output_base = _get_output_base()
+
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "pi")
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+
+    # 获取汇率
+    _, usd_val = get_exchange_rates()
+
+    # 计算USD价格 - 报价使用 offer_price_rmb
+    for offer in offers:
+        price_usd = offer.get("offer_price_usd")
+        if not price_usd or float(price_usd or 0) == 0:
+            price_rmb = offer.get("offer_price_rmb")
+            if price_rmb and float(price_rmb or 0) > 0:
+                price_usd = round(float(price_rmb) * usd_val, 3) if usd_val else 0
+            else:
+                price_usd = 0
+        else:
+            price_usd = float(price_usd)
+        offer["calculated_price_usd"] = price_usd
+
+    # 将报价数据适配为订单格式，复用现有模板逻辑
+    adapted_offers = []
+    for offer in offers:
+        adapted = {
+            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
+            "date_code": offer.get("date_code", ""),
+            "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
+            "delivery_date": offer.get("delivery_date", ""),
+            "calculated_price_usd": offer.get("calculated_price_usd", 0),
+            "cli_name_en": offer.get("cli_name_en", "") or offer.get("cli_name", ""),
+            "cli_name": offer.get("cli_name", ""),
+            "contact_name": offer.get("contact_name", ""),
+            "email": offer.get("email", ""),
+            "phone": offer.get("phone", ""),
+            "address": offer.get("address", ""),
+        }
+        adapted_offers.append(adapted)
+
+    return _generate_pi_us_excel(adapted_offers, template_dir, output_path, invoice_no)
+
+
+def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    基于报价生成美元版 Commercial Invoice
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if openpyxl is None:
+        return False, "缺少依赖: 请安装 openpyxl -> pip install openpyxl"
+
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    offers = get_offers_for_document(offer_ids)
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    cli_names = set(o.get("cli_name") or "未知客户" for o in offers)
+    if len(cli_names) > 1:
+        return False, f"报价属于不同客户 ({', '.join(cli_names)})，无法生成同一份CI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    if not output_base:
+        output_base = _get_output_base()
+
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "ci_us")
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
+
+    # 获取汇率
+    _, usd_val = get_exchange_rates()
+
+    # 计算USD价格
+    for offer in offers:
+        price_usd = offer.get("offer_price_usd")
+        if not price_usd or float(price_usd or 0) == 0:
+            price_rmb = offer.get("offer_price_rmb")
+            if price_rmb and float(price_rmb or 0) > 0:
+                price_usd = round(float(price_rmb) * usd_val, 3) if usd_val else 0
+            else:
+                price_usd = 0
+        else:
+            price_usd = float(price_usd)
+        offer["calculated_price_usd"] = price_usd
+
+    # 适配报价数据为订单格式
+    adapted_offers = []
+    for offer in offers:
+        adapted = {
+            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
+            "date_code": offer.get("date_code", ""),
+            "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
+            "inquiry_qty": offer.get("inquiry_qty", 0),
+            "delivery_date": offer.get("delivery_date", ""),
+            "price_usd": offer.get("calculated_price_usd", 0),
+            "cli_name_en": offer.get("cli_name_en", "") or offer.get("cli_name", ""),
+            "cli_name": offer.get("cli_name", ""),
+            "contact_name": offer.get("contact_name", ""),
+            "email": offer.get("email", ""),
+            "phone": offer.get("phone", ""),
+            "address": offer.get("address", ""),
+            "region": offer.get("region", "USA"),
+        }
+        adapted_offers.append(adapted)
+
+    return _generate_ci_us_excel(adapted_offers, template_dir, output_path, invoice_no)

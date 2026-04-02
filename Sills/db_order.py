@@ -174,7 +174,7 @@ def batch_import_order(text, cli_id):
         rows = list(reader)
         if not rows: return 0, []
         start_idx = 0
-        if len(rows[0]) > 0 and ("报价编号" in rows[0][0] or "型号" in str(rows[0])):
+        if len(rows[0]) > 0 and ("报价编号" in rows[0][0] or "型号" in str(rows[0]) or "订单日期" in str(rows[0])):
             start_idx = 1
 
         with get_db_connection() as conn:
@@ -187,13 +187,25 @@ def batch_import_order(text, cli_id):
             for row in rows[start_idx:]:
                 if not row or len(row) < 1: continue
                 try:
-                    offer_id = row[0] if len(row) > 0 and str(row[0]).strip() != "" else None
+                    # 解析日期字段（第一列），验证格式为 YYYY-MM-DD
+                    order_date_input = row[0] if len(row) > 0 and row[0] else ""
+                    import re
+                    if order_date_input and re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', order_date_input):
+                        order_date = order_date_input
+                    else:
+                        # 如果日期格式错误或为空，使用当前日期并记录错误
+                        if order_date_input and not re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', order_date_input):
+                            errors.append(f"日期格式错误 '{order_date_input}'，应为 YYYY-MM-DD，已使用当前日期")
+                        order_date = datetime.now().strftime("%Y-%m-%d")
+
+                    # 解析其他字段（偏移1列，因为第一列是日期）
+                    offer_id = row[3] if len(row) > 3 and str(row[3]).strip() != "" else None
                     if offer_id and not str(offer_id).startswith('O'):
                         offer_id = None
 
-                    inquiry_mpn = row[4] if len(row) > 4 and row[4] else (row[3] if len(row) > 3 else "")
-                    inquiry_brand = row[6] if len(row) > 6 and row[6] else (row[5] if len(row) > 5 else "")
-                    remark = row[17] if len(row) > 17 else ""
+                    inquiry_mpn = row[5] if len(row) > 5 and row[5] else (row[4] if len(row) > 4 else "")
+                    inquiry_brand = row[7] if len(row) > 7 and row[7] else (row[6] if len(row) > 6 else "")
+                    remark = row[20] if len(row) > 20 else ""
 
                     if not offer_id and not inquiry_mpn:
                         continue
@@ -210,7 +222,6 @@ def batch_import_order(text, cli_id):
                         new_num = 1
                     order_id = f"d{new_num:05d}"
                     order_no = order_id  # order_no 使用与 order_id 相同的值
-                    order_date = datetime.now().strftime("%Y-%m-%d")
 
                     insert_data.append((
                         order_id, order_no, order_date, cli_id, offer_id,

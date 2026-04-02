@@ -5,17 +5,19 @@ from Sills.base import get_db_connection, get_exchange_rates
 
 def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="", end_date="", cli_id="", is_shipped=""):
     offset = (page - 1) * page_size
-    
+
     base_query = """
     FROM uni_buy b
     LEFT JOIN uni_order ord ON b.order_id = ord.order_id
     LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id
     LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id
     LEFT JOIN uni_offer off ON ord.offer_id = off.offer_id
+    LEFT JOIN uni_order_manager_rel rel ON rel.offer_id = off.offer_id
+    LEFT JOIN uni_order_manager m ON rel.manager_id = m.manager_id
     WHERE (b.buy_id LIKE ? OR b.buy_mpn LIKE ? OR v.vendor_name LIKE ?)
     """
     params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
-    
+
     if order_id:
         base_query += " AND b.order_id = ?"
         params.append(order_id)
@@ -31,10 +33,10 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
     if is_shipped in ('0', '1'):
         base_query += " AND b.is_shipped = ?"
         params.append(int(is_shipped))
-        
+
     query = f"""
     SELECT b.*, ord.order_no, v.vendor_name, v.address as vendor_address, c.cli_id, c.cli_name, c.margin_rate, off.offer_price_rmb,
-           off.inquiry_qty, off.date_code, off.delivery_date
+           off.inquiry_qty, off.date_code, off.delivery_date, m.customer_order_no, m.manager_id
     {base_query}
     ORDER BY b.created_at DESC
     LIMIT ? OFFSET ?

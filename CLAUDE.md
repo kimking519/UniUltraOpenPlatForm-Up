@@ -25,6 +25,8 @@ UniUltraOpenPlatForm is a FastAPI-based ERP system for electronic component trad
 
 commit的时候添加时间戳精确到分钟
 
+重要！！！ 为了做到需求理解的对称，按提的要求修改bug或者添加功能或者优化之前，先不要写代码，先将你的理解和计划和原因分析跟我沟通，只有我明确告诉你可以的时候才可以开始修改。
+
 出于安全考虑关键key要以单独的文件配置形式来做
 ----------------------------------------------
 为openclaw开发的skills 统一放到openclaw_skills 这目录，skills.md文件的格式参照 Skills_guideline.md

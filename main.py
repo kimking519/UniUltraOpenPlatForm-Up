@@ -11,14 +11,14 @@ from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
-from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, delete_quote, update_quote, batch_delete_quote, batch_copy_quote, batch_add_quotes
+from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, batch_import_quote_from_rows, delete_quote, update_quote, batch_delete_quote, batch_copy_quote, batch_add_quotes
 from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
 from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer, get_order_by_id
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
 from Sills.db_order_manager import (
     get_manager_list, get_manager_by_id, add_manager, update_manager, delete_manager,
-    add_order_to_manager, remove_order_from_manager, get_manager_orders,
-    get_available_orders_for_manager, batch_import_manager, batch_delete_managers,
+    add_offer_to_manager, remove_offer_from_manager, get_manager_offers,
+    get_available_offers_for_manager, batch_import_manager, batch_import_manager_from_rows, batch_delete_managers,
     add_attachment, get_attachments, delete_attachment
 )
 from Sills.db_mail import (
@@ -136,7 +136,7 @@ def do_backup():
     import subprocess
 
     backup_root = get_backup_root()
-    date_str = datetime.now().strftime("%Y%m%d%H")  # 精确到小时
+    date_str = datetime.now().strftime("%Y%m%d")  # 只精确到天，每天覆盖
     backup_dir = os.path.join(backup_root, f"backup_{date_str}")
 
     # 确保备份根目录存在
@@ -805,18 +805,118 @@ async def quote_import_text(batch_text: str = Form(...), current_user: dict = De
         err_msg = "&msg=" + urllib.parse.quote(errors[0])
     return RedirectResponse(url=f"/quote?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
+@app.get("/api/quote/template")
+async def api_quote_template(current_user: dict = Depends(get_current_user)):
+    """下载需求导入模板 (Excel格式)"""
+    import io
+    from fastapi.responses import StreamingResponse
+    import openpyxl
+    from openpyxl.styles import Font, Alignment
+
+    # 创建 Excel 工作簿
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "需求导入模板"
+
+    # 设置表头
+    headers = ["日期", "客户名", "询价型号", "报价型号", "询价品牌", "询价数量", "目标价", "成本价", "批号", "交期", "状态", "备注"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center')
+
+    # 设置示例数据（日期格式为文本，避免Excel自动转换）
+    ws.cell(row=2, column=1, value="2026-01-01")
+    ws.cell(row=2, column=2, value="示例客户")
+    ws.cell(row=2, column=3, value="STM32F103C8T6")
+    ws.cell(row=2, column=4, value="STM32F103C8T6")
+    ws.cell(row=2, column=5, value="ST")
+    ws.cell(row=2, column=6, value=500)
+    ws.cell(row=2, column=7, value=8.5)
+    ws.cell(row=2, column=8, value=7.0)
+    ws.cell(row=2, column=9, value="2912+")
+    ws.cell(row=2, column=10, value="1~3days")
+    ws.cell(row=2, column=11, value="询价中")
+    ws.cell(row=2, column=12, value="示例数据")
+
+    ws.cell(row=3, column=1, value="2026-01-01")
+    ws.cell(row=3, column=2, value="示例客户")
+    ws.cell(row=3, column=3, value="CC0603KRX7R9BB104")
+    ws.cell(row=3, column=4, value="CC0603KRX7R9BB104")
+    ws.cell(row=3, column=5, value="YAGEO")
+    ws.cell(row=3, column=6, value=2500)
+    ws.cell(row=3, column=7, value=0.02)
+    ws.cell(row=3, column=8, value=0.015)
+    ws.cell(row=3, column=9, value="2912+")
+    ws.cell(row=3, column=10, value="1~3days")
+    ws.cell(row=3, column=11, value="询价中")
+    ws.cell(row=3, column=12, value="示例数据")
+
+    # 设置日期列格式为文本，防止Excel自动转换
+    for row in range(2, 4):
+        ws.cell(row=row, column=1).number_format = '@'
+
+    # 设置列宽
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 15
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['D'].width = 20
+    ws.column_dimensions['E'].width = 12
+    ws.column_dimensions['F'].width = 10
+    ws.column_dimensions['G'].width = 10
+    ws.column_dimensions['H'].width = 10
+    ws.column_dimensions['I'].width = 10
+    ws.column_dimensions['J'].width = 10
+    ws.column_dimensions['K'].width = 10
+    ws.column_dimensions['L'].width = 15
+
+    # 输出
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=quote_template.xlsx"}
+    )
+
 @app.post("/quote/import/csv")
 async def quote_import_csv(csv_file: UploadFile = File(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
         return RedirectResponse(url="/quote", status_code=303)
+
+    import openpyxl
+    import io as io_module
+
     content = await csv_file.read()
-    try:
-        text = content.decode('utf-8-sig').strip()
-    except UnicodeDecodeError:
-        text = content.decode('gbk', errors='replace').strip()
-        
-    # Pass full text to sill
-    success_count, errors = batch_import_quote_text(text)
+    filename = csv_file.filename or ""
+    rows_data = []
+
+    # 判断是否为Excel文件
+    if filename.lower().endswith('.xlsx'):
+        try:
+            wb = openpyxl.load_workbook(io_module.BytesIO(content))
+            ws = wb.active
+            # 将Excel行转换为列表
+            for row in ws.iter_rows(values_only=True):
+                row_values = [str(cell) if cell is not None else "" for cell in row]
+                rows_data.append(row_values)
+        except Exception as e:
+            return RedirectResponse(url=f"/quote?msg=Excel解析失败: {str(e)}&success=0", status_code=303)
+    else:
+        # CSV文件解析
+        try:
+            text = content.decode('utf-8-sig').strip()
+        except UnicodeDecodeError:
+            text = content.decode('gbk', errors='replace').strip()
+        import csv
+        f = io_module.StringIO(text)
+        reader = csv.reader(f)
+        rows_data = list(reader)
+
+    # 调用导入函数
+    success_count, errors = batch_import_quote_from_rows(rows_data)
     err_msg = ""
     if errors:
         import urllib.parse
@@ -1686,15 +1786,21 @@ async def order_manager_detail_page(request: Request, manager_id: str, current_u
     manager = get_manager_by_id(manager_id)
     if not manager:
         return RedirectResponse(url="/order_manager?msg=订单不存在&success=0", status_code=303)
-    orders = get_manager_orders(manager_id)
+    offers = get_manager_offers(manager_id)
     attachments = get_attachments(manager_id)
-    available_orders = get_available_orders_for_manager(cli_id=manager['cli_id'], manager_id=manager_id)
+    available_offers = get_available_offers_for_manager(cli_id=manager['cli_id'], manager_id=manager_id)
+    # 获取可转采购的报价（排除已转的）
+    from Sills.db_order_manager import get_manager_orders_for_purchase
+    unpurchased_orders = get_manager_orders_for_purchase(manager_id)
     from Sills.db_cli import get_cli_list
+    from Sills.db_vendor import get_vendor_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
+    vendors, _ = get_vendor_list(page=1, page_size=1000)
     return templates.TemplateResponse("order_manager_detail.html", {
         "request": request, "active_page": "order_manager", "current_user": current_user,
-        "manager": manager, "orders": orders, "attachments": attachments,
-        "available_orders": available_orders, "cli_list": cli_list
+        "manager": manager, "orders": offers, "attachments": attachments,
+        "available_orders": available_offers, "cli_list": cli_list, "vendors": vendors,
+        "unpurchased_orders": unpurchased_orders
     })
 
 @app.post("/api/order_manager/add")
@@ -1744,45 +1850,107 @@ async def api_order_manager_template(current_user: dict = Depends(get_current_us
     """下载客户订单导入模板"""
     import io
     from fastapi.responses import StreamingResponse
+    import openpyxl
+    from openpyxl.styles import Font, Alignment
 
-    # 创建CSV模板内容
-    csv_content = "订单号,客户编号,日期,备注\nCO20260101001,C001,2026-01-01,示例备注\nCO20260101002,C002,2026-01-01,示例备注\n"
+    # 创建 Excel 工作簿
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "客户订单导入模板"
 
-    # 创建流式响应
-    buffer = io.BytesIO(csv_content.encode('utf-8-sig'))  # 使用utf-8-sig以支持Excel正确显示中文
+    # 设置表头
+    headers = ["日期", "客户名", "订单号", "备注"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center')
+
+    # 设置示例数据（日期格式为文本，避免Excel自动转换）
+    ws.cell(row=2, column=1, value="2026-01-01")
+    ws.cell(row=2, column=2, value="示例客户")
+    ws.cell(row=2, column=3, value="CO20260101001")
+    ws.cell(row=2, column=4, value="示例备注")
+
+    ws.cell(row=3, column=1, value="2026-01-01")
+    ws.cell(row=3, column=2, value="示例客户")
+    ws.cell(row=3, column=3, value="CO20260101002")
+    ws.cell(row=3, column=4, value="示例备注")
+
+    # 设置列宽
+    ws.column_dimensions['A'].width = 15
+    ws.column_dimensions['B'].width = 15
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['D'].width = 20
+
+    # 保存到内存
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
 
     return StreamingResponse(
         buffer,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=customer_order_template.csv"}
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=customer_order_template.xlsx"}
     )
 
 @app.post("/api/order_manager/batch_import")
 async def api_order_manager_batch_import(batch_text: str = Form(None), csv_file: UploadFile = File(None), cli_id: str = Form(None), current_user: dict = Depends(login_required)):
+    import openpyxl
+    import io
+
+    rows_data = []
+
     if batch_text:
-        text = batch_text
+        # 手动输入的文本，按CSV解析
+        text = batch_text.strip()
+        import csv
+        f = io.StringIO(text)
+        reader = csv.reader(f)
+        rows_data = list(reader)
     elif csv_file:
         content = await csv_file.read()
-        try:
-            text = content.decode('utf-8-sig').strip()
-        except UnicodeDecodeError:
-            text = content.decode('gbk', errors='replace').strip()
+        filename = csv_file.filename or ""
+
+        # 判断是否为Excel文件
+        if filename.lower().endswith('.xlsx'):
+            try:
+                wb = openpyxl.load_workbook(io.BytesIO(content))
+                ws = wb.active
+                # 将Excel行转换为列表
+                for row in ws.iter_rows(values_only=True):
+                    # 将None转换为空字符串，其他值转换为字符串
+                    row_values = [str(cell) if cell is not None else "" for cell in row]
+                    rows_data.append(row_values)
+            except Exception as e:
+                return RedirectResponse(url=f"/order_manager?msg=Excel解析失败: {str(e)}&success=0", status_code=303)
+        else:
+            # CSV文件解析
+            try:
+                text = content.decode('utf-8-sig').strip()
+            except UnicodeDecodeError:
+                text = content.decode('gbk', errors='replace').strip()
+            import csv
+            f = io.StringIO(text)
+            reader = csv.reader(f)
+            rows_data = list(reader)
     else:
         return RedirectResponse(url="/order_manager?msg=未提供导入内容&success=0", status_code=303)
-    success_count, errors = batch_import_manager(text, cli_id)
+
+    # 调用导入函数
+    success_count, errors = batch_import_manager_from_rows(rows_data, cli_id)
     import urllib.parse
     err_msg = ""
     if errors: err_msg = "&msg=" + urllib.parse.quote(errors[0])
     return RedirectResponse(url=f"/order_manager?import_success={success_count}&errors={len(errors)}{err_msg}", status_code=303)
 
 @app.post("/api/order_manager/add_order")
-async def api_order_manager_add_order(manager_id: str = Form(...), order_id: str = Form(...), current_user: dict = Depends(login_required)):
-    ok, msg = add_order_to_manager(manager_id, order_id)
+async def api_order_manager_add_order(manager_id: str = Form(...), offer_id: str = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = add_offer_to_manager(manager_id, offer_id)
     return {"success": ok, "message": msg}
 
 @app.post("/api/order_manager/remove_order")
-async def api_order_manager_remove_order(manager_id: str = Form(...), order_id: str = Form(...), current_user: dict = Depends(login_required)):
-    ok, msg = remove_order_from_manager(manager_id, order_id)
+async def api_order_manager_remove_order(manager_id: str = Form(...), offer_id: str = Form(...), current_user: dict = Depends(login_required)):
+    ok, msg = remove_offer_from_manager(manager_id, offer_id)
     return {"success": ok, "message": msg}
 
 @app.get("/api/order_manager/list")
@@ -1792,8 +1960,8 @@ async def api_order_manager_list_api(page: int = 1, page_size: int = 20, search:
 
 @app.get("/api/order_manager/{manager_id}/orders")
 async def api_order_manager_get_orders(manager_id: str, current_user: dict = Depends(login_required)):
-    orders = get_manager_orders(manager_id)
-    return {"orders": orders}
+    offers = get_manager_offers(manager_id)
+    return {"orders": offers}
 
 @app.post("/api/order_manager/{manager_id}/attachment")
 async def api_order_manager_upload_attachment(manager_id: str, file: UploadFile = File(...), file_type: str = Form("其他"), current_user: dict = Depends(login_required)):
@@ -1830,6 +1998,123 @@ async def api_order_manager_get_attachments(manager_id: str, current_user: dict 
 async def api_order_manager_delete_attachment(attachment_id: int, current_user: dict = Depends(login_required)):
     ok, msg = delete_attachment(attachment_id)
     return {"success": ok, "message": msg}
+
+@app.get("/api/order_manager/by_cli/{cli_id}")
+async def api_order_manager_by_cli(cli_id: str, current_user: dict = Depends(login_required)):
+    """获取指定客户的客户订单列表（用于报价转订单）"""
+    from Sills.db_order_manager import get_manager_list_by_cli
+    managers = get_manager_list_by_cli(cli_id)
+    return managers
+
+@app.post("/api/order_manager/batch_convert_offers")
+async def api_order_manager_batch_convert_offers(request: Request, current_user: dict = Depends(login_required)):
+    """批量将报价转入客户订单"""
+    from Sills.db_order_manager import batch_convert_offers_to_manager
+    data = await request.json()
+    offer_ids = data.get('offer_ids', [])
+    manager_id = data.get('manager_id')
+
+    if not manager_id:
+        return {"success": False, "message": "请选择目标客户订单"}
+
+    ok, msg = batch_convert_offers_to_manager(offer_ids, manager_id)
+    return {"success": ok, "message": msg}
+
+@app.post("/api/order_manager/batch_to_purchase")
+async def api_order_manager_batch_to_purchase(request: Request, current_user: dict = Depends(login_required)):
+    """将客户订单中选中的报价订单转采购（先创建销售订单，再创建采购单）"""
+    from Sills.db_order_manager import get_all_manager_orders_for_purchase
+    from Sills.db_buy import add_buy
+    from Sills.db_order import add_order
+    from Sills.base import get_db_connection
+
+    data = await request.json()
+    manager_ids = data.get('manager_ids', [])
+    selected_offer_ids = data.get('offer_ids', [])  # 选中的报价ID列表
+
+    if not manager_ids:
+        return {"success": False, "message": "请选择客户订单"}
+
+    offers = get_all_manager_orders_for_purchase(manager_ids)
+    if not offers:
+        return {"success": False, "message": "客户订单中没有可转采购的报价订单"}
+
+    # 如果有选中的报价ID，只处理选中的
+    if selected_offer_ids:
+        offers = [o for o in offers if o['offer_id'] in selected_offer_ids]
+
+    if not offers:
+        return {"success": False, "message": "请选择要转采购的报价订单"}
+
+    success_count = 0
+    errors = []
+
+    for offer in offers:
+        try:
+            offer_id = offer['offer_id']
+
+            # 1. 检查是否已有销售订单
+            with get_db_connection() as conn:
+                existing_order = conn.execute(
+                    "SELECT order_id FROM uni_order WHERE offer_id = ?",
+                    (offer_id,)
+                ).fetchone()
+
+                if existing_order:
+                    order_id = existing_order['order_id']
+                else:
+                    # 2. 创建销售订单
+                    order_date = datetime.now().strftime("%Y-%m-%d")
+
+                    # 生成递增的5位数销售订单编号
+                    last_order = conn.execute("SELECT order_id FROM uni_order WHERE order_id LIKE 'd%' ORDER BY order_id DESC LIMIT 1").fetchone()
+                    if last_order:
+                        try:
+                            last_num = int(last_order['order_id'][1:])
+                            new_num = last_num + 1
+                        except:
+                            new_num = 1
+                    else:
+                        new_num = 1
+                    order_id = f"d{new_num:05d}"
+
+                    conn.execute("""
+                        INSERT INTO uni_order (
+                            order_id, order_no, order_date, cli_id, offer_id,
+                            inquiry_mpn, inquiry_brand, price_rmb, price_kwr, price_usd,
+                            cost_price_rmb, is_finished, is_paid, paid_amount, return_status,
+                            remark, is_transferred
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        order_id, order_id, order_date, offer['cli_id'], offer_id,
+                        offer.get('inquiry_mpn'), '', offer.get('price_rmb', 0), 0, offer.get('price_usd', 0),
+                        offer.get('cost_price_rmb', 0), 0, 0, 0.0, '正常',
+                        '', '未转'
+                    ))
+                    conn.commit()
+
+            # 3. 创建采购单
+            buy_data = {
+                'order_id': order_id,
+                'buy_mpn': offer.get('inquiry_mpn'),
+                'buy_brand': offer.get('buy_brand', ''),
+                'vendor_id': offer.get('vendor_id'),
+                'buy_price_rmb': offer.get('cost_price_rmb', 0),
+                'buy_qty': offer.get('quoted_qty', 1),
+                'sales_price_rmb': offer.get('price_rmb', 0),
+            }
+            ok, msg = add_buy(buy_data)
+            if ok:
+                success_count += 1
+            else:
+                errors.append(f"{offer_id}: {msg}")
+        except Exception as e:
+            errors.append(f"{offer.get('offer_id', 'unknown')}: {str(e)}")
+
+    if success_count == 0 and errors:
+        return {"success": False, "message": errors[0]}
+
+    return {"success": True, "message": f"成功转采购 {success_count} 条" + (f" (失败 {len(errors)} 条)" if errors else "")}
 
 # ============ 采购管理 ============
 
@@ -2130,6 +2415,121 @@ async def api_order_generate_ci_us(request: Request, current_user: dict = Depend
             return {"success": False, "message": f"生成失败: {result}"}
     except Exception as e:
         return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
+# ============================================================
+# 基于报价的 PI/CI 生成 API
+# ============================================================
+
+@app.post("/api/offer/generate_pi")
+async def api_offer_generate_pi(request: Request, current_user: dict = Depends(login_required)):
+    """基于报价生成PI-KR文件"""
+    from Sills.document_generator import generate_pi_from_offers
+
+    data = await request.json()
+    offer_ids = data.get("offer_ids", [])
+    if not offer_ids:
+        return {"success": False, "message": "未选择任何报价"}
+
+    try:
+        success, result = generate_pi_from_offers(offer_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
+@app.post("/api/offer/generate_pi_us")
+async def api_offer_generate_pi_us(request: Request, current_user: dict = Depends(login_required)):
+    """基于报价生成PI-US文件（美元版）"""
+    from Sills.document_generator import generate_pi_us_from_offers
+
+    data = await request.json()
+    offer_ids = data.get("offer_ids", [])
+    if not offer_ids:
+        return {"success": False, "message": "未选择任何报价"}
+
+    try:
+        success, result = generate_pi_us_from_offers(offer_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
+@app.post("/api/offer/generate_ci_kr")
+async def api_offer_generate_ci_kr(request: Request, current_user: dict = Depends(login_required)):
+    """基于报价生成CI-KR文件"""
+    from Sills.ci_generator import generate_ci_kr_from_offers
+
+    data = await request.json()
+    offer_ids = data.get("offer_ids", [])
+    if not offer_ids:
+        return {"success": False, "message": "未选择任何报价"}
+
+    try:
+        success, result = generate_ci_kr_from_offers(offer_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "pdf_path": result.get("pdf_path", ""),
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
+
+@app.post("/api/offer/generate_ci_us")
+async def api_offer_generate_ci_us(request: Request, current_user: dict = Depends(login_required)):
+    """基于报价生成CI-US文件（美元版）"""
+    from Sills.document_generator import generate_ci_us_from_offers
+
+    data = await request.json()
+    offer_ids = data.get("offer_ids", [])
+    if not offer_ids:
+        return {"success": False, "message": "未选择任何报价"}
+
+    try:
+        success, result = generate_ci_us_from_offers(offer_ids)
+
+        if success:
+            return {
+                "success": True,
+                "excel_path": result.get("excel_path", ""),
+                "pdf_path": result.get("pdf_path", ""),
+                "count": result.get("count", 0),
+                "cli_name": result.get("cli_name", ""),
+                "invoice_no": result.get("invoice_no", "")
+            }
+        else:
+            return {"success": False, "message": f"生成失败: {result}"}
+    except Exception as e:
+        return {"success": False, "message": f"生成异常: {str(e)}"}
+
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, current_user: dict = Depends(login_required)):

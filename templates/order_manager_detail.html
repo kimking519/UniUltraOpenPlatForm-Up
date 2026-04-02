@@ -174,6 +174,10 @@
                         <span class="om-summary-label">总数量</span>
                         <span class="om-summary-value">{{ manager.total_qty }}</span>
                     </div>
+                    <div class="om-summary-item {% if manager.purchase_complete %}om-summary-purchased{% endif %}">
+                        <span class="om-summary-label">采购进度</span>
+                        <span class="om-summary-value">{{ manager.purchase_progress }}</span>
+                    </div>
                     <div class="om-summary-item">
                         <span class="om-summary-label">总成本</span>
                         <span class="om-summary-value">{{ "%.2f"|format(manager.total_cost_rmb) }}</span>
@@ -200,77 +204,131 @@
             </div>
         </div>
 
-        <!-- 销售订单明细 -->
+        <!-- 报价订单明细 -->
         <div class="om-card">
             <div class="om-card-header">
-                <h3 class="om-card-title">销售订单明细 <span class="om-card-badge">{{ orders|length }}</span></h3>
-                <button class="om-btn om-btn-primary om-btn-sm" onclick="showAddOrderModal()">
-                    <svg class="om-btn-icon-sm" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
-                    添加
-                </button>
+                <h3 class="om-card-title">报价订单明细 <span class="om-card-badge">{{ orders|length }}</span></h3>
+                <div style="display:flex; gap:8px;">
+                    <button class="om-btn om-btn-outline om-btn-sm" onclick="batchToPurchase()" {% if not orders %}disabled{% endif %}>
+                        <svg class="om-btn-icon-sm" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zM3 7a1 1 0 000 2h7a1 1 0 100-2H3zM3 11a1 1 0 100 2h4a1 1 0 100-2H3zM15 8a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V8z"/></svg>
+                        批量转采购
+                    </button>
+                    <button class="om-btn om-btn-primary om-btn-sm" onclick="showAddOrderModal()">
+                        <svg class="om-btn-icon-sm" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                        添加
+                    </button>
+                </div>
             </div>
             <div class="om-card-body om-card-body-table">
-                <table class="om-detail-table">
-                    <thead>
-                        <tr>
-                            <th>订单号</th>
-                            <th>型号</th>
-                            <th class="om-col-num">数量</th>
-                            <th class="om-col-money">单价</th>
-                            <th class="om-col-money">总价</th>
-                            <th class="om-col-money">成本</th>
-                            <th class="om-col-profit">利润</th>
-                            <th class="om-col-action">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for order in orders %}
-                        <tr>
-                            <td><a href="/order?search={{ order.order_id }}" target="_blank" class="om-link om-font-mono">{{ order.order_id }}</a></td>
-                            <td class="om-font-medium">{{ order.inquiry_mpn or order.quoted_mpn or '-' }}</td>
-                            <td class="om-num">{{ order.quoted_qty or 1 }}</td>
-                            <td class="om-num">{{ "%.2f"|format(order.price_rmb or 0) }}</td>
-                            <td class="om-num om-font-medium">{{ "%.2f"|format(order.total_price or 0) }}</td>
-                            <td class="om-num">{{ "%.2f"|format(order.cost_price_rmb or 0) }}</td>
-                            <td class="om-num om-font-semibold {{ 'om-text-success' if order.profit > 0 else 'om-text-danger' }}">{{ "%.2f"|format(order.profit or 0) }}</td>
-                            <td>
-                                <button class="om-btn om-btn-outline om-btn-xs" onclick="removeOrder('{{ order.order_id }}')">移除</button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% if not orders %}
-                        <tr>
-                            <td colspan="8" class="om-empty-state om-empty-state-sm">
-                                <p>暂无关联的销售订单</p>
-                                <button class="om-btn om-btn-primary om-btn-sm" onclick="showAddOrderModal()">添加销售订单</button>
-                            </td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
+                <div class="om-table-container">
+                    <table class="om-detail-table">
+                        <thead>
+                            <tr>
+                                <th class="resizable">日期</th>
+                                <th class="resizable">报价编号</th>
+                                <th class="resizable">需求编号</th>
+                                <th class="resizable">客户名称</th>
+                                <th class="resizable">供应商</th>
+                                <th class="resizable">询价型号</th>
+                                <th class="resizable">报价型号</th>
+                                <th class="resizable">报价品牌</th>
+                                <th class="resizable">数量</th>
+                                <th class="resizable">批号</th>
+                                <th class="resizable">交期</th>
+                                <th class="resizable">成本价</th>
+                                <th class="resizable">报价(RMB)</th>
+                                <th class="resizable">报价(KWR)</th>
+                                <th class="resizable">报价(USD)</th>
+                                <th class="resizable">利润</th>
+                                <th class="resizable">总利润</th>
+                                <th class="resizable">已转</th>
+                                <th class="om-col-action">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for order in orders %}
+                            <tr data-offer-id="{{ order.offer_id }}">
+                                <td>{{ order.offer_date or '' }}</td>
+                                <td class="om-font-mono">{{ order.offer_id }}</td>
+                                <td class="om-font-mono">{{ order.quote_id or '-' }}</td>
+                                <td>{{ order.cli_name or '-' }}</td>
+                                <td ondblclick="makeEditableSelect(this, '{{ order.offer_id }}', 'vendor_id', '{{ order.vendor_id or '' }}')">
+                                    <span>{{ order.vendor_name or '-' }}</span>
+                                </td>
+                                <td class="om-copyable" ondblclick="makeEditable(this, '{{ order.offer_id }}', 'inquiry_mpn')">
+                                    <span>{{ order.inquiry_mpn or '-' }}</span>
+                                </td>
+                                <td class="om-copyable" ondblclick="makeEditable(this, '{{ order.offer_id }}', 'quoted_mpn')">
+                                    <span>{{ order.quoted_mpn or '-' }}</span>
+                                </td>
+                                <td ondblclick="makeEditable(this, '{{ order.offer_id }}', 'quoted_brand')">
+                                    <span>{{ order.quoted_brand or '-' }}</span>
+                                </td>
+                                <td ondblclick="makeEditable(this, '{{ order.offer_id }}', 'quoted_qty', 'number')">
+                                    <span>{{ order.quoted_qty or 1 }}</span>
+                                </td>
+                                <td ondblclick="makeEditable(this, '{{ order.offer_id }}', 'date_code')">
+                                    <span>{{ order.date_code or '-' }}</span>
+                                </td>
+                                <td ondblclick="makeEditable(this, '{{ order.offer_id }}', 'delivery_date')">
+                                    <span>{{ order.delivery_date or '-' }}</span>
+                                </td>
+                                <td class="om-num" ondblclick="makeEditable(this, '{{ order.offer_id }}', 'cost_price_rmb', 'number')">
+                                    <span>{{ "%.4f"|format(order.cost_price_rmb or 0) }}</span>
+                                </td>
+                                <td class="om-num" ondblclick="makeEditableRmb(this, '{{ order.offer_id }}', 'offer_price_rmb', {{ order.offer_price_rmb or 0 }})">
+                                    <span>{{ "%.4f"|format(order.offer_price_rmb or 0) }}</span>
+                                </td>
+                                <td class="om-num" ondblclick="makeEditablePrice(this, '{{ order.offer_id }}', 'price_kwr', 'KWR', {{ order.price_kwr or 0 }}, {{ order.offer_price_rmb or 0 }})">
+                                    <span class="om-text-primary">{{ "%.1f"|format(order.price_kwr or 0) }}</span>
+                                </td>
+                                <td class="om-num" ondblclick="makeEditablePrice(this, '{{ order.offer_id }}', 'price_usd', 'USD', {{ order.price_usd or 0 }}, {{ order.offer_price_rmb or 0 }})">
+                                    <span class="om-text-primary">{{ "%.3f"|format(order.price_usd or 0) }}</span>
+                                </td>
+                                <td class="om-num"><span class="om-text-success om-font-medium">{{ "%.4f"|format(order.profit or 0) }}</span></td>
+                                <td class="om-num"><span class="om-text-success om-font-semibold">{{ "%.4f"|format((order.profit or 0) * (order.quoted_qty or 1)) }}</span></td>
+                                <td ondblclick="makeTransferredEditable(this, '{{ order.offer_id }}', '{{ order.is_transferred or '未转' }}')">
+                                    <span class="om-badge {% if order.is_transferred == '已转' %}om-badge-success{% else %}om-badge-warning{% endif %}">{{ order.is_transferred or '未转' }}</span>
+                                </td>
+                                <td class="om-sticky-action">
+                                    <button class="om-btn om-btn-outline om-btn-xs" onclick="removeOrder('{{ order.offer_id }}')">移除</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if not orders %}
+                            <tr>
+                                <td colspan="19" class="om-empty-state om-empty-state-sm">
+                                    <p>暂无关联的报价订单</p>
+                                    <button class="om-btn om-btn-primary om-btn-sm" onclick="showAddOrderModal()">添加报价订单</button>
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 添加销售订单模态框 -->
+<!-- 添加报价订单模态框 -->
 <div id="addOrderModal" class="om-modal">
     <div class="om-modal-content om-modal-lg">
         <div class="om-modal-header">
-            <h2 class="om-modal-title">添加销售订单</h2>
+            <h2 class="om-modal-title">添加报价订单</h2>
             <button class="om-modal-close" onclick="closeAddOrderModal()">&times;</button>
         </div>
         <div class="om-modal-body">
             <div class="om-search-box">
                 <svg class="om-search-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-                <input type="text" id="orderSearch" placeholder="搜索订单号或型号..." oninput="filterOrders()" class="om-search-input">
+                <input type="text" id="orderSearch" placeholder="搜索报价编号或型号..." oninput="filterOrders()" class="om-search-input">
             </div>
             <div class="om-modal-table-wrap">
                 <table class="om-modal-table">
                     <thead>
                         <tr>
                             <th class="om-col-checkbox"><input type="checkbox" id="selectAllOrders" onchange="toggleSelectAllOrders()" class="om-checkbox"></th>
-                            <th>订单号</th>
+                            <th>报价编号</th>
                             <th>型号</th>
                             <th>客户</th>
                             <th>日期</th>
@@ -279,13 +337,13 @@
                     </thead>
                     <tbody id="availableOrders">
                         {% for order in available_orders %}
-                        <tr class="om-modal-row" data-order-id="{{ order.order_id }}" data-search="{{ order.order_id }} {{ order.inquiry_mpn }} {{ order.cli_name }}">
-                            <td><input type="checkbox" class="order-checkbox om-checkbox" value="{{ order.order_id }}"></td>
-                            <td class="om-font-mono">{{ order.order_id }}</td>
-                            <td>{{ order.inquiry_mpn or '-' }}</td>
+                        <tr class="om-modal-row" data-offer-id="{{ order.offer_id }}" data-search="{{ order.offer_id }} {{ order.quoted_mpn }} {{ order.inquiry_mpn }} {{ order.cli_name }}">
+                            <td><input type="checkbox" class="order-checkbox om-checkbox" value="{{ order.offer_id }}"></td>
+                            <td class="om-font-mono">{{ order.offer_id }}</td>
+                            <td>{{ order.quoted_mpn or order.inquiry_mpn or '-' }}</td>
                             <td>{{ order.cli_name }}</td>
-                            <td class="om-text-muted">{{ order.order_date }}</td>
-                            <td class="om-num">{{ "%.2f"|format(order.price_rmb or 0) }}</td>
+                            <td class="om-text-muted">{{ order.offer_date }}</td>
+                            <td class="om-num">{{ "%.2f"|format(order.offer_price_rmb or 0) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -295,6 +353,62 @@
         <div class="om-modal-footer">
             <button class="om-btn om-btn-primary" onclick="addSelectedOrders()">添加选中</button>
             <button class="om-btn om-btn-outline" onclick="closeAddOrderModal()">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 批量转采购选择模态框 -->
+<div id="purchaseModal" class="om-modal">
+    <div class="om-modal-content om-modal-lg">
+        <div class="om-modal-header">
+            <h2 class="om-modal-title">选择要转采购的型号</h2>
+            <button class="om-modal-close" onclick="closePurchaseModal()">&times;</button>
+        </div>
+        <div class="om-modal-body">
+            <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="selectAllPurchase" checked onchange="toggleSelectAllPurchase()" class="om-checkbox">
+                    <span>全选</span>
+                </label>
+                <span id="purchaseSelectedCount" style="color: var(--om-primary); font-weight: 500;">已选 0 项</span>
+            </div>
+            <div class="om-modal-table-wrap">
+                <table class="om-modal-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox" checked onchange="toggleSelectAllPurchase()" class="om-checkbox"></th>
+                            <th>报价编号</th>
+                            <th>型号</th>
+                            <th>品牌</th>
+                            <th>数量</th>
+                            <th>成本价</th>
+                            <th>供应商</th>
+                        </tr>
+                    </thead>
+                    <tbody id="purchaseOrderList">
+                        {% for order in unpurchased_orders %}
+                        <tr class="om-modal-row" data-offer-id="{{ order.offer_id }}">
+                            <td><input type="checkbox" class="purchase-checkbox om-checkbox" value="{{ order.offer_id }}" data-mpn="{{ order.quoted_mpn or order.inquiry_mpn }}" checked onchange="updatePurchaseCount()"></td>
+                            <td class="om-font-mono">{{ order.offer_id }}</td>
+                            <td>{{ order.quoted_mpn or order.inquiry_mpn or '-' }}</td>
+                            <td>{{ order.buy_brand or '-' }}</td>
+                            <td>{{ order.quoted_qty or 1 }}</td>
+                            <td class="om-num">{{ "%.4f"|format(order.cost_price_rmb or 0) }}</td>
+                            <td>{{ order.vendor_name or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% if not unpurchased_orders %}
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 20px; color: var(--om-gray-500);">暂无可转采购的报价订单</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="om-modal-footer">
+            <button class="om-btn om-btn-primary" onclick="confirmBatchToPurchase()">确认转采购</button>
+            <button class="om-btn om-btn-outline" onclick="closePurchaseModal()">取消</button>
         </div>
     </div>
 </div>
@@ -498,6 +612,11 @@
     background: linear-gradient(135deg, var(--om-danger-bg) 0%, #FEF2F2 100%);
     border-color: var(--om-danger);
 }
+.om-summary-purchased {
+    background: linear-gradient(135deg, var(--om-success-bg) 0%, #ECFDF5 100%);
+    border-color: var(--om-success);
+}
+.om-summary-purchased .om-summary-value { color: var(--om-success); }
 .om-summary-label {
     font-size: 11px;
     color: var(--om-gray-500);
@@ -525,31 +644,72 @@
 .om-profit-negative .om-summary-percent { color: var(--om-danger); }
 
 /* ============ 详情表格 ============ */
+.om-table-container {
+    overflow-x: auto;
+    max-height: 60vh;
+    overflow-y: auto;
+}
 .om-detail-table {
     width: 100%;
+    min-width: 1600px;
     border-collapse: collapse;
     font-size: 13px;
 }
 .om-detail-table th {
-    background: var(--om-gray-50);
+    background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
     padding: 10px 12px;
     text-align: left;
     font-weight: 600;
     font-size: 12px;
-    color: var(--om-gray-600);
-    border-bottom: 1px solid var(--om-gray-200);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: var(--om-gray-800);
+    border-bottom: 2px solid var(--om-gray-400);
+    border-right: 1px solid var(--om-gray-300);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.om-detail-table th:last-child {
+    border-right: none;
+}
+.om-detail-table th.resizable {
+    position: relative;
+}
+.om-detail-table th.resizable::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+}
+.om-detail-table th.resizable:hover::after {
+    background: var(--om-primary);
 }
 .om-detail-table td {
-    padding: 12px;
-    border-bottom: 1px solid var(--om-gray-100);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--om-gray-200);
+    border-right: 1px solid var(--om-gray-200);
 }
-.om-detail-table tbody tr:hover { background: var(--om-gray-50); }
-.om-col-num { width: 70px; text-align: center; }
-.om-col-money { min-width: 90px; text-align: right; }
-.om-col-profit { min-width: 90px; text-align: right; }
-.om-col-action { width: 80px; }
+.om-detail-table td:last-child {
+    border-right: none;
+}
+.om-detail-table tbody tr:nth-child(odd) {
+    background: #f8fafc;
+}
+.om-detail-table tbody tr:nth-child(even) {
+    background: #ffffff;
+}
+.om-detail-table tbody tr:hover { background: #eff6ff; }
+.om-col-action { width: 80px; position: sticky; right: 0; background: white; }
+.om-sticky-action {
+    position: sticky;
+    right: 0;
+    background: white;
+    box-shadow: -4px 0 8px rgba(0, 0, 0, 0.05);
+}
 .om-col-checkbox { width: 40px; }
 
 /* ============ 文本样式 ============ */
@@ -753,10 +913,43 @@
 @media (max-width: 768px) {
     .om-summary-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ============ 徽章 ============ */
+.om-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 12px;
+}
+.om-badge-success { background: #d1fae5; color: #059669; }
+.om-badge-warning { background: #fef3c7; color: #d97706; }
+
+/* ============ 可编辑单元格 ============ */
+.om-detail-table td[ondblclick]:hover {
+    cursor: pointer;
+    background: #e0f2fe;
+}
+.om-detail-table td input,
+.om-detail-table td select {
+    width: 100%;
+    min-width: 60px;
+    padding: 4px 6px;
+    font-size: 12px;
+    border: 1px solid var(--om-primary);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
 </style>
 
 <script>
 const managerId = '{{ manager.manager_id }}';
+
+// 供应商选项（从页面数据加载）
+let vendorOptions = '';
+{% for v in vendors %}
+vendorOptions += '<option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>';
+{% endfor %}
 
 async function updateField(field, value) {
     const formData = new FormData();
@@ -767,6 +960,222 @@ async function updateField(field, value) {
     const result = await response.json();
     if (!result.success) { alert('更新失败: ' + result.message); }
 }
+
+// ========== 双击编辑功能 ==========
+function makeEditable(td, offerId, field, inputType = 'text') {
+    if (td.querySelector('input')) return;
+    const isSpan = td.querySelector('span') !== null;
+    const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
+    td.innerHTML = `<input type="${inputType}" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+    const input = td.querySelector('input');
+    input.focus();
+    input.select();
+
+    input.onblur = async () => {
+        const newValue = input.value.trim();
+        if (newValue !== originalValue) {
+            const formData = new FormData();
+            formData.append('offer_id', offerId);
+            formData.append('field', field);
+            formData.append('value', newValue);
+            const response = await fetch('/api/offer/update', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.success) {
+                location.reload();
+            } else {
+                alert('更新失败: ' + result.message);
+                td.innerHTML = `<span>${originalValue}</span>`;
+            }
+        } else {
+            td.innerHTML = `<span>${originalValue}</span>`;
+        }
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { td.innerHTML = `<span>${originalValue}</span>`; }
+    };
+}
+
+async function makeEditableRmb(td, offerId, field, currentValue) {
+    if (td.querySelector('input')) return;
+    const originalValue = currentValue;
+    td.innerHTML = `<input type="number" step="0.0001" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+    const input = td.querySelector('input');
+    input.focus();
+    input.select();
+
+    input.onblur = async () => {
+        const newValue = parseFloat(input.value) || 0;
+        if (newValue !== originalValue) {
+            const formData = new FormData();
+            formData.append('offer_id', offerId);
+            formData.append('field', field);
+            formData.append('value', newValue);
+            const response = await fetch('/api/offer/update', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.success) {
+                location.reload();
+            } else {
+                alert('更新失败: ' + result.message);
+                td.innerHTML = `<span>${originalValue.toFixed(4)}</span>`;
+            }
+        } else {
+            td.innerHTML = `<span>${originalValue.toFixed(4)}</span>`;
+        }
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { td.innerHTML = `<span>${originalValue.toFixed(4)}</span>`; }
+    };
+}
+
+async function makeEditablePrice(td, offerId, field, currency, currentValue, currentRmb) {
+    if (td.querySelector('input')) return;
+
+    // 获取最新汇率
+    let exchangeRate = currency === 'KWR' ? 180.0 : 7.0;
+    try {
+        const rateResp = await fetch('/api/daily/rate?currency=' + currency);
+        const rateData = await rateResp.json();
+        if (rateData.rate) exchangeRate = rateData.rate;
+    } catch (e) {}
+
+    const originalValue = currentValue;
+    td.innerHTML = `<input type="number" step="0.01" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+    const input = td.querySelector('input');
+    input.focus();
+    input.select();
+
+    input.onblur = async () => {
+        const newValue = parseFloat(input.value) || 0;
+        if (newValue !== originalValue) {
+            // 计算新的RMB价格
+            const newRmb = newValue * exchangeRate;
+            const formData = new FormData();
+            formData.append('offer_id', offerId);
+            formData.append('field', field);
+            formData.append('value', newValue);
+            await fetch('/api/offer/update', { method: 'POST', body: formData });
+
+            // 同时更新RMB价格
+            const formData2 = new FormData();
+            formData2.append('offer_id', offerId);
+            formData2.append('field', 'offer_price_rmb');
+            formData2.append('value', newRmb);
+            await fetch('/api/offer/update', { method: 'POST', body: formData2 });
+
+            location.reload();
+        } else {
+            td.innerHTML = `<span class="om-text-primary">${originalValue.toFixed(currency === 'KWR' ? 1 : 3)}</span>`;
+        }
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') { td.innerHTML = `<span class="om-text-primary">${originalValue.toFixed(currency === 'KWR' ? 1 : 3)}</span>`; }
+    };
+}
+
+function makeEditableSelect(td, offerId, field, originalId) {
+    if (td.querySelector('select')) return;
+    const originalText = td.querySelector('span').innerText;
+    td.innerHTML = `<select style="width: 100%; padding: 4px; box-sizing: border-box;"><option value="">无</option>${vendorOptions}</select>`;
+    const select = td.querySelector('select');
+    select.value = originalId;
+    select.focus();
+
+    select.onblur = async () => {
+        const newValue = select.value;
+        const newText = select.options[select.selectedIndex].text;
+        if (newValue !== originalId) {
+            const formData = new FormData();
+            formData.append('offer_id', offerId);
+            formData.append('field', field);
+            formData.append('value', newValue);
+            const response = await fetch('/api/offer/update', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.success) {
+                td.innerHTML = `<span>${newText}</span>`;
+            } else {
+                alert('更新失败: ' + result.message);
+                td.innerHTML = `<span>${originalText}</span>`;
+            }
+        } else {
+            td.innerHTML = `<span>${originalText}</span>`;
+        }
+    };
+
+    select.onkeydown = (e) => {
+        if (e.key === 'Escape') { td.innerHTML = `<span>${originalText}</span>`; }
+    };
+}
+
+function makeTransferredEditable(td, offerId, currentValue) {
+    if (td.querySelector('select')) return;
+    const originalValue = currentValue;
+    td.innerHTML = `<select style="width: 100%; padding: 4px; box-sizing: border-box;">
+        <option value="未转" ${originalValue === '未转' ? 'selected' : ''}>未转</option>
+        <option value="已转" ${originalValue === '已转' ? 'selected' : ''}>已转</option>
+    </select>`;
+    const select = td.querySelector('select');
+    select.focus();
+
+    select.onblur = async () => {
+        const newValue = select.value;
+        if (newValue !== originalValue) {
+            const formData = new FormData();
+            formData.append('offer_id', offerId);
+            formData.append('field', 'is_transferred');
+            formData.append('value', newValue);
+            const response = await fetch('/api/offer/update', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (result.success) {
+                td.innerHTML = `<span class="om-badge ${newValue === '已转' ? 'om-badge-success' : 'om-badge-warning'}">${newValue}</span>`;
+            } else {
+                alert('更新失败: ' + result.message);
+                td.innerHTML = `<span class="om-badge ${originalValue === '已转' ? 'om-badge-success' : 'om-badge-warning'}">${originalValue}</span>`;
+            }
+        } else {
+            td.innerHTML = `<span class="om-badge ${originalValue === '已转' ? 'om-badge-success' : 'om-badge-warning'}">${originalValue}</span>`;
+        }
+    };
+
+    select.onkeydown = (e) => {
+        if (e.key === 'Escape') { td.innerHTML = `<span class="om-badge ${originalValue === '已转' ? 'om-badge-success' : 'om-badge-warning'}">${originalValue}</span>`; }
+    };
+}
+
+// ========== 列宽拖拽调整 ==========
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.querySelector('.om-detail-table');
+    const ths = table.querySelectorAll('th.resizable');
+
+    ths.forEach(th => {
+        let startX, startWidth;
+
+        th.addEventListener('mousedown', function(e) {
+            if (e.offsetX > th.offsetWidth - 5) {
+                startX = e.pageX;
+                startWidth = th.offsetWidth;
+
+                const onMouseMove = function(e) {
+                    th.style.width = (startWidth + (e.pageX - startX)) + 'px';
+                };
+
+                const onMouseUp = function() {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                e.preventDefault();
+            }
+        });
+    });
+});
 
 function showAddOrderModal() { document.getElementById('addOrderModal').style.display = 'flex'; }
 function closeAddOrderModal() { document.getElementById('addOrderModal').style.display = 'none'; }
@@ -788,11 +1197,11 @@ function filterOrders() {
 
 async function addSelectedOrders() {
     const checkboxes = document.querySelectorAll('.order-checkbox:checked');
-    if (checkboxes.length === 0) { alert('请选择要添加的销售订单'); return; }
+    if (checkboxes.length === 0) { alert('请选择要添加的报价订单'); return; }
     for (const cb of checkboxes) {
         const formData = new FormData();
         formData.append('manager_id', managerId);
-        formData.append('order_id', cb.value);
+        formData.append('offer_id', cb.value);
         const response = await fetch('/api/order_manager/add_order', { method: 'POST', body: formData });
         const result = await response.json();
         if (!result.success) { alert('添加失败: ' + result.message); }
@@ -800,11 +1209,11 @@ async function addSelectedOrders() {
     location.reload();
 }
 
-async function removeOrder(orderId) {
-    if (!confirm('确定要从客户订单中移除此销售订单吗？')) return;
+async function removeOrder(offerId) {
+    if (!confirm('确定要从客户订单中移除此报价订单吗？')) return;
     const formData = new FormData();
     formData.append('manager_id', managerId);
-    formData.append('order_id', orderId);
+    formData.append('offer_id', offerId);
     const response = await fetch('/api/order_manager/remove_order', { method: 'POST', body: formData });
     const result = await response.json();
     if (result.success) { location.reload(); } else { alert('移除失败: ' + result.message); }
@@ -827,6 +1236,58 @@ async function deleteAttachment(attachmentId) {
     const response = await fetch(`/api/order_manager/attachment/${attachmentId}`, { method: 'DELETE' });
     const result = await response.json();
     if (result.success) { location.reload(); } else { alert('删除失败: ' + result.message); }
+}
+
+async function batchToPurchase() {
+    // 打开选择模态框
+    document.getElementById('purchaseModal').style.display = 'flex';
+    updatePurchaseCount();
+}
+
+function closePurchaseModal() {
+    document.getElementById('purchaseModal').style.display = 'none';
+}
+
+function toggleSelectAllPurchase() {
+    const checkboxes = document.querySelectorAll('.purchase-checkbox');
+    const selectAll = document.getElementById('selectAllPurchase');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updatePurchaseCount();
+}
+
+function updatePurchaseCount() {
+    const checkboxes = document.querySelectorAll('.purchase-checkbox:checked');
+    document.getElementById('purchaseSelectedCount').textContent = `已选 ${checkboxes.length} 项`;
+}
+
+async function confirmBatchToPurchase() {
+    const checkboxes = document.querySelectorAll('.purchase-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请选择要转采购的型号');
+        return;
+    }
+
+    const offerIds = Array.from(checkboxes).map(cb => cb.value);
+
+    if (!confirm(`确定要将选中的 ${offerIds.length} 条报价订单转采购吗？`)) return;
+
+    try {
+        const response = await fetch('/api/order_manager/batch_to_purchase', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manager_ids: [managerId], offer_ids: offerIds })
+        });
+        const result = await response.json();
+        if (result.success) {
+            alert(result.message);
+            window.location.href = '/buy';
+        } else {
+            alert('转采购失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('请求失败，请稍后重试');
+    }
 }
 </script>
 {% endblock %}

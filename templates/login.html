@@ -17,76 +17,35 @@
             overflow: hidden;
         }
 
-        /* Animated background */
+        /* Animated background - 简化动画提升性能 */
         body::before {
             content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background:
-                radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.1) 0%, transparent 40%);
-            animation: bgFloat 20s ease-in-out infinite;
-        }
-
-        @keyframes bgFloat {
-            0%, 100% { transform: translate(0, 0) rotate(0deg); }
-            33% { transform: translate(30px, -30px) rotate(5deg); }
-            66% { transform: translate(-20px, 20px) rotate(-5deg); }
-        }
-
-        /* Floating particles */
-        .particles {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            overflow: hidden;
-            pointer-events: none;
+            background:
+                radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.1) 0%, transparent 40%);
+            /* 移除持续动画，改为静态背景 */
         }
 
-        .particle {
-            position: absolute;
-            width: 4px;
-            height: 4px;
-            background: rgba(99, 102, 241, 0.5);
-            border-radius: 50%;
-            animation: particleFloat 15s infinite;
+        /* Floating particles - 移除动画提升性能 */
+        .particles {
+            display: none;
         }
 
-        .particle:nth-child(1) { left: 10%; animation-delay: 0s; }
-        .particle:nth-child(2) { left: 20%; animation-delay: 2s; }
-        .particle:nth-child(3) { left: 30%; animation-delay: 4s; }
-        .particle:nth-child(4) { left: 40%; animation-delay: 1s; }
-        .particle:nth-child(5) { left: 50%; animation-delay: 3s; }
-        .particle:nth-child(6) { left: 60%; animation-delay: 5s; }
-        .particle:nth-child(7) { left: 70%; animation-delay: 2.5s; }
-        .particle:nth-child(8) { left: 80%; animation-delay: 4.5s; }
-        .particle:nth-child(9) { left: 90%; animation-delay: 1.5s; }
-
-        @keyframes particleFloat {
-            0% { transform: translateY(100vh) scale(0); opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
-            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
-        }
-
-        /* Login Card - Glassmorphism */
+        /* Login Card - 简化效果提升性能 */
         .login-card {
             width: 420px;
             padding: 3rem;
-            background: rgba(255, 255, 255, 0.1);
-            -webkit-backdrop-filter: blur(20px);
-            backdrop-filter: blur(20px);
+            background: rgba(30, 41, 59, 0.95);
             border-radius: 24px;
             box-shadow:
                 0 25px 50px -12px rgba(0, 0, 0, 0.5),
-                0 0 0 1px rgba(255, 255, 255, 0.1),
-                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                0 0 0 1px rgba(255, 255, 255, 0.1);
             position: relative;
             z-index: 10;
             animation: cardSlideIn 0.6s ease-out;
@@ -255,19 +214,6 @@
 </head>
 
 <body>
-    <!-- Floating Particles -->
-    <div class="particles">
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-        <div class="particle"></div>
-    </div>
-
     <div class="login-card fade-in">
         <div class="login-header">
             <h1>UniUltra</h1>

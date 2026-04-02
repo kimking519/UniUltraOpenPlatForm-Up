@@ -1332,13 +1332,13 @@
                         <option value="1000">1000</option>
                     </select>
                 </div>
-                <button class="toolbar-btn" onclick="syncEmails()">
+                <button class="toolbar-btn" id="syncBtn" onclick="syncEmails()">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                     </svg>
                     同步
                 </button>
-                <button class="toolbar-btn" onclick="syncNewEmails()" title="只获取新邮件">
+                <button class="toolbar-btn" id="refreshBtn" onclick="syncNewEmails()" title="只获取新邮件">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                     </svg>
@@ -2668,6 +2668,12 @@
             return;
         }
 
+        // 禁用同步按钮，防止重复点击
+        const syncBtn = document.getElementById('syncBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        syncBtn.disabled = true;
+        refreshBtn.disabled = true;
+
         const statusEl = document.getElementById('syncStatus');
         const textEl = document.getElementById('syncText');
         const progressBar = document.getElementById('syncProgressBar');
@@ -2704,6 +2710,9 @@
                             textEl.textContent = '就绪';
                             statusEl.classList.remove('syncing');
                             showCancelButton(false);
+                            // 重新启用按钮
+                            syncBtn.disabled = false;
+                            refreshBtn.disabled = false;
 
                             setTimeout(() => {
                                 progressBar.classList.remove('active');
@@ -2722,6 +2731,8 @@
                 setTimeout(() => {
                     clearInterval(pollInterval);
                     showCancelButton(false);
+                    syncBtn.disabled = false;
+                    refreshBtn.disabled = false;
                 }, 600000);
             } else if (data.status === 'already_running') {
                 progressText.textContent = '已在同步中';
@@ -2733,6 +2744,8 @@
                 progressText.textContent = '';
                 showCancelButton(false);
                 textEl.textContent = data.message || '同步失败';
+                syncBtn.disabled = false;
+                refreshBtn.disabled = false;
             }
         } catch (error) {
             statusEl.classList.remove('syncing');
@@ -2741,11 +2754,19 @@
             progressText.textContent = '';
             showCancelButton(false);
             textEl.textContent = '同步失败';
+            syncBtn.disabled = false;
+            refreshBtn.disabled = false;
         }
     }
 
     // 刷新：增量同步新邮件
     async function syncNewEmails() {
+        // 禁用同步按钮，防止重复点击
+        const syncBtn = document.getElementById('syncBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        syncBtn.disabled = true;
+        refreshBtn.disabled = true;
+
         const statusEl = document.getElementById('syncStatus');
         const textEl = document.getElementById('syncText');
         const progressBar = document.getElementById('syncProgressBar');
@@ -2783,6 +2804,9 @@
                             textEl.textContent = '就绪';
                             statusEl.classList.remove('syncing');
                             showCancelButton(false);
+                            // 重新启用按钮
+                            syncBtn.disabled = false;
+                            refreshBtn.disabled = false;
 
                             // 获取最终同步的邮件数
                             const newCount = statusData.synced_emails || lastSyncedCount;
@@ -2812,6 +2836,8 @@
                 setTimeout(() => {
                     clearInterval(pollInterval);
                     showCancelButton(false);
+                    syncBtn.disabled = false;
+                    refreshBtn.disabled = false;
                 }, 600000);
             } else if (data.status === 'already_running') {
                 progressText.textContent = '已有同步任务';
@@ -2822,6 +2848,8 @@
                 progressText.textContent = '';
                 showCancelButton(false);
                 textEl.textContent = data.message || '刷新失败';
+                syncBtn.disabled = false;
+                refreshBtn.disabled = false;
             }
         } catch (error) {
             statusEl.classList.remove('syncing');
@@ -2829,6 +2857,8 @@
             progressText.textContent = '';
             showCancelButton(false);
             textEl.textContent = '刷新失败';
+            syncBtn.disabled = false;
+            refreshBtn.disabled = false;
         }
     }
 
@@ -3844,16 +3874,8 @@
         // 不在页面加载时启动自动同步，只有用户手动点击刷新时才同步
         // startAutoSync(syncIntervalMinutes);
 
-        // Load sync days
-        try {
-            const response = await fetch('/api/mail/sync-days');
-            if (response.ok) {
-                const data = await response.json();
-                document.getElementById('syncDays').value = data.days || 90;
-            }
-        } catch (error) {
-            console.error('Load sync days error:', error);
-        }
+        // Load sync days - 已改用快捷按钮和自定义日期范围，此处仅作兼容处理
+        // 不再尝试设置不存在的 syncDays 元素
 
         // Load sync deleted setting
         try {

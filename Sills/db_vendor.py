@@ -1,6 +1,17 @@
 import sqlite3
 from Sills.base import get_db_connection
 
+def get_vendor_list(page=1, page_size=20, search_kw=""):
+    """分页查询供应商列表"""
+    offset = (page - 1) * page_size
+    with get_db_connection() as conn:
+        count_sql = "SELECT COUNT(*) FROM uni_vendor WHERE vendor_name LIKE ? OR vendor_id LIKE ?"
+        data_sql = "SELECT * FROM uni_vendor WHERE vendor_name LIKE ? OR vendor_id LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params = [f"%{search_kw}%", f"%{search_kw}%"]
+        total = conn.execute(count_sql, params).fetchone()[0]
+        rows = conn.execute(data_sql, params + [page_size, offset]).fetchall()
+        return [dict(r) for r in rows], total
+
 def get_next_vendor_id():
     with get_db_connection() as conn:
         row = conn.execute("SELECT MAX(vendor_id) FROM uni_vendor").fetchone()
