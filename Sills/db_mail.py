@@ -73,7 +73,7 @@ def get_mail_list(page: int = 1, limit: int = 20, is_sent: int = 0,
         params.extend([search_param, search_param, search_param])
         count_params.extend([search_param, search_param, search_param])
 
-    query += " ORDER BY received_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY received_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
@@ -129,7 +129,7 @@ def get_trash_list(page: int = 1, limit: int = 20, search: str = None, account_i
         params.extend([search_param, search_param, search_param])
         count_params.extend([search_param, search_param, search_param])
 
-    query += " ORDER BY deleted_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
@@ -390,6 +390,20 @@ def batch_delete_emails(mail_ids: list) -> int:
         return result.rowcount
 
 
+def batch_permanently_delete_emails(mail_ids: list) -> int:
+    """批量永久删除邮件"""
+    if not mail_ids:
+        return 0
+    with get_db_connection() as conn:
+        placeholders = ','.join('?' * len(mail_ids))
+        # 先删除关联关系
+        conn.execute(f"DELETE FROM uni_mail_rel WHERE mail_id IN ({placeholders})", mail_ids)
+        # 再永久删除邮件
+        result = conn.execute(f"DELETE FROM uni_mail WHERE id IN ({placeholders})", mail_ids)
+        conn.commit()
+        return result.rowcount
+
+
 def batch_restore_emails(mail_ids: list) -> int:
     """批量恢复邮件（从回收站）"""
     if not mail_ids:
@@ -468,7 +482,8 @@ def get_draft_list(page: int = 1, limit: int = 20, search: str = None, account_i
         params.extend([search_param, search_param])
         count_params.extend([search_param, search_param])
 
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    # 草稿按received_at排序，与前端显示的日期一致
+    query += " ORDER BY received_at DESC NULLS LAST, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
@@ -637,7 +652,7 @@ def get_blacklisted_list(page: int = 1, limit: int = 20, search: str = None, acc
         params.extend([search_param, search_param])
         count_params.extend([search_param, search_param])
 
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
@@ -1391,18 +1406,46 @@ def clear_sync_date_range() -> bool:
 
 # ==================== 邮件文件夹管理 ====================
 
-def get_folders(account_id: int = None) -> List[Dict[str, Any]]:
-    """获取文件夹列表"""
+def get_folders(account_id: int = None, exclude_system: bool = True) -> List[Dict[str, Any]]:
+    """
+    获取文件夹列表
+
+    Args:
+        account_id: 账户ID
+        exclude_system: 是否排除系统文件夹（前端已硬编码的文件夹）
+
+    Returns:
+        文件夹列表
+    """
+    # 前端已硬编码的系统文件夹名称，不需要动态加载
+    system_folder_names = ['收件箱', '已发送', '草稿箱', '垃圾邮件', '黑名单邮件', '回收站']
+
     with get_db_connection() as conn:
         if account_id is not None:
-            rows = conn.execute(
-                "SELECT * FROM mail_folder WHERE account_id = ? OR account_id IS NULL ORDER BY sort_order, id",
-                (account_id,)
-            ).fetchall()
+            if exclude_system:
+                # 排除系统文件夹
+                placeholders = ','.join('?' * len(system_folder_names))
+                rows = conn.execute(
+                    f"SELECT * FROM mail_folder WHERE (account_id = ? OR account_id IS NULL) AND folder_name NOT IN ({placeholders}) ORDER BY sort_order, id",
+                    [account_id] + system_folder_names
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM mail_folder WHERE account_id = ? OR account_id IS NULL ORDER BY sort_order, id",
+                    (account_id,)
+                ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM mail_folder ORDER BY sort_order, id"
-            ).fetchall()
+            if exclude_system:
+                # 排除系统文件夹
+                placeholders = ','.join('?' * len(system_folder_names))
+                rows = conn.execute(
+                    f"SELECT * FROM mail_folder WHERE folder_name NOT IN ({placeholders}) ORDER BY sort_order, id",
+                    system_folder_names
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM mail_folder ORDER BY sort_order, id"
+                ).fetchall()
         return [dict(row) for row in rows]
 
 
@@ -1780,8 +1823,8 @@ def get_mails_by_folder(folder_id: int, page: int = 1, limit: int = 20,
     # 列表视图只查询必要字段，避免加载大字段
     select_fields = "id, subject, from_addr, from_name, to_addr, received_at, sent_at, is_sent, is_read, message_id, account_id, folder_id, created_at"
 
-    query = f"SELECT {select_fields} FROM uni_mail WHERE folder_id = ? AND is_sent = 0"
-    count_query = "SELECT COUNT(*) FROM uni_mail WHERE folder_id = ? AND is_sent = 0"
+    query = f"SELECT {select_fields} FROM uni_mail WHERE folder_id = ? AND is_sent = 0 AND is_deleted = 0"
+    count_query = "SELECT COUNT(*) FROM uni_mail WHERE folder_id = ? AND is_sent = 0 AND is_deleted = 0"
 
     if account_id is not None:
         query += " AND account_id = ?"
@@ -1796,7 +1839,7 @@ def get_mails_by_folder(folder_id: int, page: int = 1, limit: int = 20,
         params.extend([search_param, search_param])
         count_params.extend([search_param, search_param])
 
-    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
@@ -1944,12 +1987,21 @@ def clear_account_emails(account_id: int) -> dict:
         {"deleted": 删除数量}
     """
     with get_db_connection() as conn:
+        # 清空邮件
         result = conn.execute(
             "DELETE FROM uni_mail WHERE account_id = ?",
             (account_id,)
         )
+        deleted_count = result.rowcount
+        # 同时清理已同步UID记录，确保重新同步时能获取所有邮件
+        uid_result = conn.execute(
+            "DELETE FROM uni_mail_synced_uid WHERE account_id = ?",
+            (account_id,)
+        )
+        uid_deleted = uid_result.rowcount if hasattr(uid_result, 'rowcount') else 0
         conn.commit()
-        return {"deleted": result.rowcount}
+        print(f"[DB] 清空账户 {account_id} 邮件: 删除 {deleted_count} 封邮件, 清理 {uid_deleted} 条同步记录")
+        return {"deleted": deleted_count, "synced_uids_cleared": uid_deleted}
 
 
 # ==================== 已同步UID记录 ====================
@@ -2085,12 +2137,77 @@ def set_sync_deleted_setting(enabled: bool) -> bool:
     with get_db_connection() as conn:
         try:
             conn.execute("""
-                INSERT OR REPLACE INTO global_settings (key, value, updated_at)
-                VALUES ('sync_deleted_emails', ?, datetime('now', 'localtime'))
-            """, (str(enabled).lower(),))
+                INSERT INTO global_settings (key, value, updated_at)
+                VALUES ('sync_deleted_emails', %s, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = %s, updated_at = NOW()
+            """, (str(enabled).lower(), str(enabled).lower()))
             conn.commit()
             return True
         except Exception as e:
             print(f"Set sync deleted setting error: {e}")
             return False
+
+
+# ============ 垃圾邮件文件夹功能 ============
+
+def get_spam_list(page: int = 1, limit: int = 20, search: str = None, account_id: int = None) -> Dict[str, Any]:
+    """
+    获取垃圾邮件列表（分页）
+    """
+    spam_folder_id = get_or_create_spam_folder(account_id)
+    return get_mails_by_folder(spam_folder_id, page, limit, search, account_id)
+
+
+def get_spam_count(account_id: int = None) -> int:
+    """获取垃圾邮件数量"""
+    spam_folder_id = get_or_create_spam_folder(account_id)
+    with get_db_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM uni_mail WHERE folder_id = ? AND is_deleted = 0",
+            (spam_folder_id,)
+        ).fetchone()
+        return row[0] if row else 0
+
+
+def move_email_to_folder(mail_id: int, folder_id: int = None) -> bool:
+    """
+    移动邮件到指定文件夹
+
+    Args:
+        mail_id: 邮件ID
+        folder_id: 目标文件夹ID，None表示移回收件箱
+
+    Returns:
+        是否成功
+    """
+    with get_db_connection() as conn:
+        result = conn.execute(
+            "UPDATE uni_mail SET folder_id = ? WHERE id = ?",
+            (folder_id, mail_id)
+        )
+        conn.commit()
+        return result.rowcount > 0
+
+
+def move_emails_to_folder(mail_ids: list, folder_id: int = None) -> int:
+    """
+    批量移动邮件到指定文件夹
+
+    Args:
+        mail_ids: 邮件ID列表
+        folder_id: 目标文件夹ID，None表示移回收件箱
+
+    Returns:
+        成功移动的数量
+    """
+    if not mail_ids:
+        return 0
+    with get_db_connection() as conn:
+        placeholders = ','.join('?' * len(mail_ids))
+        result = conn.execute(
+            f"UPDATE uni_mail SET folder_id = ? WHERE id IN ({placeholders})",
+            [folder_id] + mail_ids
+        )
+        conn.commit()
+        return result.rowcount
 

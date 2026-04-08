@@ -929,10 +929,10 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
 
         # 常见的发件箱名称
         sent_names = ['Sent', 'Sent Items', 'Sent Messages', '已发送', '发件箱',
-                      'INBOX.Sent', 'INBOX/Sent', 'Sent Mail', '&XfJT0ZAB-', '&g0l6P3ux-']  # UTF-7 编码
+                      'INBOX.Sent', 'INBOX/Sent', 'Sent Mail', '&XfJT0ZAB-']  # UTF-7 编码
         # 常见的垃圾邮件名称
         spam_names = ['Spam', 'Junk', 'Junk E-mail', '垃圾邮件', '垃圾箱',
-                      'Bulk Mail', '垃圾信', '&V4NXPpCuTvY-', '&g0l6P3ux-']
+                      'Bulk Mail', '垃圾信', '&V4NXPpCuTvY-']
         # 常见的草稿箱名称
         draft_names = ['Drafts', 'Draft', '草稿', '草稿箱', '&g0l6P3ux-']
 
@@ -1001,11 +1001,16 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         else:
             print("[Mail] 警告: 未检测到草稿箱文件夹，草稿邮件将不会被同步")
         if spam_folder:
+            print(f"[Mail] 添加垃圾邮件到同步列表: {spam_folder}, folder_id={spam_folder_id}")
             folders_to_sync.append((spam_folder, 0, 0, '垃圾邮件', spam_folder_id))
+        else:
+            print("[Mail] DEBUG: 无垃圾邮件文件夹")
         # 其他文件夹都归入收件箱
+        print(f"[Mail] DEBUG: other_folders 数量 = {len(other_folders)}")
         for folder_name in other_folders:
             folders_to_sync.append((folder_name, 0, 0, '收件箱', None))
 
+        print(f"[Mail] DEBUG: folders_to_sync 长度 = {len(folders_to_sync)}")
         print(f"[Mail] 共需同步 {len(folders_to_sync)} 个文件夹: {[f[2] for f in folders_to_sync]}")
 
         total_saved = 0
@@ -1182,7 +1187,7 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
     Returns:
         {"status": "completed", "new_count": int}
     """
-    from Sills.db_mail import get_local_uids, get_sync_deleted_setting, get_synced_uids, batch_record_synced_uids
+    from Sills.db_mail import get_local_uids, get_sync_deleted_setting, get_synced_uids, batch_record_synced_uids, get_sync_date_range
     from datetime import datetime
 
     # 重置取消标志
@@ -1204,6 +1209,9 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
             return {"status": "error", "message": "Mail config not found"}
 
         current_account_id = config.get('id')
+
+        # 获取同步日期范围设置
+        date_range = get_sync_date_range()
         update_sync_progress(0, 100, "连接邮件服务器...")
 
         # 检查取消
@@ -1273,8 +1281,11 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
 
             try:
                 print(f"[Mail] 检查文件夹: {folder_name}")
-                # 获取服务器上的UID列表（轻量操作）
-                server_uids = imap_client.get_uid_list(folder=folder_name, days=365)
+                # 获取服务器上的UID列表（轻量操作，使用用户设置的日期范围）
+                server_uids = imap_client.get_uid_list(
+                    folder=folder_name,
+                    date_range=date_range if date_range[0] and date_range[1] else None
+                )
                 if not server_uids:
                     print(f"[Mail] {folder_label}: 无邮件")
                     continue
@@ -1444,6 +1455,12 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
             return {"status": "error", "message": "邮件配置未找到"}
 
         current_account_id = config.get('id')
+
+        # 获取同步日期范围设置
+        from Sills.db_mail import get_sync_date_range
+        date_range = get_sync_date_range()
+        print(f"[Mail] 刷新同步日期范围: {date_range}")
+
         update_sync_progress(0, 100, "连接邮件服务器...")
 
         imap_client = IMAPClient(config)
@@ -1491,7 +1508,22 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
 
             try:
                 last_uid = last_uids.get(folder_name, 0)
-                new_uids = imap_client.get_uids_after(folder_name, last_uid)
+
+                # 使用日期范围过滤获取UID
+                if date_range[0] and date_range[1]:
+                    # 有日期范围设置，使用日期过滤
+                    folder_uids = imap_client.get_uid_list(
+                        folder=folder_name,
+                        date_range=date_range
+                    )
+                    # 如果有last_uid，过滤掉小于等于last_uid的UID（增量同步）
+                    if last_uid > 0:
+                        folder_uids = [uid for uid in folder_uids if uid > last_uid]
+                    new_uids = folder_uids
+                    print(f"[Mail] {folder_label}: 使用日期范围 {date_range[0]} 至 {date_range[1]}")
+                else:
+                    # 无日期范围设置，使用UID增量方式
+                    new_uids = imap_client.get_uids_after(folder_name, last_uid)
 
                 # 过滤掉本地已存在的UID（防止重复）
                 local_uids = get_local_uids(folder_name, current_account_id)
