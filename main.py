@@ -764,6 +764,7 @@ async def quote_page(request: Request, current_user: dict = Depends(login_requir
     results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, status=status, is_transferred=is_transferred)
     total_pages = (total + page_size - 1) // page_size
     cli_list, _ = get_cli_list(page=1, page_size=1000)
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
     return templates.TemplateResponse("quote.html", {
         "request": request,
         "active_page": "quote",
@@ -1084,7 +1085,7 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
     vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
     vendor_list = vendor_data['items']
     cli_data = get_paginated_list('uni_cli', page=1, page_size=1000)
-    cli_list = cli_data['items']
+    cli_list = sorted(cli_data['items'], key=lambda x: x.get('cli_name', ''))
     return templates.TemplateResponse("offer.html", {
         "request": request,
         "active_page": "offer",
@@ -1615,6 +1616,7 @@ async def order_page(request: Request, current_user: dict = Depends(login_requir
     from Sills.db_cli import get_cli_list
     from Sills.base import get_paginated_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
     vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
     vendor_list = vendor_data['items']
     return templates.TemplateResponse("order.html", {
@@ -1773,6 +1775,7 @@ async def order_manager_page(request: Request, current_user: dict = Depends(logi
     total_pages = (total + page_size - 1) // page_size
     from Sills.db_cli import get_cli_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
     return templates.TemplateResponse("order_manager.html", {
         "request": request, "active_page": "order_manager", "current_user": current_user,
         "items": results, "total": total, "page": page, "page_size": page_size,
@@ -1780,6 +1783,123 @@ async def order_manager_page(request: Request, current_user: dict = Depends(logi
         "start_date": start_date, "end_date": end_date, "cli_list": cli_list,
         "is_paid": is_paid, "is_finished": is_finished
     })
+
+# 历史订单导入页面
+@app.get("/order_manager/import", response_class=HTMLResponse)
+async def order_manager_import_page(request: Request, current_user: dict = Depends(login_required)):
+    return templates.TemplateResponse("order_manager_import.html", {
+        "request": request, "active_page": "order_manager", "current_user": current_user
+    })
+
+
+@app.get("/api/order_manager/import_template")
+async def api_order_manager_import_template(current_user: dict = Depends(get_current_user)):
+    """下载历史订单导入模板"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "历史订单导入模板"
+
+    # 表头
+    headers = [
+        "客户订单号", "客户名称", "订单日期", "型号", "品牌",
+        "数量", "单价(RMB)", "成本价(RMB)", "批号", "交期", "备注"
+    ]
+
+    # 必填列标识
+    required_cols = [0, 1, 3, 5, 6]  # 客户订单号, 客户名称, 型号, 数量, 单价(RMB)
+
+    # 样式
+    header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    required_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = thin_border
+
+        # 必填列标红背景
+        if col - 1 in required_cols:
+            for row in range(2, 6):
+                ws.cell(row=row, column=col).fill = required_fill
+
+    # 添加示例数据行
+    sample_data = [
+        ["CO20260101001", "示例客户A", "2026-01-01", "STM32F103C8T6", "ST", 100, 10.5, 8.0, "2345", "2026-01-15", "示例备注"],
+        ["CO20260101001", "示例客户A", "2026-01-01", "LM358DR", "TI", 200, 2.5, 1.8, "", "", ""],
+        ["CO20260101002", "示例客户B", "2026-01-02", "NE555D", "TI", 50, 1.2, 0.8, "2350", "2026-01-20", ""],
+    ]
+
+    for row_idx, row_data in enumerate(sample_data, 2):
+        for col_idx, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    # 设置列宽
+    col_widths = [15, 12, 12, 18, 10, 10, 12, 12, 10, 12, 15]
+    for i, width in enumerate(col_widths, 1):
+        ws.column_dimensions[chr(64 + i)].width = width
+
+    # 输出到内存
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    from fastapi.responses import StreamingResponse
+    from urllib.parse import quote
+    filename = "历史订单导入模板.xlsx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
+
+
+# 历史订单导入API
+@app.post("/api/order_manager/import_history")
+async def api_import_history(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(login_required)
+):
+    import tempfile
+    import os
+    from Sills.db_history_import import import_history_orders
+
+    # 检查文件类型
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return {"success": 0, "skip": 0, "fail": 0, "errors": ["请上传Excel文件 (.xlsx 或 .xls)"]}
+
+    # 保存上传的文件到临时目录
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        # 调用导入函数
+        emp_id = current_user.get('emp_id', '')
+        success, skip, fail, errors = import_history_orders(tmp_path, emp_id)
+        return {"success": success, "skip": skip, "fail": fail, "errors": errors}
+    finally:
+        # 删除临时文件
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
 
 @app.get("/order_manager/{manager_id}", response_class=HTMLResponse)
 async def order_manager_detail_page(request: Request, manager_id: str, current_user: dict = Depends(login_required)):
@@ -1795,6 +1915,7 @@ async def order_manager_detail_page(request: Request, manager_id: str, current_u
     from Sills.db_cli import get_cli_list
     from Sills.db_vendor import get_vendor_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
     vendors, _ = get_vendor_list(page=1, page_size=1000)
     return templates.TemplateResponse("order_manager_detail.html", {
         "request": request, "active_page": "order_manager", "current_user": current_user,
@@ -2116,6 +2237,204 @@ async def api_order_manager_batch_to_purchase(request: Request, current_user: di
 
     return {"success": True, "message": f"成功转采购 {success_count} 条" + (f" (失败 {len(errors)} 条)" if errors else "")}
 
+
+@app.post("/api/order_manager/generate_pi_ci_kr")
+async def api_order_manager_generate_pi_ci_kr(request: Request, current_user: dict = Depends(login_required)):
+    """批量生成PI-CI-KR文件"""
+    from Sills.db_order_manager import get_manager_by_id, get_manager_offers
+    from Sills.document_generator import generate_pi_from_offers
+    from Sills.ci_generator import generate_ci_kr_from_offers
+
+    data = await request.json()
+    manager_ids = data.get('manager_ids', [])
+
+    if not manager_ids:
+        return {"success": False, "message": "请选择客户订单"}
+
+    # 创建输出目录
+    from datetime import datetime
+    import os
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"PI-CI-PO-{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    success_count = 0
+    errors = []
+    generated_files = []
+
+    for manager_id in manager_ids:
+        try:
+            # 获取客户订单信息
+            manager = get_manager_by_id(manager_id)
+            if not manager:
+                errors.append(f"{manager_id}: 客户订单不存在")
+                continue
+
+            customer_order_no = manager.get('customer_order_no', 'UNKNOWN')
+            cli_name = manager.get('cli_name', 'Unknown')
+
+            # 获取关联的报价订单
+            offers = get_manager_offers(manager_id)
+            if not offers:
+                errors.append(f"{customer_order_no}: 没有关联的报价订单")
+                continue
+
+            offer_ids = [o['offer_id'] for o in offers]
+
+            # 生成 PI
+            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir)
+            if pi_success:
+                # 重命名文件使用客户订单号
+                old_path = pi_result.get('excel_path', '')
+                if old_path and os.path.exists(old_path):
+                    new_name = f"Proforma Invoice_{cli_name}_{customer_order_no}.xlsx"
+                    new_path = os.path.join(output_dir, new_name)
+                    os.rename(old_path, new_path)
+                    generated_files.append(new_name)
+
+                    # 重命名 PDF
+                    old_pdf = pi_result.get('pdf_path', '')
+                    if old_pdf and os.path.exists(old_pdf):
+                        new_pdf_name = f"Proforma Invoice_{cli_name}_{customer_order_no}.pdf"
+                        new_pdf_path = os.path.join(output_dir, new_pdf_name)
+                        os.rename(old_pdf, new_pdf_path)
+                        generated_files.append(new_pdf_name)
+            else:
+                errors.append(f"{customer_order_no} PI生成失败: {pi_result}")
+
+            # 生成 CI
+            ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir)
+            if ci_success:
+                # 重命名文件使用客户订单号
+                old_path = ci_result.get('excel_path', '')
+                if old_path and os.path.exists(old_path):
+                    new_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}.xlsx"
+                    new_path = os.path.join(output_dir, new_name)
+                    os.rename(old_path, new_path)
+                    generated_files.append(new_name)
+
+                    # 重命名 PDF
+                    old_pdf = ci_result.get('pdf_path', '')
+                    if old_pdf and os.path.exists(old_pdf):
+                        new_pdf_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}.pdf"
+                        new_pdf_path = os.path.join(output_dir, new_pdf_name)
+                        os.rename(old_pdf, new_pdf_path)
+                        generated_files.append(new_pdf_name)
+            else:
+                errors.append(f"{customer_order_no} CI生成失败: {ci_result}")
+
+            success_count += 1
+
+        except Exception as e:
+            errors.append(f"{manager_id}: {str(e)}")
+
+    return {
+        "success": success_count > 0,
+        "message": f"成功生成 {success_count} 个客户订单的PI-CI文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
+        "output_dir": output_dir,
+        "generated_files": generated_files,
+        "errors": errors
+    }
+
+
+@app.post("/api/order_manager/generate_pi_ci_us")
+async def api_order_manager_generate_pi_ci_us(request: Request, current_user: dict = Depends(login_required)):
+    """批量生成PI-CI-US文件"""
+    from Sills.db_order_manager import get_manager_by_id, get_manager_offers
+    from Sills.document_generator import generate_pi_us_from_offers, generate_ci_us_from_offers
+
+    data = await request.json()
+    manager_ids = data.get('manager_ids', [])
+
+    if not manager_ids:
+        return {"success": False, "message": "请选择客户订单"}
+
+    # 创建输出目录
+    from datetime import datetime
+    import os
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"PI-CI-PO-{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    success_count = 0
+    errors = []
+    generated_files = []
+
+    for manager_id in manager_ids:
+        try:
+            # 获取客户订单信息
+            manager = get_manager_by_id(manager_id)
+            if not manager:
+                errors.append(f"{manager_id}: 客户订单不存在")
+                continue
+
+            customer_order_no = manager.get('customer_order_no', 'UNKNOWN')
+            cli_name = manager.get('cli_name', 'Unknown')
+
+            # 获取关联的报价订单
+            offers = get_manager_offers(manager_id)
+            if not offers:
+                errors.append(f"{customer_order_no}: 没有关联的报价订单")
+                continue
+
+            offer_ids = [o['offer_id'] for o in offers]
+
+            # 生成 PI-US
+            pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir)
+            if pi_success:
+                # 重命名文件使用客户订单号
+                old_path = pi_result.get('excel_path', '')
+                if old_path and os.path.exists(old_path):
+                    new_name = f"Proforma Invoice_{cli_name}_{customer_order_no}.xlsx"
+                    new_path = os.path.join(output_dir, new_name)
+                    os.rename(old_path, new_path)
+                    generated_files.append(new_name)
+
+                    # 重命名 PDF
+                    old_pdf = pi_result.get('pdf_path', '')
+                    if old_pdf and os.path.exists(old_pdf):
+                        new_pdf_name = f"Proforma Invoice_{cli_name}_{customer_order_no}.pdf"
+                        new_pdf_path = os.path.join(output_dir, new_pdf_name)
+                        os.rename(old_pdf, new_pdf_path)
+                        generated_files.append(new_pdf_name)
+            else:
+                errors.append(f"{customer_order_no} PI生成失败: {pi_result}")
+
+            # 生成 CI-US
+            ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir)
+            if ci_success:
+                # 重命名文件使用客户订单号
+                old_path = ci_result.get('excel_path', '')
+                if old_path and os.path.exists(old_path):
+                    new_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}.xlsx"
+                    new_path = os.path.join(output_dir, new_name)
+                    os.rename(old_path, new_path)
+                    generated_files.append(new_name)
+
+                    # 重命名 PDF
+                    old_pdf = ci_result.get('pdf_path', '')
+                    if old_pdf and os.path.exists(old_pdf):
+                        new_pdf_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}.pdf"
+                        new_pdf_path = os.path.join(output_dir, new_pdf_name)
+                        os.rename(old_pdf, new_pdf_path)
+                        generated_files.append(new_pdf_name)
+            else:
+                errors.append(f"{customer_order_no} CI生成失败: {ci_result}")
+
+            success_count += 1
+
+        except Exception as e:
+            errors.append(f"{manager_id}: {str(e)}")
+
+    return {
+        "success": success_count > 0,
+        "message": f"成功生成 {success_count} 个客户订单的PI-CI文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
+        "output_dir": output_dir,
+        "generated_files": generated_files,
+        "errors": errors
+    }
+
+
 # ============ 采购管理 ============
 
 @app.get("/buy", response_class=HTMLResponse)
@@ -2127,7 +2446,7 @@ async def buy_page(request: Request, current_user: dict = Depends(login_required
     with get_db_connection() as conn:
         vendors = conn.execute("SELECT vendor_id, vendor_name, address FROM uni_vendor").fetchall()
         orders = conn.execute("SELECT order_id, order_no FROM uni_order").fetchall()
-        clis = conn.execute("SELECT cli_id, cli_name FROM uni_cli").fetchall()
+        clis = conn.execute("SELECT cli_id, cli_name FROM uni_cli ORDER BY cli_name").fetchall()
         vendor_addresses = {str(v['vendor_id']): (v['address'] or "") for v in vendors}
     return templates.TemplateResponse("buy.html", {
         "request": request, "active_page": "buy", "current_user": current_user,
@@ -3700,6 +4019,49 @@ async def api_mail_blacklisted_list(
     return result
 
 
+@app.get("/api/mail/spam")
+async def api_mail_spam_list(
+    page: int = 1,
+    page_size: int = 20,
+    search: str = None,
+    current_user: dict = Depends(login_required)
+):
+    """获取垃圾邮件列表"""
+    from Sills.db_mail import get_spam_list
+    page_size = max(1, min(1000, page_size))
+    account = get_mail_config()
+    account_id = account.get('id') if account else None
+    result = get_spam_list(page=page, limit=page_size, search=search, account_id=account_id)
+    return result
+
+
+@app.post("/api/mail/{mail_id}/move")
+async def api_mail_move_to_folder(
+    mail_id: int,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """移动邮件到指定文件夹"""
+    from Sills.db_mail import move_email_to_folder
+    data = await request.json()
+    folder_id = data.get('folder_id')  # None表示移回收件箱
+    success = move_email_to_folder(mail_id, folder_id)
+    return {"success": success}
+
+
+@app.post("/api/mail/batch-move")
+async def api_mail_batch_move(request: Request, current_user: dict = Depends(login_required)):
+    """批量移动邮件到指定文件夹"""
+    from Sills.db_mail import move_emails_to_folder
+    data = await request.json()
+    mail_ids = data.get('ids', [])
+    folder_id = data.get('folder_id')  # None表示移回收件箱
+    if not mail_ids:
+        return {"success": False, "message": "No mail ids provided"}
+    moved = move_emails_to_folder(mail_ids, folder_id)
+    return {"success": True, "moved": moved}
+
+
 @app.post("/api/mail/{mail_id}/blacklist")
 async def api_mail_mark_blacklisted(mail_id: int, current_user: dict = Depends(login_required)):
     """将邮件移入黑名单邮件箱"""
@@ -3857,6 +4219,18 @@ async def api_mail_batch_restore(request: Request, current_user: dict = Depends(
     return {"success": True, "restored": restored}
 
 
+@app.post("/api/mail/batch-permanent-delete")
+async def api_mail_batch_permanent_delete(request: Request, current_user: dict = Depends(login_required)):
+    """批量永久删除邮件"""
+    from Sills.db_mail import batch_permanently_delete_emails
+    data = await request.json()
+    mail_ids = data.get('ids', [])
+    if not mail_ids:
+        return {"success": False, "message": "未选择邮件"}
+    deleted = batch_permanently_delete_emails(mail_ids)
+    return {"success": True, "deleted": deleted}
+
+
 @app.post("/api/mail/cleanup-duplicates")
 async def api_mail_cleanup_duplicates(current_user: dict = Depends(login_required)):
     """清理重复邮件"""
@@ -3991,6 +4365,126 @@ async def api_gemini_suggest_reply(request: Request, current_user: dict = Depend
         user_instruction=user_instruction,
         sender_name=sender_name,
         email_subject=email_subject
+    )
+
+    return result
+
+
+# ==================== 数据中心模块路由 ====================
+
+@app.get("/datacenter", response_class=HTMLResponse)
+async def datacenter_page(request: Request, current_user: dict = Depends(login_required)):
+    """数据中心页面 - 仅管理员可访问"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return templates.TemplateResponse("datacenter.html", {
+        "request": request,
+        "active_page": "datacenter",
+        "current_user": current_user
+    })
+
+
+@app.get("/api/datacenter/tables")
+async def api_datacenter_tables(current_user: dict = Depends(login_required)):
+    """获取所有数据库表"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import get_all_tables
+    return get_all_tables()
+
+
+@app.get("/api/datacenter/tables/{table_name}/structure")
+async def api_datacenter_table_structure(table_name: str, current_user: dict = Depends(login_required)):
+    """获取表结构"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import get_table_structure
+    return get_table_structure(table_name)
+
+
+@app.get("/api/datacenter/tables/{table_name}/data")
+async def api_datacenter_table_data(table_name: str, current_user: dict = Depends(login_required)):
+    """获取表数据"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import get_table_data
+    data, columns = get_table_data(table_name)
+    return {"data": data, "columns": columns}
+
+
+@app.post("/api/datacenter/execute")
+async def api_datacenter_execute(request: Request, current_user: dict = Depends(login_required)):
+    """执行 SQL"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import execute_sql
+    data = await request.json()
+    sql = data.get("sql", "")
+    if not sql:
+        return {"success": False, "message": "SQL 不能为空", "data": []}
+
+    success, result, message = execute_sql(sql)
+    return {"success": success, "data": result if success else [], "message": message, "error": "" if success else str(result)}
+
+
+@app.post("/api/datacenter/queries")
+async def api_datacenter_save_query(request: Request, current_user: dict = Depends(login_required)):
+    """保存查询"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import save_query
+    data = await request.json()
+    name = data.get("name", "").strip()
+    sql = data.get("sql", "").strip()
+    if not name or not sql:
+        return {"success": False, "message": "名称和 SQL 不能为空"}
+
+    success, message = save_query(name, sql, current_user.get("account"))
+    return {"success": success, "message": message}
+
+
+@app.get("/api/datacenter/queries")
+async def api_datacenter_get_queries(current_user: dict = Depends(login_required)):
+    """获取保存的查询"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import get_saved_queries
+    return get_saved_queries()
+
+
+@app.delete("/api/datacenter/queries/{query_id}")
+async def api_datacenter_delete_query(query_id: int, current_user: dict = Depends(login_required)):
+    """删除保存的查询"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import delete_saved_query
+    success, message = delete_saved_query(query_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/datacenter/export")
+async def api_datacenter_export(request: Request, current_user: dict = Depends(login_required)):
+    """导出 Excel"""
+    if current_user.get("rule") != "3":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    from Sills.db_datacenter import export_to_excel
+    from fastapi.responses import Response
+
+    data = await request.json()
+    result_data = data.get("data", [])
+    columns = data.get("columns", [])
+    selected_fields = data.get("selected_fields", None)
+
+    # 限制最大导出行数
+    if len(result_data) > 10000:
+        return {"success": False, "message": "导出数据不能超过 10000 行"}
+
+    excel_bytes = export_to_excel(result_data, columns, selected_fields)
+
+    return Response(
+        content=excel_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=data_export.xlsx"}
     )
 
     return result

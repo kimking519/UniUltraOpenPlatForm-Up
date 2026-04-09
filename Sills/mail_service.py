@@ -432,8 +432,21 @@ class IMAPClient:
         try:
             status, data = self.client.select(folder)
             if status != 'OK':
-                print(f"[Mail] 无法选择文件夹 '{folder}': {status}")
-                return []
+                print(f"[Mail] 无法选择文件夹 '{folder}': {status}, data={data}")
+                # 尝试重连
+                print(f"[Mail] 尝试重新连接 IMAP 服务器...")
+                try:
+                    self.disconnect()
+                    self.connect()
+                    status, data = self.client.select(folder)
+                    if status != 'OK':
+                        print(f"[Mail] 重连后仍无法选择文件夹 '{folder}': {status}")
+                        return []
+                except Exception as e:
+                    print(f"[Mail] 重连失败: {e}")
+                    return []
+
+            print(f"[Mail] get_uid_list: 已选择文件夹 '{folder}'")
 
             from datetime import datetime, timedelta
 
@@ -446,13 +459,16 @@ class IMAPClient:
                 start_str = start_dt.strftime('%d-%b-%Y')
                 end_str = end_dt_search.strftime('%d-%b-%Y')
                 search_criteria = f'SINCE {start_str} BEFORE {end_str}'
+                print(f"[Mail] get_uid_list: folder={folder}, date_range={date_range}, criteria={search_criteria}")
             else:
                 search_date = datetime.now() - timedelta(days=days)
                 date_str = search_date.strftime('%d-%b-%Y')
                 search_criteria = f'SINCE {date_str}'
 
             # 搜索获取序号列表
+            print(f"[Mail] IMAP search criteria: {search_criteria}")
             status, messages = self.client.search(None, search_criteria)
+            print(f"[Mail] IMAP search result: status={status}, messages={messages}")
             if status != 'OK':
                 return []
 
@@ -884,6 +900,7 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         current_account_id = config.get('id')
         sync_days = get_sync_days()
         date_range = get_sync_date_range()
+        print(f"[Mail] sync_inbox: sync_days={sync_days}, date_range={date_range}")
 
         # 获取分批处理配置（默认：每批100封，暂停0.1秒）
         batch_size = config.get('sync_batch_size') or 100
@@ -1064,7 +1081,7 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
         update_sync_progress(10, 100, f"共发现 {grand_total_new} 封新邮件", total_emails=grand_total_new)
 
         # 第二遍：流式处理 - 逐文件夹处理，避免内存累积
-        fetch_batch_size = 50  # IMAP 每批获取数量
+        fetch_batch_size = 500  # IMAP 每批获取数量
 
         for folder_name, is_sent, is_draft, folder_label, local_folder_id in folders_to_sync:
             try:
@@ -1118,10 +1135,16 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
                             email_data['folder_id'] = local_folder_id
 
                     # 批量保存邮件（一次事务，更高效）
-                    from Sills.db_mail import batch_save_emails
+                    from Sills.db_mail import batch_save_emails, batch_record_synced_uids
                     saved_in_batch = batch_save_emails(emails)
                     total_saved += saved_in_batch
                     total_processed += len(emails)
+
+                    # 记录已同步的 UID
+                    if emails:
+                        uid_folder_pairs = [(e.get('imap_uid'), e.get('imap_folder')) for e in emails if e.get('imap_uid')]
+                        if uid_folder_pairs:
+                            batch_record_synced_uids(current_account_id, uid_folder_pairs)
 
                     # 更新进度
                     percent = int(10 + (total_processed / grand_total_new) * 85) if grand_total_new > 0 else 50

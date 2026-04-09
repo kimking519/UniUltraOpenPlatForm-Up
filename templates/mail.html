@@ -1155,7 +1155,6 @@
         border: 1px solid #FECACA;
         border-radius: 50%;
         cursor: pointer;
-        display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.2s;
@@ -1255,7 +1254,7 @@
 <div class="mail-container detail-closed">
     <!-- Sidebar -->
     <div class="mail-sidebar">
-        <div class="mail-sidebar-header">
+        <div class="mail-sidebar-header" style="padding-bottom: 1rem; border-bottom: 1px solid var(--border);">
             <div class="current-email" style="padding: 0.5rem 0; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border);">
                 <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">当前邮箱</div>
                 <div style="font-size: 0.85rem; color: var(--text-main); font-weight: 500; word-break: break-all;">{{ current_email or '未配置' }}</div>
@@ -1267,7 +1266,7 @@
                 写邮件
             </button>
         </div>
-        <ul class="folder-list">
+        <ul class="folder-list" style="margin-top: 0.75rem;">
             <li class="folder-item active" data-folder="inbox" onclick="switchFolder('inbox')">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
@@ -1287,6 +1286,13 @@
                 </svg>
                 草稿箱
                 <span class="folder-badge" id="draftBadge" style="display: none;">0</span>
+            </li>
+            <li class="folder-item" data-folder="spam" onclick="switchFolder('spam')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                垃圾邮件
+                <span class="folder-badge" id="spamBadge" style="display: none;">0</span>
             </li>
             <li class="folder-item" data-folder="blacklisted" onclick="switchFolder('blacklisted')">
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1560,6 +1566,7 @@
                 <button class="btn btn-secondary btn-sm" onclick="forwardEmail()">转发</button>
                 <button class="btn btn-secondary btn-sm" onclick="analyzeEmail()">AI 分析</button>
                 <button class="btn btn-secondary btn-sm" onclick="suggestReply()">AI 建议</button>
+                <button class="btn btn-secondary btn-sm" id="moveToInboxBtn" style="display: none; color: #3B82F6;" onclick="moveCurrentEmailToInbox()">移回收件箱</button>
                 <button class="btn btn-secondary btn-sm" id="restoreBtn" style="display: none; color: #22C55E;" onclick="restoreCurrentEmail()">恢复</button>
                 <button class="btn btn-secondary btn-sm" id="unblacklistBtn" style="display: none; color: #3B82F6;" onclick="unblacklistCurrentEmail()">移出黑名单</button>
                 <button class="btn btn-secondary btn-sm" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
@@ -1723,6 +1730,7 @@
                 <button class="btn btn-secondary btn-sm" onclick="forwardEmail()">转发</button>
                 <button class="btn btn-secondary btn-sm" onclick="analyzeEmail()">AI 分析</button>
                 <button class="btn btn-secondary btn-sm" onclick="suggestReply()">AI 建议</button>
+                <button class="btn btn-secondary btn-sm" id="moveToInboxBtn" style="display: none; color: #3B82F6;" onclick="moveCurrentEmailToInbox()">移回收件箱</button>
                 <button class="btn btn-secondary btn-sm" id="restoreBtn" style="display: none; color: #22C55E;" onclick="restoreCurrentEmail()">恢复</button>
                 <button class="btn btn-secondary btn-sm" id="unblacklistBtn" style="display: none; color: #3B82F6;" onclick="unblacklistCurrentEmail()">移出黑名单</button>
                 <button class="btn btn-secondary btn-sm" style="margin-left: auto; color: #EF4444;" onclick="deleteCurrentEmail()">删除</button>
@@ -1993,6 +2001,7 @@
         loadSettings();
         loadCustomFolders(); // 加载自定义文件夹
         checkSyncProgress(); // 恢复同步进度
+        loadSpamCount(); // 加载垃圾邮件计数
         initComposePanelDrag();
         initComposePanelResize();
         initDragDropAttachments();
@@ -2314,7 +2323,7 @@
 
     // Load emails
     async function loadEmails() {
-        const folder = currentFolder; // 'inbox', 'sent', 'draft', 'blacklisted', or 'trash'
+        const folder = currentFolder; // 'inbox', 'sent', 'draft', 'spam', 'blacklisted', or 'trash'
         const search = document.getElementById('searchInput').value;
 
         try {
@@ -2331,17 +2340,22 @@
                 // 加载黑名单邮件箱
                 const response = await fetch(`/api/mail/blacklisted?page=${currentPage}&page_size=${pageSize}${search ? '&search=' + encodeURIComponent(search) : ''}`);
                 data = await response.json();
+            } else if (folder === 'spam') {
+                // 加载垃圾邮件
+                const response = await fetch(`/api/mail/spam?page=${currentPage}&page_size=${pageSize}${search ? '&search=' + encodeURIComponent(search) : ''}`);
+                data = await response.json();
             } else {
                 const response = await fetch(`/api/mail/list?folder=${folder}&page=${currentPage}&page_size=${pageSize}${search ? '&search=' + encodeURIComponent(search) : ''}`);
                 data = await response.json();
             }
 
-            renderEmailList(data.items, folder === 'trash', folder === 'draft', folder === 'blacklisted');
+            renderEmailList(data.items, folder === 'trash', folder === 'draft', folder === 'blacklisted', folder === 'spam');
             renderPagination(data);
             updateBadge(data.total_count);
             loadTrashCount();
             loadDraftCount();
             loadBlacklistedCount();
+            loadSpamCount();
         } catch (error) {
             console.error('Load emails error:', error);
         }
@@ -2398,22 +2412,48 @@
         }
     }
 
+    // Load spam count
+    async function loadSpamCount() {
+        try {
+            const response = await fetch('/api/mail/spam?page=1&page_size=1');
+            const data = await response.json();
+            const badge = document.getElementById('spamBadge');
+            if (data.total_count > 0) {
+                badge.textContent = data.total_count > 99 ? '99+' : data.total_count;
+                badge.style.display = 'inline';
+            } else {
+                badge.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Load spam count error:', error);
+        }
+    }
+
     // Render email list
-    function renderEmailList(emails, isTrash = false, isDraft = false, isBlacklisted = false) {
+    function renderEmailList(emails, isTrash = false, isDraft = false, isBlacklisted = false, isSpam = false) {
         const container = document.getElementById('mailList');
+
+        // 重置全选复选框状态
+        const selectAllCheckbox = document.getElementById('selectAll');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        }
 
         if (emails.length === 0) {
             let emptyText = '暂无邮件';
             if (isTrash) emptyText = '回收站是空的';
             if (isDraft) emptyText = '草稿箱是空的';
             if (isBlacklisted) emptyText = '黑名单邮件箱是空的';
+            if (isSpam) emptyText = '垃圾邮件文件夹是空的';
+            const btnHtml = (isTrash || isDraft || isBlacklisted || isSpam) ? '<button class="btn btn-primary" style="margin-top: 10px;" onclick="switchFolder(\'inbox\')">返回收件箱</button>' : '';
             container.innerHTML = `
                 <div class="mail-empty">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                     </svg>
                     <p>${emptyText}</p>
-                    ${(isTrash || isDraft || isBlacklisted) ? '<button class="btn btn-primary" style="margin-top: 10px;" onclick="switchFolder(\'inbox\')">返回收件箱</button>' : ''}
+                    ${btnHtml}
                 </div>
             `;
             return;
@@ -2439,6 +2479,9 @@
         document.querySelectorAll('.mail-checkbox').forEach(cb => {
             cb.addEventListener('change', updateSelectedCount);
         });
+
+        // Reset selected count after rendering new list
+        updateSelectedCount();
     }
 
     // Render pagination
@@ -2537,6 +2580,7 @@
                 statusEl.classList.add('syncing');
                 textEl.textContent = '同步中...';
                 progressBar.classList.add('active');
+                showCancelButton(true);  // 显示取消同步按钮
 
                 // 更新进度显示
                 updateSyncProgressUI(data);
@@ -2553,6 +2597,7 @@
                             progressText.textContent = '完成';
                             textEl.textContent = '就绪';
                             statusEl.classList.remove('syncing');
+                            showCancelButton(false);  // 隐藏取消同步按钮
                             detailInfo.style.display = 'none';
 
                             setTimeout(() => {
@@ -2948,6 +2993,10 @@
             // Show/hide unblacklist button based on blacklisted folder
             const unblacklistBtn = document.getElementById('unblacklistBtn');
             unblacklistBtn.style.display = currentFolder === 'blacklisted' ? 'inline-flex' : 'none';
+
+            // Show/hide move to inbox button based on spam folder
+            const moveToInboxBtn = document.getElementById('moveToInboxBtn');
+            moveToInboxBtn.style.display = currentFolder === 'spam' ? 'inline-flex' : 'none';
 
             // Show detail panel (Gmail style)
             document.querySelector('.mail-container').classList.remove('detail-closed');
@@ -3420,6 +3469,28 @@
         }
     }
 
+    // Move current email to inbox
+    async function moveCurrentEmailToInbox() {
+        if (!currentMailId) return;
+
+        try {
+            const response = await fetch(`/api/mail/${currentMailId}/move`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folder_id: null })
+            });
+            if (response.ok) {
+                closeDetailPanel();
+                loadEmails();
+                loadSpamCount();
+                showToast('邮件已移回收件箱', 'success');
+            }
+        } catch (error) {
+            console.error('Move email error:', error);
+            showToast('移动失败', 'error');
+        }
+    }
+
     // Empty trash
     async function emptyTrash() {
         if (!confirm('确定要清空回收站吗？此操作不可恢复！')) return;
@@ -3460,9 +3531,9 @@
         countSpan.textContent = count;
         countSpanRestore.textContent = count;
 
-        // 回收站显示批量恢复按钮，其他文件夹显示批量删除按钮
+        // 回收站显示批量恢复按钮和批量删除按钮，其他文件夹只显示批量删除按钮
         if (currentFolder === 'trash') {
-            btn.style.display = 'none';
+            btn.style.display = count > 0 ? 'inline-flex' : 'none';
             restoreBtn.style.display = count > 0 ? 'inline-flex' : 'none';
         } else {
             btn.style.display = count > 0 ? 'inline-flex' : 'none';
@@ -3483,25 +3554,49 @@
 
         if (ids.length === 0) return;
 
-        if (!confirm(`确定要删除选中的 ${ids.length} 封邮件吗？`)) return;
+        // 回收站中是永久删除
+        if (currentFolder === 'trash') {
+            if (!confirm(`确定要永久删除选中的 ${ids.length} 封邮件吗？此操作不可恢复！`)) return;
 
-        try {
-            const response = await fetch('/api/mail/batch-delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids })
-            });
+            try {
+                const response = await fetch('/api/mail/batch-permanent-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
 
-            const result = await response.json();
+                const result = await response.json();
 
-            if (result.success) {
-                loadEmails();
-                loadInboxCount();
-            } else {
-                alert('删除失败: ' + (result.message || '未知错误'));
+                if (result.success) {
+                    await loadEmails();
+                    showToast(`已永久删除 ${result.deleted || ids.length} 封邮件`, 'success');
+                } else {
+                    showToast('删除失败: ' + (result.message || '未知错误'), 'error');
+                }
+            } catch (error) {
+                showToast('删除失败: ' + error.message, 'error');
             }
-        } catch (error) {
-            alert('删除失败: ' + error.message);
+        } else {
+            if (!confirm(`确定要删除选中的 ${ids.length} 封邮件吗？`)) return;
+
+            try {
+                const response = await fetch('/api/mail/batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    await loadEmails();
+                    loadInboxCount();
+                } else {
+                    alert('删除失败: ' + (result.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
         }
     }
 

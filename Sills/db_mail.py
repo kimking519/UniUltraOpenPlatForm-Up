@@ -1016,7 +1016,7 @@ def acquire_sync_lock(lock_id: str) -> bool:
         True=获取成功，False=已被锁定
     """
     now = datetime.now()
-    expires_at = now + timedelta(minutes=5)
+    expires_at = now + timedelta(minutes=60)  # 60分钟超时，支持大批量同步
 
     with get_db_connection() as conn:
         # 检查是否存在过期锁
