@@ -110,7 +110,14 @@ def add_quote(data):
         with get_db_connection() as conn:
             conn.execute(sql, params)
             conn.commit()
-            return True, f"需求 {quote_id} 创建成功"
+
+        # 同步客户营销状态
+        cli_id = data.get('cli_id')
+        if cli_id:
+            from Sills.db_cli import sync_cli_marketing_status
+            sync_cli_marketing_status(cli_id)
+
+        return True, f"需求 {quote_id} 创建成功"
     except Exception as e:
         return False, str(e)
 

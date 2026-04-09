@@ -155,6 +155,11 @@ def add_order(data, conn=None):
             conn.execute(sql, params)
             if must_close:
                 conn.commit()
+
+            # 同步客户营销状态
+            from Sills.db_cli import sync_cli_marketing_status
+            sync_cli_marketing_status(cli_id)
+
             return True, f"销售订单 {order_id} 创建成功"
         finally:
             if must_close:

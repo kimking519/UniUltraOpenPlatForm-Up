@@ -1,6 +1,109 @@
 import sqlite3
 from Sills.base import get_db_connection
 
+
+def sync_cli_marketing_status(cli_id=None):
+    """
+    同步客户营销状态
+    - is_contacted: 有联系人记录
+    - has_inquiry: 有询价记录
+    - has_order: 有订单记录
+
+    cli_id: 指定客户ID，为None则同步所有客户
+    """
+    try:
+        with get_db_connection() as conn:
+            if cli_id:
+                # 同步单个客户
+                # 检查是否有联系人
+                has_contact = conn.execute(
+                    "SELECT 1 FROM uni_contact WHERE cli_id = ? LIMIT 1",
+                    (cli_id,)
+                ).fetchone()
+
+                # 检查是否有询价
+                has_inquiry = conn.execute(
+                    "SELECT 1 FROM uni_quote WHERE cli_id = ? LIMIT 1",
+                    (cli_id,)
+                ).fetchone()
+
+                # 检查是否有订单
+                has_order = conn.execute(
+                    "SELECT 1 FROM uni_order WHERE cli_id = ? LIMIT 1",
+                    (cli_id,)
+                ).fetchone()
+
+                conn.execute("""
+                    UPDATE uni_cli
+                    SET is_contacted = ?, has_inquiry = ?, has_order = ?
+                    WHERE cli_id = ?
+                """, (
+                    1 if has_contact else 0,
+                    1 if has_inquiry else 0,
+                    1 if has_order else 0,
+                    cli_id
+                ))
+            else:
+                # 同步所有客户
+                # 设置 is_contacted
+                conn.execute("""
+                    UPDATE uni_cli
+                    SET is_contacted = CASE
+                        WHEN EXISTS (SELECT 1 FROM uni_contact WHERE uni_contact.cli_id = uni_cli.cli_id)
+                        THEN 1 ELSE 0
+                    END
+                """)
+
+                # 设置 has_inquiry
+                conn.execute("""
+                    UPDATE uni_cli
+                    SET has_inquiry = CASE
+                        WHEN EXISTS (SELECT 1 FROM uni_quote WHERE uni_quote.cli_id = uni_cli.cli_id)
+                        THEN 1 ELSE 0
+                    END
+                """)
+
+                # 设置 has_order
+                conn.execute("""
+                    UPDATE uni_cli
+                    SET has_order = CASE
+                        WHEN EXISTS (SELECT 1 FROM uni_order WHERE uni_order.cli_id = uni_cli.cli_id)
+                        THEN 1 ELSE 0
+                    END
+                """)
+
+            conn.commit()
+            return True, "状态同步成功"
+    except Exception as e:
+        return False, str(e)
+
+
+def update_cli_domain_from_email():
+    """
+    根据邮箱自动提取域名并更新客户表
+    """
+    try:
+        with get_db_connection() as conn:
+            # 从邮箱字段提取域名
+            rows = conn.execute("""
+                SELECT cli_id, email FROM uni_cli
+                WHERE email IS NOT NULL AND email != '' AND (domain IS NULL OR domain = '')
+            """).fetchall()
+
+            updated = 0
+            for row in rows:
+                email = row[1]
+                if email and '@' in email:
+                    domain = email.split('@')[-1].lower().strip()
+                    conn.execute("UPDATE uni_cli SET domain = ? WHERE cli_id = ?", (domain, row[0]))
+                    updated += 1
+
+            conn.commit()
+            return True, f"更新了 {updated} 个客户的域名"
+    except Exception as e:
+        return False, str(e)
+
+
 def get_cli_list(page=1, page_size=10, search_kw=""):
     offset = (page - 1) * page_size
     query = """

@@ -410,6 +410,58 @@ CREATE INDEX IF NOT EXISTS idx_mail_filter_priority ON mail_filter_rule(priority
 CREATE INDEX IF NOT EXISTS idx_mail_folder_id ON uni_mail(folder_id);
 CREATE INDEX IF NOT EXISTS idx_mail_type ON uni_mail(mail_type);
 
+-- 联系人表（营销模块）
+CREATE TABLE IF NOT EXISTS uni_contact (
+    contact_id TEXT PRIMARY KEY,
+    cli_id TEXT,                    -- 关联客户ID (可为空，新客户未创建时)
+    email TEXT NOT NULL UNIQUE,     -- 联系人邮箱
+    domain TEXT NOT NULL,           -- 邮箱域名 (自动提取)
+    contact_name TEXT,              -- 联系人姓名
+    country TEXT,                   -- 国家
+    position TEXT,                  -- 职位
+    phone TEXT,                     -- 电话
+    company TEXT,                   -- 公司名
+    is_bounced INTEGER DEFAULT 0,   -- 是否退信
+    is_read INTEGER DEFAULT 0,      -- 是否已读
+    is_deleted INTEGER DEFAULT 0,   -- 是否删除
+    send_count INTEGER DEFAULT 0,   -- 发送次数
+    bounce_count INTEGER DEFAULT 0, -- 退信次数
+    read_count INTEGER DEFAULT 0,   -- 已读次数
+    last_sent_at TIMESTAMP,         -- 最后发送时间
+    remark TEXT,                    -- 备注
+    created_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON DELETE SET NULL,
+    CONSTRAINT chk_contact_bounced CHECK (is_bounced IN (0,1)),
+    CONSTRAINT chk_contact_read CHECK (is_read IN (0,1)),
+    CONSTRAINT chk_contact_deleted CHECK (is_deleted IN (0,1))
+);
+
+-- 营销邮件记录表
+CREATE TABLE IF NOT EXISTS uni_marketing_email (
+    id SERIAL PRIMARY KEY,
+    contact_id TEXT NOT NULL,
+    mail_id INTEGER,
+    subject TEXT,
+    content TEXT,
+    sent_at TIMESTAMP DEFAULT NOW(),
+    status TEXT DEFAULT 'sent',     -- sent, delivered, bounced, read
+    bounced_reason TEXT,            -- 退信原因
+    FOREIGN KEY (contact_id) REFERENCES uni_contact(contact_id) ON DELETE CASCADE,
+    FOREIGN KEY (mail_id) REFERENCES uni_mail(id) ON DELETE SET NULL
+);
+
+-- 联系人索引
+CREATE INDEX IF NOT EXISTS idx_contact_cli ON uni_contact(cli_id);
+CREATE INDEX IF NOT EXISTS idx_contact_domain ON uni_contact(domain);
+CREATE INDEX IF NOT EXISTS idx_contact_email ON uni_contact(email);
+CREATE INDEX IF NOT EXISTS idx_contact_country ON uni_contact(country);
+CREATE INDEX IF NOT EXISTS idx_contact_bounced ON uni_contact(is_bounced);
+
+-- 营销邮件索引
+CREATE INDEX IF NOT EXISTS idx_marketing_contact ON uni_marketing_email(contact_id);
+CREATE INDEX IF NOT EXISTS idx_marketing_sent ON uni_marketing_email(sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketing_status ON uni_marketing_email(status);
+
 -- 部分索引（PostgreSQL 语法）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_message_id ON uni_mail(message_id) WHERE message_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_uid_folder_account ON uni_mail(imap_uid, imap_folder, account_id) WHERE imap_uid IS NOT NULL;

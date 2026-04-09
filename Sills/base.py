@@ -397,6 +397,24 @@ def _init_db_postgresql():
     with get_db_connection() as conn:
         cur = conn.cursor()
 
+        # 迁移：uni_cli 表添加营销字段
+        try:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'uni_cli' AND column_name = 'domain'
+            """)
+            if not cur.fetchone():
+                cur.execute("""
+                    ALTER TABLE uni_cli
+                    ADD COLUMN domain TEXT,
+                    ADD COLUMN is_contacted INTEGER DEFAULT 0,
+                    ADD COLUMN has_inquiry INTEGER DEFAULT 0,
+                    ADD COLUMN has_order INTEGER DEFAULT 0
+                """)
+                print("[DB] 迁移：uni_cli 表已添加营销字段 (domain, is_contacted, has_inquiry, has_order)")
+        except Exception as e:
+            print(f"[DB] uni_cli 营销字段迁移: {e}")
+
         # 迁移：uni_order_manager_rel 表从 order_id 改为 offer_id
         try:
             # 检查是否存在 order_id 列
@@ -798,6 +816,58 @@ def _init_db_sqlite():
     CREATE INDEX IF NOT EXISTS idx_mail_filter_folder ON mail_filter_rule(folder_id);
     CREATE INDEX IF NOT EXISTS idx_mail_filter_priority ON mail_filter_rule(priority DESC);
     CREATE INDEX IF NOT EXISTS idx_mail_folder_id ON uni_mail(folder_id);
+
+    -- 联系人表（营销模块）
+    CREATE TABLE IF NOT EXISTS uni_contact (
+        contact_id TEXT PRIMARY KEY,
+        cli_id TEXT,                    -- 关联客户ID (可为空，新客户未创建时)
+        email TEXT NOT NULL UNIQUE,     -- 联系人邮箱
+        domain TEXT NOT NULL,           -- 邮箱域名 (自动提取)
+        contact_name TEXT,              -- 联系人姓名
+        country TEXT,                   -- 国家
+        position TEXT,                  -- 职位
+        phone TEXT,                     -- 电话
+        company TEXT,                   -- 公司名称
+
+        -- 营销状态字段
+        is_bounced INTEGER DEFAULT 0 CHECK(is_bounced IN (0,1)),   -- 是否退信
+        is_read INTEGER DEFAULT 0 CHECK(is_read IN (0,1)),         -- 是否已读
+        is_deleted INTEGER DEFAULT 0 CHECK(is_deleted IN (0,1)),   -- 是否删除
+        send_count INTEGER DEFAULT 0,   -- 发送次数
+        bounce_count INTEGER DEFAULT 0, -- 退信次数
+        read_count INTEGER DEFAULT 0,   -- 已读次数
+        last_sent_at DATETIME,          -- 最后发送时间
+
+        remark TEXT,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON DELETE SET NULL
+    );
+
+    -- 营销邮件记录表
+    CREATE TABLE IF NOT EXISTS uni_marketing_email (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contact_id TEXT NOT NULL,
+        mail_id INTEGER,                -- 关联 uni_mail 表
+        subject TEXT,
+        content TEXT,
+        sent_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        status TEXT DEFAULT 'sent',     -- sent, delivered, bounced, read
+        bounced_reason TEXT,            -- 退信原因
+        FOREIGN KEY (contact_id) REFERENCES uni_contact(contact_id) ON DELETE CASCADE,
+        FOREIGN KEY (mail_id) REFERENCES uni_mail(id) ON DELETE SET NULL
+    );
+
+    -- 联系人索引
+    CREATE INDEX IF NOT EXISTS idx_contact_cli ON uni_contact(cli_id);
+    CREATE INDEX IF NOT EXISTS idx_contact_domain ON uni_contact(domain);
+    CREATE INDEX IF NOT EXISTS idx_contact_email ON uni_contact(email);
+    CREATE INDEX IF NOT EXISTS idx_contact_country ON uni_contact(country);
+    CREATE INDEX IF NOT EXISTS idx_contact_bounced ON uni_contact(is_bounced);
+
+    -- 营销邮件索引
+    CREATE INDEX IF NOT EXISTS idx_marketing_contact ON uni_marketing_email(contact_id);
+    CREATE INDEX IF NOT EXISTS idx_marketing_sent ON uni_marketing_email(sent_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_marketing_status ON uni_marketing_email(status);
     """
 
     with get_db_connection() as conn:
@@ -941,6 +1011,39 @@ def _init_db_sqlite():
                 print(f"[DB] 迁移警告 (uni_order_manager_rel): {e}")
 
         conn.executescript(schema)
+
+        # 迁移：为 uni_cli 添加营销相关字段
+        try:
+            conn.execute("ALTER TABLE uni_cli ADD COLUMN domain TEXT")
+            print("[DB] 迁移完成：uni_cli 添加 domain 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        try:
+            conn.execute("ALTER TABLE uni_cli ADD COLUMN is_contacted INTEGER DEFAULT 0 CHECK(is_contacted IN (0,1))")
+            print("[DB] 迁移完成：uni_cli 添加 is_contacted 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        try:
+            conn.execute("ALTER TABLE uni_cli ADD COLUMN has_inquiry INTEGER DEFAULT 0 CHECK(has_inquiry IN (0,1))")
+            print("[DB] 迁移完成：uni_cli 添加 has_inquiry 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        try:
+            conn.execute("ALTER TABLE uni_cli ADD COLUMN has_order INTEGER DEFAULT 0 CHECK(has_order IN (0,1))")
+            print("[DB] 迁移完成：uni_cli 添加 has_order 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 为 uni_cli 添加域名索引
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_cli_domain ON uni_cli(domain)")
+            print("[DB] 迁移完成：uni_cli 添加 domain 索引")
+        except sqlite3.OperationalError:
+            pass
+
         conn.execute("""
             INSERT INTO uni_emp (emp_id, emp_name, account, password, rule)
             VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
