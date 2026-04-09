@@ -2219,18 +2219,20 @@ import re
 MAIL_TYPE_KEYWORDS = {
     # 已读回执 (mail_type = 1) - 注意：Gelesen 需要精确匹配，避免匹配到 "Nicht gelesen"
     'read': [
-        'Read:', '已读', 'Gelesen:', 'Letto', '읽음', '開封', 'Lesebest'
+        'Read:', '已读', 'Gelesen:', 'Letto', '읽음', '開封', 'Lesebest',
+        '讀取', 'Lu :', '已x读取', 'Empfangsstatus', '_封'
     ],
     # 未读回执 (mail_type = 2)
     'unread': [
-        'Not read', 'Nicht gelesen', 'Non letto', '未读', 'Non lu', '읽지 않음', '未開封'
+        'Not read', 'Nicht gelesen', 'Non letto', '未读', 'Non lu', '읽지 않음', '未開封',
+        'Automatic reply', '自動', '自動返信', 'Unzustellbar:', '未_封'
     ],
     # 系统退信 (mail_type = 3)
     'bounced': [
         '系统退信', 'Undeliverable', 'Delivery failure', 'Delivery Status',
         'Return Notice', 'Fehlgeschlagen', 'SPAM', 'Returned mail',
         '配信不能', 'Returne', 'failure notice', 'FAILURE NOTICE',
-        'NDR', 'Delivery Failure'
+        'NDR', 'Delivery Failure', '배달되지 않음', 'failed', 'ERREUR'
     ]
 }
 
