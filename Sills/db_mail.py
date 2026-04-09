@@ -2217,19 +2217,20 @@ def move_emails_to_folder(mail_ids: list, folder_id: int = None) -> int:
 import re
 
 MAIL_TYPE_KEYWORDS = {
-    # 已读回执 (mail_type = 1)
+    # 已读回执 (mail_type = 1) - 注意：Gelesen 需要精确匹配，避免匹配到 "Nicht gelesen"
     'read': [
-        'Read', '已读', 'Gelesen', 'Letto', 'Lu', 'Lesebest'
+        'Read:', '已读', 'Gelesen:', 'Letto', '읽음', '開封', 'Lesebest'
     ],
     # 未读回执 (mail_type = 2)
     'unread': [
-        'Not read', 'Nicht gelesen', 'Non letto', '未读', 'Non lu'
+        'Not read', 'Nicht gelesen', 'Non letto', '未读', 'Non lu', '읽지 않음', '未開封'
     ],
     # 系统退信 (mail_type = 3)
     'bounced': [
         '系统退信', 'Undeliverable', 'Delivery failure', 'Delivery Status',
         'Return Notice', 'Fehlgeschlagen', 'SPAM', 'Returned mail',
-        '配信不能', 'Returne'
+        '配信不能', 'Returne', 'failure notice', 'FAILURE NOTICE',
+        'NDR', 'Delivery Failure'
     ]
 }
 
@@ -2284,20 +2285,20 @@ def classify_mail_by_subject(subject: str) -> int:
 
     subject_upper = subject.upper()
 
-    # 检查已读回执
-    for kw in MAIL_TYPE_KEYWORDS['read']:
+    # 优先级1：检查系统退信（最高优先级）
+    for kw in MAIL_TYPE_KEYWORDS['bounced']:
         if kw.upper() in subject_upper:
-            return 1
+            return 3
 
-    # 检查未读回执
+    # 优先级2：检查未读回执（必须在已读之前，因为 "Not read" 包含 "read"）
     for kw in MAIL_TYPE_KEYWORDS['unread']:
         if kw.upper() in subject_upper:
             return 2
 
-    # 检查系统退信
-    for kw in MAIL_TYPE_KEYWORDS['bounced']:
+    # 优先级3：检查已读回执
+    for kw in MAIL_TYPE_KEYWORDS['read']:
         if kw.upper() in subject_upper:
-            return 3
+            return 1
 
     return 0
 
