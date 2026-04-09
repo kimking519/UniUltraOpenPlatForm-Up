@@ -281,6 +281,8 @@ CREATE TABLE IF NOT EXISTS uni_mail (
     sync_error TEXT,
     is_draft INTEGER DEFAULT 0,
     is_blacklisted INTEGER DEFAULT 0,
+    mail_type INTEGER DEFAULT 0,
+    original_recipient TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (account_id) REFERENCES mail_config(id) ON DELETE SET NULL,
     FOREIGN KEY (folder_id) REFERENCES mail_folder(id) ON DELETE SET NULL,
@@ -288,7 +290,8 @@ CREATE TABLE IF NOT EXISTS uni_mail (
     CONSTRAINT chk_is_read CHECK (is_read IN (0,1)),
     CONSTRAINT chk_is_deleted CHECK (is_deleted IN (0,1)),
     CONSTRAINT chk_is_draft CHECK (is_draft IN (0,1)),
-    CONSTRAINT chk_is_blacklisted CHECK (is_blacklisted IN (0,1))
+    CONSTRAINT chk_is_blacklisted CHECK (is_blacklisted IN (0,1)),
+    CONSTRAINT chk_mail_type CHECK (mail_type IN (0,1,2,3,4))
 );
 
 -- 邮件关联表
@@ -405,6 +408,7 @@ CREATE INDEX IF NOT EXISTS idx_mail_folder_account ON mail_folder(account_id);
 CREATE INDEX IF NOT EXISTS idx_mail_filter_folder ON mail_filter_rule(folder_id);
 CREATE INDEX IF NOT EXISTS idx_mail_filter_priority ON mail_filter_rule(priority DESC);
 CREATE INDEX IF NOT EXISTS idx_mail_folder_id ON uni_mail(folder_id);
+CREATE INDEX IF NOT EXISTS idx_mail_type ON uni_mail(mail_type);
 
 -- 部分索引（PostgreSQL 语法）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mail_message_id ON uni_mail(message_id) WHERE message_id IS NOT NULL;

@@ -36,7 +36,7 @@ from Sills.db_mail import (
     # 过滤规则管理
     get_filter_rules, add_filter_rule, update_filter_rule, delete_filter_rule,
     # 自动分类
-    auto_classify_emails
+    auto_classify_emails, classify_mails
 )
 from Sills.mail_service import sync_inbox, sync_inbox_async, send_email_now
 from Sills.ai_service import intent_recognizer, smart_replier
@@ -3868,15 +3868,26 @@ async def api_delete_filter_rule(request: Request, current_user: dict = Depends(
 
 @app.post("/api/mail/auto-classify")
 async def api_auto_classify(current_user: dict = Depends(login_required)):
-    """自动分类邮件"""
+    """自动分类邮件（文件夹规则 + 邮件类型分类）"""
     account = get_mail_config()
     account_id = account.get('id') if account else None
 
-    result = auto_classify_emails(account_id)
+    # 文件夹规则分类
+    folder_result = auto_classify_emails(account_id)
+
+    # 邮件类型分类（已读/未读回执、退信）
+    type_result = classify_mails(account_id)
+
     return {
         "success": True,
-        "classified_count": result['classified_count'],
-        "rule_count": result['rule_count']
+        "classified_count": folder_result['classified_count'],
+        "rule_count": folder_result['rule_count'],
+        "type_classification": {
+            "read_receipts": type_result['read_receipts'],
+            "unread_receipts": type_result['unread_receipts'],
+            "bounced": type_result['bounced'],
+            "recipients_extracted": type_result['recipients_extracted']
+        }
     }
 
 
@@ -4295,6 +4306,282 @@ async def api_mail_suggest_reply(mail_id: int, current_user: dict = Depends(logi
     }
 
 # ==================== SmartMail 路由结束 ====================
+
+# ==================== 联系人管理模块（营销） ====================
+
+@app.get("/contact", response_class=HTMLResponse)
+async def contact_page(request: Request, current_user: dict = Depends(login_required)):
+    """联系人管理页面"""
+    from Sills.db_contact import get_contact_countries, get_marketing_stats
+    countries = get_contact_countries()
+    stats = get_marketing_stats()
+    return templates.TemplateResponse("contact.html", {
+        "request": request,
+        "active_page": "contact",
+        "current_user": current_user,
+        "countries": countries,
+        "stats": stats
+    })
+
+
+@app.get("/api/contact/list")
+async def api_contact_list(
+    page: int = 1,
+    page_size: int = 20,
+    search: str = None,
+    cli_id: str = None,
+    country: str = None,
+    is_bounced: int = None,
+    is_contacted: int = None,
+    has_inquiry: int = None,
+    has_order: int = None,
+    current_user: dict = Depends(login_required)
+):
+    """获取联系人列表"""
+    from Sills.db_contact import get_contact_list
+    filters = {}
+    if cli_id:
+        filters['cli_id'] = cli_id
+    if country:
+        filters['country'] = country
+    if is_bounced is not None:
+        filters['is_bounced'] = is_bounced
+    if is_contacted is not None:
+        filters['is_contacted'] = is_contacted
+    if has_inquiry is not None:
+        filters['has_inquiry'] = has_inquiry
+    if has_order is not None:
+        filters['has_order'] = has_order
+
+    items, total = get_contact_list(
+        page=page,
+        page_size=page_size,
+        search_kw=search or "",
+        filters=filters if filters else None
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@app.get("/api/contact/{contact_id}")
+async def api_contact_get(contact_id: str, current_user: dict = Depends(login_required)):
+    """获取联系人详情"""
+    from Sills.db_contact import get_contact_by_id
+    contact = get_contact_by_id(contact_id)
+    if not contact:
+        raise HTTPException(status_code=404, detail="联系人不存在")
+    return contact
+
+
+@app.post("/api/contact/add")
+async def api_contact_add(request: Request, current_user: dict = Depends(login_required)):
+    """添加联系人"""
+    from Sills.db_contact import add_contact
+    data = await request.json()
+    success, message = add_contact(data)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/contact/update")
+async def api_contact_update(request: Request, current_user: dict = Depends(login_required)):
+    """更新联系人"""
+    from Sills.db_contact import update_contact
+    data = await request.json()
+    contact_id = data.get('contact_id')
+    if not contact_id:
+        return {"success": False, "message": "缺少联系人ID"}
+
+    # 移除不应更新的字段
+    update_data = {k: v for k, v in data.items() if k != 'contact_id'}
+    success, message = update_contact(contact_id, update_data)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/contact/delete")
+async def api_contact_delete(request: Request, current_user: dict = Depends(login_required)):
+    """删除联系人"""
+    from Sills.db_contact import delete_contact
+    data = await request.json()
+    contact_id = data.get('contact_id')
+    if not contact_id:
+        return {"success": False, "message": "缺少联系人ID"}
+    success, message = delete_contact(contact_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/contact/batch_delete")
+async def api_contact_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    """批量删除联系人"""
+    from Sills.db_contact import batch_delete_contacts
+    data = await request.json()
+    contact_ids = data.get('contact_ids', [])
+    deleted, failed, message = batch_delete_contacts(contact_ids)
+    return {"success": True, "deleted": deleted, "failed": failed, "message": message}
+
+
+@app.post("/api/contact/import")
+async def api_contact_import(request: Request, current_user: dict = Depends(login_required)):
+    """批量导入联系人"""
+    from Sills.db_contact import batch_import_contacts
+    data = await request.json()
+    contacts = data.get('contacts', [])
+    auto_create_cli = data.get('auto_create_cli', False)
+
+    success_count, errors, new_clients = batch_import_contacts(contacts, auto_create_cli)
+    return {
+        "success": True,
+        "imported": success_count,
+        "errors": errors,
+        "new_clients": new_clients
+    }
+
+
+@app.get("/api/contact/countries")
+async def api_contact_countries(current_user: dict = Depends(login_required)):
+    """获取所有国家列表"""
+    from Sills.db_contact import get_contact_countries
+    return {"countries": get_contact_countries()}
+
+
+@app.get("/api/contact/stats")
+async def api_contact_stats(current_user: dict = Depends(login_required)):
+    """获取营销统计数据"""
+    from Sills.db_contact import get_marketing_stats
+    return get_marketing_stats()
+
+
+# ==================== 开发信发送模块 ====================
+
+@app.get("/api/marketing/contacts")
+async def api_marketing_contacts(
+    countries: str = None,
+    is_bounced: int = None,
+    is_contacted: int = None,
+    has_inquiry: int = None,
+    has_order: int = None,
+    current_user: dict = Depends(login_required)
+):
+    """获取用于营销的联系人列表"""
+    from Sills.db_contact import get_contacts_for_marketing
+    filters = {}
+    if countries:
+        filters['countries'] = [c.strip() for c in countries.split(',') if c.strip()]
+    if is_bounced is not None:
+        filters['is_bounced'] = is_bounced
+    if is_contacted is not None:
+        filters['is_contacted'] = is_contacted
+    if has_inquiry is not None:
+        filters['has_inquiry'] = has_inquiry
+    if has_order is not None:
+        filters['has_order'] = has_order
+
+    contacts = get_contacts_for_marketing(filters if filters else None)
+    return {"contacts": contacts, "total": len(contacts)}
+
+
+@app.post("/api/marketing/send")
+async def api_marketing_send(request: Request, current_user: dict = Depends(login_required)):
+    """批量发送开发信"""
+    from Sills.db_contact import (
+        update_contact_marketing_status, add_marketing_email, get_contact_by_id
+    )
+    from Sills.db_mail import send_email, get_mail_config
+
+    data = await request.json()
+    contact_ids = data.get('contact_ids', [])
+    subject = data.get('subject', '')
+    content = data.get('content', '')
+
+    if not contact_ids:
+        return {"success": False, "message": "未选择联系人"}
+    if not subject or not content:
+        return {"success": False, "message": "邮件主题和内容不能为空"}
+
+    # 获取邮件配置
+    mail_config = get_mail_config()
+    if not mail_config:
+        return {"success": False, "message": "未配置邮件账户"}
+
+    results = {
+        "sent": 0,
+        "failed": 0,
+        "errors": []
+    }
+
+    for contact_id in contact_ids:
+        contact = get_contact_by_id(contact_id)
+        if not contact:
+            results['failed'] += 1
+            results['errors'].append(f"{contact_id}: 联系人不存在")
+            continue
+
+        email = contact.get('email', '')
+        if not email:
+            results['failed'] += 1
+            results['errors'].append(f"{contact_id}: 邮箱为空")
+            continue
+
+        # 发送邮件
+        try:
+            success = send_email(
+                to_addr=email,
+                subject=subject,
+                content=content,
+                config=mail_config
+            )
+            if success:
+                # 更新联系人状态
+                update_contact_marketing_status(contact_id, 'sent')
+                # 记录发送历史
+                add_marketing_email(contact_id, None, subject, content, 'sent')
+                results['sent'] += 1
+            else:
+                results['failed'] += 1
+                results['errors'].append(f"{email}: 发送失败")
+        except Exception as e:
+            results['failed'] += 1
+            results['errors'].append(f"{email}: {str(e)}")
+
+    return {
+        "success": True,
+        "sent": results['sent'],
+        "failed": results['failed'],
+        "errors": results['errors'][:10]  # 只返回前10个错误
+    }
+
+
+@app.get("/api/marketing/history")
+async def api_marketing_history(
+    contact_id: str = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: dict = Depends(login_required)
+):
+    """获取营销邮件发送历史"""
+    from Sills.db_contact import get_marketing_email_history
+    items, total = get_marketing_email_history(contact_id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+# ==================== 联系人管理模块结束 ====================
+
+# ==================== 营销状态同步 ====================
+
+@app.post("/api/marketing/sync_status")
+async def api_sync_marketing_status(request: Request, current_user: dict = Depends(login_required)):
+    """手动同步客户营销状态"""
+    from Sills.db_cli import sync_cli_marketing_status, update_cli_domain_from_email
+    data = await request.json() if await request.body() else {}
+    cli_id = data.get('cli_id')
+
+    # 同步状态
+    success, message = sync_cli_marketing_status(cli_id)
+
+    # 同时更新客户域名
+    if success:
+        update_cli_domain_from_email()
+
+    return {"success": success, "message": message}
+
+# ==================== 营销状态同步结束 ====================
 
 if __name__ == "__main__":
     # 根据环境选择端口: Windows=8001, WSL=8000
