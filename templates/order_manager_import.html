@@ -1,0 +1,409 @@
+{% extends "layout.html" %}
+
+{% block title %}导入历史订单 - UniUltra 开放平台{% endblock %}
+
+{% block content %}
+<style>
+    .page-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        gap: 1rem;
+    }
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .page-header h1 svg {
+        width: 28px;
+        height: 28px;
+        color: var(--primary);
+    }
+    .back-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.5rem 0.75rem;
+        background: var(--bg-glass);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text-main);
+        text-decoration: none;
+        font-size: 0.85rem;
+    }
+    .back-btn:hover { background: var(--border); }
+
+    .import-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .import-card h2 {
+        font-size: 1.1rem;
+        color: var(--text-main);
+        margin: 0 0 1rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .upload-area {
+        border: 2px dashed var(--border);
+        border-radius: var(--radius);
+        padding: 2rem;
+        text-align: center;
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+    .upload-area:hover, .upload-area.dragover {
+        border-color: var(--primary);
+        background: rgba(99, 102, 241, 0.05);
+    }
+    .upload-area svg {
+        width: 48px;
+        height: 48px;
+        color: var(--primary);
+        margin-bottom: 0.5rem;
+    }
+    .upload-area p {
+        margin: 0.5rem 0;
+        color: var(--text-muted);
+    }
+    .upload-area .file-input {
+        display: none;
+    }
+
+    .field-mapping-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+        margin-top: 1rem;
+    }
+    .field-mapping-table th, .field-mapping-table td {
+        padding: 0.5rem;
+        border: 1px solid var(--border);
+        text-align: left;
+    }
+    .field-mapping-table th {
+        background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
+        font-weight: 600;
+    }
+    [data-theme="dark"] .field-mapping-table th {
+        background: linear-gradient(180deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%);
+    }
+    .required-badge {
+        background: #FEE2E2;
+        color: #991B1B;
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+    }
+    .optional-badge {
+        background: #E0E7FF;
+        color: #3730A3;
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+    }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+        border: none;
+        border-radius: var(--radius);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: #4F46E5; }
+    .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-secondary { background: var(--bg-glass); color: var(--text-main); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+
+    .result-section {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: var(--radius);
+    }
+    .result-section.success { background: #D1FAE5; color: #065F46; }
+    .result-section.error { background: #FEE2E2; color: #991B1B; }
+    .result-stats {
+        display: flex;
+        gap: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .result-stat {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+    .result-stat .count {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    .error-list {
+        margin-top: 0.5rem;
+        max-height: 200px;
+        overflow-y: auto;
+        font-size: 0.8rem;
+    }
+    .error-list li { margin: 0.25rem 0; }
+</style>
+
+<div class="page-header">
+    <a href="/order_manager" class="back-btn">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+        返回
+    </a>
+    <h1>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        导入历史客户订单
+    </h1>
+</div>
+
+<div class="import-card">
+    <h2>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        字段映射说明
+    </h2>
+    <table class="field-mapping-table">
+        <thead>
+            <tr>
+                <th>Excel列名</th>
+                <th>数据库字段</th>
+                <th>必填</th>
+                <th>说明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>客户订单号</td><td>customer_order_no</td><td><span class="required-badge">必填</span></td><td>客户订单编号，相同编号的行归为同一订单</td></tr>
+            <tr><td>客户名称</td><td>cli_name</td><td><span class="required-badge">必填</span></td><td>自动匹配已有客户，匹配失败自动创建新客户</td></tr>
+            <tr><td>订单日期</td><td>order_date</td><td><span class="optional-badge">可选</span></td><td>格式: YYYY-MM-DD</td></tr>
+            <tr><td>型号</td><td>inquiry_mpn</td><td><span class="required-badge">必填</span></td><td>产品型号</td></tr>
+            <tr><td>品牌</td><td>inquiry_brand</td><td><span class="optional-badge">可选</span></td><td>产品品牌</td></tr>
+            <tr><td>数量</td><td>quoted_qty</td><td><span class="required-badge">必填</span></td><td>报价数量</td></tr>
+            <tr><td>单价(RMB)</td><td>offer_price_rmb</td><td><span class="required-badge">必填</span></td><td>人民币单价</td></tr>
+            <tr><td>成本价(RMB)</td><td>cost_price_rmb</td><td><span class="optional-badge">可选</span></td><td>人民币成本价</td></tr>
+            <tr><td>批号</td><td>date_code</td><td><span class="optional-badge">可选</span></td><td>产品批号</td></tr>
+            <tr><td>交期</td><td>delivery_date</td><td><span class="optional-badge">可选</span></td><td>交货日期</td></tr>
+            <tr><td>备注</td><td>remark</td><td><span class="optional-badge">可选</span></td><td>备注信息</td></tr>
+        </tbody>
+    </table>
+    <div style="margin-top: 1rem;">
+        <a href="/api/order_manager/import_template" class="btn btn-secondary" style="text-decoration: none;">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            下载导入模板
+        </a>
+    </div>
+</div>
+
+<div class="import-card">
+    <h2>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+        </svg>
+        上传Excel文件
+    </h2>
+    <div class="upload-area" id="uploadArea">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        <p>点击或拖拽Excel文件到此处</p>
+        <p style="font-size: 0.8rem; color: var(--text-muted);">支持 .xlsx, .xls 格式</p>
+        <input type="file" class="file-input" id="fileInput" accept=".xlsx,.xls">
+    </div>
+
+    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+        <button class="btn btn-primary" id="importBtn" disabled>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            开始导入
+        </button>
+        <button class="btn btn-secondary" id="clearBtn" style="display: none;">
+            清除
+        </button>
+    </div>
+</div>
+
+<div class="import-card" id="resultCard" style="display: none;">
+    <h2>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        导入结果
+    </h2>
+    <div class="result-section" id="resultSection">
+        <div class="result-stats">
+            <div class="result-stat">
+                <span class="count" id="successCount" style="color: #10B981;">0</span>
+                <span>成功</span>
+            </div>
+            <div class="result-stat">
+                <span class="count" id="skipCount" style="color: #F59E0B;">0</span>
+                <span>跳过</span>
+            </div>
+            <div class="result-stat">
+                <span class="count" id="failCount" style="color: #EF4444;">0</span>
+                <span>失败</span>
+            </div>
+        </div>
+        <div id="errorListContainer" style="display: none;">
+            <strong>错误详情:</strong>
+            <ul class="error-list" id="errorList"></ul>
+        </div>
+    </div>
+</div>
+
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const importBtn = document.getElementById('importBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const resultCard = document.getElementById('resultCard');
+
+    let selectedFile = null;
+
+    // 点击上传区域触发文件选择
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    // 拖拽效果
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFile(files[0]);
+        }
+    });
+
+    // 文件选择
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFile(e.target.files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        if (!file.name.match(/\.(xlsx|xls)$/i)) {
+            alert('请选择Excel文件 (.xlsx 或 .xls)');
+            return;
+        }
+        selectedFile = file;
+
+        // 安全地更新上传区域显示
+        const displayHtml = `
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="48" height="48" style="color: var(--primary);">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <p><strong></strong></p>
+            <p style="font-size: 0.8rem;"></p>
+        `;
+        uploadArea.innerHTML = displayHtml;
+        // 使用 textContent 安全地设置文件名
+        uploadArea.querySelector('p strong').textContent = file.name;
+        uploadArea.querySelector('p[style]').textContent = (file.size / 1024).toFixed(1) + ' KB';
+
+        importBtn.disabled = false;
+        clearBtn.style.display = 'inline-flex';
+    }
+
+    // 清除
+    clearBtn.addEventListener('click', () => {
+        selectedFile = null;
+        fileInput.value = '';
+        uploadArea.innerHTML = `
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="48" height="48">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <p>点击或拖拽Excel文件到此处</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">支持 .xlsx, .xls 格式</p>
+        `;
+        resultCard.style.display = 'none';
+        importBtn.disabled = true;
+        clearBtn.style.display = 'none';
+    });
+
+    // 导入
+    importBtn.addEventListener('click', async () => {
+        if (!selectedFile) return;
+
+        importBtn.disabled = true;
+        importBtn.textContent = '导入中...';
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        try {
+            const response = await fetch('/api/order_manager/import_history', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            resultCard.style.display = 'block';
+            document.getElementById('successCount').textContent = result.success || 0;
+            document.getElementById('skipCount').textContent = result.skip || 0;
+            document.getElementById('failCount').textContent = result.fail || 0;
+
+            const errorList = document.getElementById('errorList');
+            const errorListContainer = document.getElementById('errorListContainer');
+            if (result.errors && result.errors.length > 0) {
+                // 安全地添加错误列表项
+                errorList.innerHTML = '';
+                result.errors.forEach(function(err) {
+                    const li = document.createElement('li');
+                    li.textContent = err;  // 使用 textContent 防止 XSS
+                    errorList.appendChild(li);
+                });
+                errorListContainer.style.display = 'block';
+            } else {
+                errorListContainer.style.display = 'none';
+            }
+
+            if (result.fail > 0) {
+                document.getElementById('resultSection').className = 'result-section error';
+            } else {
+                document.getElementById('resultSection').className = 'result-section success';
+            }
+
+        } catch (error) {
+            alert('导入失败: ' + error.message);
+        }
+
+        importBtn.disabled = false;
+        importBtn.innerHTML = `
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            开始导入
+        `;
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,1188 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .datacenter-container {
+        display: flex;
+        height: calc(100vh - 120px);
+    }
+
+    .datacenter-sidebar {
+        width: 280px;
+        min-width: 220px;
+        max-width: 400px;
+        flex-shrink: 0;
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        height: 100%;
+    }
+
+    .datacenter-main {
+        flex: 1;
+        min-width: 400px;
+        display: flex;
+        flex-direction: column;
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        margin-left: 1rem;
+    }
+
+    .sidebar-section {
+        margin-bottom: 1rem;
+    }
+
+    .sidebar-section-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+        padding-left: 0.25rem;
+    }
+
+    .table-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .table-item {
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: all 0.15s;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .table-item:hover {
+        background: var(--bg-hover);
+    }
+
+    .table-item.active {
+        background: var(--primary);
+        color: white;
+    }
+
+    .saved-query-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .saved-query-item {
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: all 0.15s;
+        color: var(--text-main);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .saved-query-item:hover {
+        background: var(--bg-hover);
+    }
+
+    .saved-query-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .saved-query-delete {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: all 0.2s;
+    }
+
+    .saved-query-item:hover .saved-query-delete {
+        opacity: 1;
+    }
+
+    .saved-query-delete:hover {
+        background: #EF4444;
+        color: white;
+    }
+
+    /* SQL Input Area */
+    .sql-section {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .sql-input-wrapper {
+        position: relative;
+    }
+
+    .sql-input {
+        width: 100%;
+        min-height: 120px;
+        max-height: 300px;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        resize: vertical;
+        background: var(--bg-main);
+        color: var(--text-main);
+        transition: border-color 0.2s;
+    }
+
+    .sql-input:focus {
+        outline: none;
+        border-color: var(--primary);
+    }
+
+    .sql-toolbar {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+
+    .sql-btn {
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .sql-btn.primary {
+        background: var(--primary);
+        color: white;
+        border: none;
+    }
+
+    .sql-btn.primary:hover {
+        background: var(--primary-dark);
+    }
+
+    .sql-btn.secondary {
+        background: var(--bg-main);
+        color: var(--text-main);
+        border: 1px solid var(--border);
+    }
+
+    .sql-btn.secondary:hover {
+        background: var(--bg-hover);
+        border-color: var(--primary);
+    }
+
+    /* Results Area */
+    .results-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .results-header {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--bg-main);
+    }
+
+    .results-info {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    .results-toolbar {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .results-table-wrapper {
+        flex: 1;
+        overflow: auto;
+        padding: 0.75rem;
+    }
+
+    .results-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .results-table th {
+        background: var(--bg-main);
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-main);
+        border-bottom: 2px solid var(--border);
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+    }
+
+    .results-table td {
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-main);
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .results-table tr:hover td {
+        background: var(--bg-hover);
+    }
+
+    /* Structure View */
+    .structure-view {
+        padding: 1rem;
+    }
+
+    .structure-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-main);
+        margin-bottom: 0.75rem;
+    }
+
+    .structure-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .structure-table th {
+        background: var(--bg-main);
+        padding: 0.5rem;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text-main);
+        border-bottom: 2px solid var(--border);
+    }
+
+    .structure-table td {
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-main);
+    }
+
+    /* Modals */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal-content {
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        min-width: 400px;
+        max-width: 600px;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+
+    .modal-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-main);
+        margin-bottom: 1rem;
+    }
+
+    .modal-body {
+        margin-bottom: 1rem;
+    }
+
+    .modal-footer {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    .modal-input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        background: var(--bg-main);
+        color: var(--text-main);
+    }
+
+    .modal-input:focus {
+        outline: none;
+        border-color: var(--primary);
+    }
+
+    /* Field Selection for Export */
+    .field-selection {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .field-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border-radius: var(--radius);
+        cursor: pointer;
+    }
+
+    .field-checkbox:hover {
+        background: var(--bg-hover);
+    }
+
+    .field-checkbox input {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+
+    .field-checkbox label {
+        flex: 1;
+        cursor: pointer;
+        color: var(--text-main);
+    }
+
+    /* Empty State */
+    .empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        padding: 2rem;
+    }
+
+    .empty-state svg {
+        width: 64px;
+        height: 64px;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .empty-state p {
+        font-size: 0.9rem;
+    }
+
+    /* Search Input */
+    .search-input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+        background: var(--bg-main);
+        color: var(--text-main);
+        margin-bottom: 0.5rem;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary);
+    }
+
+    /* View Tabs */
+    .view-tabs {
+        display: flex;
+        gap: 0.25rem;
+        padding: 0.5rem 1rem;
+        background: var(--bg-main);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .view-tab {
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: transparent;
+        color: var(--text-muted);
+        border: none;
+    }
+
+    .view-tab:hover {
+        background: var(--bg-hover);
+        color: var(--text-main);
+    }
+
+    .view-tab.active {
+        background: var(--primary);
+        color: white;
+    }
+
+    /* Status Message */
+    .status-message {
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+        margin: 0.5rem 0;
+    }
+
+    .status-message.success {
+        background: rgba(16, 185, 129, 0.1);
+        color: #059669;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .status-message.error {
+        background: rgba(239, 68, 68, 0.1);
+        color: #DC2626;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+</style>
+
+<div class="datacenter-container">
+    <!-- Left Sidebar -->
+    <div class="datacenter-sidebar">
+        <!-- Table List Section -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">数据库表</div>
+            <input type="text" class="search-input" id="tableSearch" placeholder="搜索表名...">
+            <ul class="table-list" id="tableList"></ul>
+        </div>
+
+        <!-- Saved Queries Section -->
+        <div class="sidebar-section">
+            <div class="sidebar-section-title">保存的查询</div>
+            <ul class="saved-query-list" id="savedQueryList"></ul>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="datacenter-main">
+        <!-- SQL Input Section -->
+        <div class="sql-section">
+            <div class="sql-input-wrapper">
+                <textarea class="sql-input" id="sqlInput" placeholder="输入 SQL 查询语句..."></textarea>
+            </div>
+            <div class="sql-toolbar">
+                <button class="sql-btn primary" id="executeBtn">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    执行
+                </button>
+                <button class="sql-btn secondary" id="saveBtn">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                    保存
+                </button>
+                <button class="sql-btn secondary" id="clearBtn">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    清空
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+            <!-- View Tabs (only shown when viewing table) -->
+            <div class="view-tabs" id="viewTabs" style="display: none;">
+                <button class="view-tab active" data-view="structure">表结构</button>
+                <button class="view-tab" data-view="data">表数据</button>
+            </div>
+
+            <!-- Results Header -->
+            <div class="results-header" id="resultsHeader" style="display: none;">
+                <span class="results-info" id="resultsInfo"></span>
+                <div class="results-toolbar">
+                    <button class="sql-btn secondary" id="exportBtn">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        导出 Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                </svg>
+                <p>输入 SQL 查询或点击左侧表名开始</p>
+            </div>
+
+            <!-- Results Table Wrapper -->
+            <div class="results-table-wrapper" id="resultsWrapper" style="display: none;">
+                <table class="results-table" id="resultsTable">
+                    <thead id="resultsHead"></thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Structure View -->
+            <div class="structure-view" id="structureView" style="display: none;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Save Query Modal -->
+<div class="modal-overlay" id="saveModal">
+    <div class="modal-content">
+        <div class="modal-title">保存查询</div>
+        <div class="modal-body">
+            <input type="text" class="modal-input" id="queryNameInput" placeholder="输入查询名称（必须唯一）">
+        </div>
+        <div class="modal-footer">
+            <button class="sql-btn secondary" id="saveCancelBtn">取消</button>
+            <button class="sql-btn primary" id="saveConfirmBtn">保存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Export Modal -->
+<div class="modal-overlay" id="exportModal">
+    <div class="modal-content">
+        <div class="modal-title">导出 Excel</div>
+        <div class="modal-body">
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">选择要导出的字段：</p>
+            <div class="field-selection" id="fieldSelection"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="sql-btn secondary" id="exportCancelBtn">取消</button>
+            <button class="sql-btn primary" id="exportConfirmBtn">导出</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // State
+    let currentTable = null;
+    let currentView = 'structure';
+    let currentResultData = [];
+    let currentColumns = [];
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        loadTables();
+        loadSavedQueries();
+
+        // 恢复 SQL 输入框高度
+        const sqlInput = document.getElementById('sqlInput');
+        const savedHeight = localStorage.getItem('datacenter_sql_height');
+        if (savedHeight) {
+            sqlInput.style.height = savedHeight;
+        }
+
+        // 监听 SQL 输入框高度变化并保存
+        let resizeTimeout;
+        const resizeObserver = new ResizeObserver(entries => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                localStorage.setItem('datacenter_sql_height', sqlInput.style.height);
+            }, 200);
+        });
+        resizeObserver.observe(sqlInput);
+
+        // Table search
+        document.getElementById('tableSearch').addEventListener('input', filterTables);
+
+        // Execute button
+        document.getElementById('executeBtn').addEventListener('click', executeSQL);
+
+        // Save button
+        document.getElementById('saveBtn').addEventListener('click', () => {
+            const sql = document.getElementById('sqlInput').value.trim();
+            if (!sql) {
+                alert('请先输入 SQL 查询');
+                return;
+            }
+            document.getElementById('saveModal').classList.add('active');
+            document.getElementById('queryNameInput').focus();
+        });
+
+        // Clear button
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            document.getElementById('sqlInput').value = '';
+            hideResults();
+        });
+
+        // Save modal
+        document.getElementById('saveCancelBtn').addEventListener('click', () => {
+            document.getElementById('saveModal').classList.remove('active');
+        });
+        document.getElementById('saveConfirmBtn').addEventListener('click', saveQuery);
+
+        // Export button
+        document.getElementById('exportBtn').addEventListener('click', showExportModal);
+
+        // Export modal
+        document.getElementById('exportCancelBtn').addEventListener('click', () => {
+            document.getElementById('exportModal').classList.remove('active');
+        });
+        document.getElementById('exportConfirmBtn').addEventListener('click', exportExcel);
+
+        // View tabs
+        document.querySelectorAll('.view-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentView = tab.dataset.view;
+                if (currentTable) {
+                    loadTableContent(currentTable);
+                }
+            });
+        });
+
+        // Keyboard shortcuts
+        document.getElementById('sqlInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                executeSQL();
+            }
+        });
+    });
+
+    // Load tables
+    async function loadTables() {
+        try {
+            const response = await fetch('/api/datacenter/tables');
+            const data = await response.json();
+            renderTableList(data);
+        } catch (error) {
+            console.error('加载表列表失败:', error);
+        }
+    }
+
+    // Render table list (safe DOM)
+    function renderTableList(tables) {
+        const list = document.getElementById('tableList');
+        list.innerHTML = '';
+
+        tables.forEach(table => {
+            const li = document.createElement('li');
+            li.className = 'table-item';
+            li.dataset.table = table.table_name;
+
+            const icon = document.createElement('span');
+            icon.textContent = '>';
+
+            const name = document.createElement('span');
+            name.textContent = table.table_name;
+
+            li.appendChild(icon);
+            li.appendChild(name);
+
+            li.addEventListener('click', () => selectTable(table.table_name));
+            list.appendChild(li);
+        });
+    }
+
+    // Filter tables
+    function filterTables() {
+        const search = document.getElementById('tableSearch').value.toLowerCase();
+        document.querySelectorAll('.table-item').forEach(item => {
+            const name = item.dataset.table.toLowerCase();
+            item.style.display = name.includes(search) ? '' : 'none';
+        });
+    }
+
+    // Select table
+    async function selectTable(tableName) {
+        currentTable = tableName;
+
+        // Update active state
+        document.querySelectorAll('.table-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.table === tableName);
+        });
+
+        // Show view tabs
+        document.getElementById('viewTabs').style.display = '';
+
+        // Load content based on current view
+        loadTableContent(tableName);
+    }
+
+    // Load table content
+    async function loadTableContent(tableName) {
+        if (currentView === 'structure') {
+            await loadTableStructure(tableName);
+        } else {
+            await loadTableData(tableName);
+        }
+    }
+
+    // Load table structure
+    async function loadTableStructure(tableName) {
+        try {
+            const response = await fetch(`/api/datacenter/tables/${tableName}/structure`);
+            const columns = await response.json();
+
+            currentColumns = columns.map(col => col.column_name);
+
+            // Hide results, show structure
+            document.getElementById('resultsWrapper').style.display = 'none';
+            document.getElementById('resultsHeader').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('structureView').style.display = '';
+
+            // Render structure (safe DOM)
+            const view = document.getElementById('structureView');
+            view.innerHTML = '';
+
+            const title = document.createElement('div');
+            title.className = 'structure-title';
+            title.textContent = `表: ${tableName}`;
+            view.appendChild(title);
+
+            const table = document.createElement('table');
+            table.className = 'structure-table';
+
+            // Header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            ['列名', '数据类型', '可空', '默认值', '注释'].forEach(text => {
+                const th = document.createElement('th');
+                th.textContent = text;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+            columns.forEach(col => {
+                const row = document.createElement('tr');
+
+                const nameCell = document.createElement('td');
+                nameCell.textContent = col.column_name || '';
+                row.appendChild(nameCell);
+
+                const typeCell = document.createElement('td');
+                const typeText = col.character_maximum_length
+                    ? `${col.data_type}(${col.character_maximum_length})`
+                    : col.data_type || '';
+                typeCell.textContent = typeText;
+                row.appendChild(typeCell);
+
+                const nullableCell = document.createElement('td');
+                nullableCell.textContent = col.is_nullable || '';
+                row.appendChild(nullableCell);
+
+                const defaultCell = document.createElement('td');
+                defaultCell.textContent = col.column_default || '';
+                row.appendChild(defaultCell);
+
+                const commentCell = document.createElement('td');
+                commentCell.textContent = col.column_comment || '';
+                row.appendChild(commentCell);
+
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+
+            view.appendChild(table);
+        } catch (error) {
+            console.error('加载表结构失败:', error);
+        }
+    }
+
+    // Load table data
+    async function loadTableData(tableName) {
+        try {
+            const response = await fetch(`/api/datacenter/tables/${tableName}/data`);
+            const data = await response.json();
+
+            currentResultData = data.data || [];
+            currentColumns = data.columns || [];
+
+            // Hide structure, show results
+            document.getElementById('structureView').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('resultsWrapper').style.display = '';
+            document.getElementById('resultsHeader').style.display = '';
+
+            document.getElementById('resultsInfo').textContent = `表数据 (${currentResultData.length} 行)`;
+
+            renderResultsTable(currentResultData, currentColumns);
+        } catch (error) {
+            console.error('加载表数据失败:', error);
+        }
+    }
+
+    // Execute SQL
+    async function executeSQL() {
+        const sqlInput = document.getElementById('sqlInput');
+
+        // 检查是否有选中的文本
+        const start = sqlInput.selectionStart;
+        const end = sqlInput.selectionEnd;
+        let sql;
+
+        if (start !== end) {
+            // 有选中内容，只执行选中的 SQL
+            sql = sqlInput.value.substring(start, end).trim();
+        } else {
+            // 没有选中，执行全部 SQL
+            sql = sqlInput.value.trim();
+        }
+
+        if (!sql) {
+            alert('请输入 SQL 查询');
+            return;
+        }
+
+        // Reset table selection
+        currentTable = null;
+        document.querySelectorAll('.table-item').forEach(item => item.classList.remove('active'));
+        document.getElementById('viewTabs').style.display = 'none';
+        document.getElementById('structureView').style.display = 'none';
+
+        try {
+            const response = await fetch('/api/datacenter/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sql })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                currentResultData = result.data || [];
+                currentColumns = currentResultData.length > 0
+                    ? Object.keys(currentResultData[0])
+                    : [];
+
+                document.getElementById('emptyState').style.display = 'none';
+                document.getElementById('resultsWrapper').style.display = '';
+                document.getElementById('resultsHeader').style.display = '';
+                document.getElementById('resultsInfo').textContent = result.message || `返回 ${currentResultData.length} 行`;
+
+                renderResultsTable(currentResultData, currentColumns);
+            } else {
+                document.getElementById('emptyState').style.display = '';
+                document.getElementById('resultsWrapper').style.display = 'none';
+                document.getElementById('resultsHeader').style.display = 'none';
+
+                const emptyState = document.getElementById('emptyState');
+                emptyState.innerHTML = '';
+
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('fill', 'none');
+                svg.setAttribute('stroke', 'currentColor');
+                svg.setAttribute('viewBox', '0 0 24 24');
+                svg.style.width = '64px';
+                svg.style.height = '64px';
+                svg.style.marginBottom = '1rem';
+                svg.style.opacity = '0.5';
+
+                const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path1.setAttribute('stroke-linecap', 'round');
+                path1.setAttribute('stroke-linejoin', 'round');
+                path1.setAttribute('stroke-width', '1.5');
+                path1.setAttribute('d', 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z');
+                svg.appendChild(path1);
+                emptyState.appendChild(svg);
+
+                const p = document.createElement('p');
+                p.style.color = '#DC2626';
+                p.textContent = result.message || '执行失败';
+                emptyState.appendChild(p);
+
+                const errorP = document.createElement('p');
+                errorP.style.fontSize = '0.8rem';
+                errorP.style.color = 'var(--text-muted)';
+                errorP.style.marginTop = '0.5rem';
+                errorP.textContent = result.error || '';
+                emptyState.appendChild(errorP);
+            }
+        } catch (error) {
+            console.error('执行 SQL 失败:', error);
+            alert('执行失败: ' + error.message);
+        }
+    }
+
+    // Render results table (safe DOM)
+    function renderResultsTable(data, columns) {
+        const head = document.getElementById('resultsHead');
+        const body = document.getElementById('resultsBody');
+
+        head.innerHTML = '';
+        body.innerHTML = '';
+
+        if (columns.length === 0) {
+            return;
+        }
+
+        // Header row
+        const headerRow = document.createElement('tr');
+        columns.forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col;
+            headerRow.appendChild(th);
+        });
+        head.appendChild(headerRow);
+
+        // Data rows
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            columns.forEach(col => {
+                const td = document.createElement('td');
+                const value = row[col];
+                if (value === null || value === undefined) {
+                    td.textContent = 'NULL';
+                    td.style.color = 'var(--text-muted)';
+                } else if (typeof value === 'object') {
+                    td.textContent = JSON.stringify(value);
+                } else {
+                    td.textContent = String(value);
+                }
+                tr.appendChild(td);
+            });
+            body.appendChild(tr);
+        });
+    }
+
+    // Hide results
+    function hideResults() {
+        currentTable = null;
+        currentResultData = [];
+        currentColumns = [];
+
+        document.querySelectorAll('.table-item').forEach(item => item.classList.remove('active'));
+        document.getElementById('viewTabs').style.display = 'none';
+        document.getElementById('resultsWrapper').style.display = 'none';
+        document.getElementById('resultsHeader').style.display = 'none';
+        document.getElementById('structureView').style.display = 'none';
+        document.getElementById('emptyState').style.display = '';
+    }
+
+    // Load saved queries
+    async function loadSavedQueries() {
+        try {
+            const response = await fetch('/api/datacenter/queries');
+            const queries = await response.json();
+            renderSavedQueries(queries);
+        } catch (error) {
+            console.error('加载保存的查询失败:', error);
+        }
+    }
+
+    // Render saved queries (safe DOM)
+    function renderSavedQueries(queries) {
+        const list = document.getElementById('savedQueryList');
+        list.innerHTML = '';
+
+        if (queries.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'saved-query-item';
+            li.style.color = 'var(--text-muted)';
+            li.textContent = '暂无保存的查询';
+            list.appendChild(li);
+            return;
+        }
+
+        queries.forEach(query => {
+            const li = document.createElement('li');
+            li.className = 'saved-query-item';
+            li.dataset.id = query.id;
+            li.dataset.sql = query.sql;
+
+            const name = document.createElement('span');
+            name.className = 'saved-query-name';
+            name.textContent = query.name;
+            name.title = query.name;
+            li.appendChild(name);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'saved-query-delete';
+            deleteBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteQuery(query.id);
+            });
+            li.appendChild(deleteBtn);
+
+            li.addEventListener('click', () => {
+                document.getElementById('sqlInput').value = query.sql;
+                hideResults();
+            });
+
+            list.appendChild(li);
+        });
+    }
+
+    // Save query
+    async function saveQuery() {
+        const name = document.getElementById('queryNameInput').value.trim();
+        const sql = document.getElementById('sqlInput').value.trim();
+
+        if (!name) {
+            alert('请输入查询名称');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/datacenter/queries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, sql })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                document.getElementById('saveModal').classList.remove('active');
+                document.getElementById('queryNameInput').value = '';
+                loadSavedQueries();
+                alert(result.message);
+            } else {
+                alert(result.message);
+            }
+        } catch (error) {
+            console.error('保存查询失败:', error);
+            alert('保存失败: ' + error.message);
+        }
+    }
+
+    // Delete query
+    async function deleteQuery(queryId) {
+        if (!confirm('确定删除此查询？')) return;
+
+        try {
+            const response = await fetch(`/api/datacenter/queries/${queryId}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                loadSavedQueries();
+            } else {
+                alert(result.message);
+            }
+        } catch (error) {
+            console.error('删除查询失败:', error);
+            alert('删除失败: ' + error.message);
+        }
+    }
+
+    // Show export modal
+    function showExportModal() {
+        if (currentColumns.length === 0) {
+            alert('没有数据可导出');
+            return;
+        }
+
+        const selection = document.getElementById('fieldSelection');
+        selection.innerHTML = '';
+
+        currentColumns.forEach(col => {
+            const div = document.createElement('div');
+            div.className = 'field-checkbox';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `field_${col}`;
+            checkbox.checked = true;
+
+            const label = document.createElement('label');
+            label.setAttribute('for', `field_${col}`);
+            label.textContent = col;
+
+            div.appendChild(checkbox);
+            div.appendChild(label);
+            selection.appendChild(div);
+        });
+
+        document.getElementById('exportModal').classList.add('active');
+    }
+
+    // Export Excel
+    async function exportExcel() {
+        const selectedFields = [];
+        document.querySelectorAll('#fieldSelection input:checked').forEach(checkbox => {
+            selectedFields.push(checkbox.id.replace('field_', ''));
+        });
+
+        if (selectedFields.length === 0) {
+            alert('请至少选择一个字段');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/datacenter/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    data: currentResultData,
+                    columns: currentColumns,
+                    selected_fields: selectedFields
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('导出失败');
+            }
+
+            // Download file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `data_export_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            document.getElementById('exportModal').classList.remove('active');
+        } catch (error) {
+            console.error('导出失败:', error);
+            alert('导出失败: ' + error.message);
+        }
+    }
+</script>
+{% endblock %}
