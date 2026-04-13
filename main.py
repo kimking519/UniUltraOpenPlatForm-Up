@@ -1240,7 +1240,7 @@ async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), va
         
     allowed_fields = ['quote_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'quoted_brand',
                       'inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb',
-                      'price_kwr', 'price_usd', 'vendor_id', 'date_code', 'delivery_date', 'offer_statement', 'is_transferred', 'remark']
+                      'price_kwr', 'price_usd', 'vendor_id', 'cli_id', 'date_code', 'delivery_date', 'offer_statement', 'is_transferred', 'remark', 'status', 'target_price_rmb']
     if field not in allowed_fields:
         return {"success": False, "message": f"非法字段: {field}"}
         
