@@ -393,7 +393,7 @@
 
 <div class="data-card">
     <div class="table-container" style="overflow-x: auto;">
-        <table class="data-table">
+        <table class="data-table" id="orderManagerTable">
             <thead>
                 <tr>
                     <th style="width: 30px;"><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
@@ -754,5 +754,11 @@ async function batchGeneratePiCi(type) {
         alert('请求失败，请稍后重试');
     }
 }
+</script>
+<script src="/static/column-drag.js"></script>
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        initColumnDragger('orderManagerTable', 'order_manager_column_order');
+    });
 </script>
 {% endblock %}
