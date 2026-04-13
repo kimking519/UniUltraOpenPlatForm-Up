@@ -283,7 +283,7 @@
 
 <div class="data-card">
     <div class="table-container" style="overflow-x: auto;">
-        <table class="data-table">
+        <table class="data-table" id="buyTable">
             <thead>
                 <tr>
                     <th style="width: 30px;"><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
@@ -757,5 +757,11 @@
             alert("删除失败: " + e.message);
         }
     }
+</script>
+<script src="/static/column-drag.js"></script>
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        initColumnDragger('buyTable', 'buy_column_order');
+    });
 </script>
 {% endblock %}

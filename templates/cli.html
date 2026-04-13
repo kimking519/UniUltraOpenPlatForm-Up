@@ -142,7 +142,7 @@
 
 <div class="data-card">
     <div class="table-container" style="overflow-x: auto;">
-        <table class="data-table">
+        <table class="data-table" id="cliTable">
             <thead>
                 <tr>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
@@ -439,5 +439,11 @@
             });
         }
     }
+</script>
+<script src="/static/column-drag.js"></script>
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        initColumnDragger('cliTable', 'cli_column_order');
+    });
 </script>
 {% endblock %}

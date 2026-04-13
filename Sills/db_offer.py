@@ -37,7 +37,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     query = f"""
     SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.margin_rate,
            o.status, o.target_price_rmb,
-           ('询价型号 | ' || COALESCE(o.inquiry_mpn, '') || ' | ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' pcs') as combined_info,
+           (COALESCE(o.inquiry_mpn, '') || ' | ' || COALESCE(o.inquiry_brand, '') || ' | ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' pcs') as combined_info,
            ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' ||
             'Brand: ' || COALESCE(o.quoted_brand, '') || ' | ' ||
             'Amount(pcs): ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' | ' ||
@@ -323,68 +323,89 @@ def batch_delete_offer(offer_ids):
 
 def batch_import_offer_text(text, emp_id):
     import io, csv
+    from datetime import datetime
     f = io.StringIO(text.strip())
     reader = csv.reader(f)
     rows = list(reader)
     success_count = 0
     errors = []
-    
+
     if not rows: return 0, []
 
-    # Heuristic to skip header: if the first column of the first row contains '编号' or 'MPN'
+    # Heuristic to skip header: if the first column of the first row contains '日期' or '型号' or 'MPN'
     start_idx = 0
     first_row = rows[0]
-    if len(first_row) > 0 and ('编号' in first_row[0] or '型号' in first_row[0] or 'MPN' in first_row[0].upper()):
+    if len(first_row) > 0 and ('日期' in first_row[0] or '型号' in first_row[0] or 'MPN' in first_row[0].upper()):
         start_idx = 1
+
+    # 新模板列索引：
+    # 0: 日期, 1: 询价型号, 2: 报价型号, 3: 询价品牌, 4: 报价品牌,
+    # 5: 询价数量, 6: 报价数量, 7: 目标价, 8: 成本价, 9: 报价,
+    # 10: 供应商名称, 11: 货期, 12: 交期, 13: 备注
 
     for i, parts in enumerate(rows[start_idx:], start=start_idx + 1):
         if not parts or len(parts) < 1: continue
 
         try:
+            # 从日期自动生成需求编号（使用 db_quote 的生成函数）
+            offer_date = parts[0] if len(parts) > 0 and parts[0].strip() else datetime.now().strftime('%Y-%m-%d')
+            quote_id = None  # 报价记录不一定需要关联需求编号
+
             data = {
-                "quote_id": parts[0] if len(parts) > 0 and parts[0].strip() else None,
+                "quote_id": quote_id,
+                "offer_date": offer_date,
                 "inquiry_mpn": parts[1] if len(parts) > 1 else "",
                 "quoted_mpn": parts[2] if len(parts) > 2 else "",
                 "inquiry_brand": parts[3] if len(parts) > 3 else "",
                 "quoted_brand": parts[4] if len(parts) > 4 else "",
                 "inquiry_qty": 0,
-                "actual_qty": 0,
                 "quoted_qty": 0,
+                "target_price_rmb": 0.0,
                 "cost_price_rmb": 0.0,
                 "offer_price_rmb": 0.0,
-                "vendor_id": parts[10] if len(parts) > 10 and parts[10].strip() else None,
+                "vendor_id": None,  # 通过供应商名称匹配
                 "date_code": parts[11] if len(parts) > 11 else "",
                 "delivery_date": parts[12] if len(parts) > 12 else "",
-                "offer_statement": parts[13] if len(parts) > 13 else "",
-                "remark": parts[14] if len(parts) > 14 else ""
+                "remark": parts[13] if len(parts) > 13 else ""
             }
-            
+
             # Numeric values logic
             try: data["inquiry_qty"] = int(parts[5]) if len(parts) > 5 and parts[5] else 0
             except: pass
-            
-            try: data["actual_qty"] = int(parts[6]) if len(parts) > 6 and parts[6] else data["inquiry_qty"]
-            except: data["actual_qty"] = data["inquiry_qty"]
-            
-            try: data["quoted_qty"] = int(parts[7]) if len(parts) > 7 and parts[7] else data["inquiry_qty"]
+
+            try: data["quoted_qty"] = int(parts[6]) if len(parts) > 6 and parts[6] else data["inquiry_qty"]
             except: data["quoted_qty"] = data["inquiry_qty"]
-            
+
+            try: data["target_price_rmb"] = float(parts[7]) if len(parts) > 7 and parts[7] else 0.0
+            except: pass
+
             try: data["cost_price_rmb"] = float(parts[8]) if len(parts) > 8 and parts[8] else 0.0
             except: pass
-            
+
             try: data["offer_price_rmb"] = float(parts[9]) if len(parts) > 9 and parts[9] else 0.0
             except: pass
+
+            # 通过供应商名称自动匹配供应商编号
+            vendor_name = parts[10] if len(parts) > 10 and parts[10].strip() else ""
+            if vendor_name:
+                with get_db_connection() as conn:
+                    vendor_row = conn.execute(
+                        "SELECT vendor_id FROM uni_vendor WHERE vendor_name = ?", (vendor_name,)
+                    ).fetchone()
+                    if vendor_row:
+                        data["vendor_id"] = vendor_row['vendor_id']
+                    # 如果找不到匹配，vendor_id 保持为 None，不影响导入
 
             if not data["inquiry_mpn"] and not data["quoted_mpn"]:
                 errors.append(f"第 {i} 行: 缺少型号信息")
                 continue
-                
+
             ok, msg = add_offer(data, emp_id)
             if ok: success_count += 1
             else: errors.append(f"第 {i} 行 ({data.get('inquiry_mpn') or data.get('quoted_mpn')}): {msg}")
         except Exception as e:
             errors.append(f"第 {i} 行: 数据格式解析失败 ({str(e)})")
-            
+
     return success_count, errors
 
 def batch_convert_from_quote(quote_ids, emp_id):
@@ -422,7 +443,7 @@ def get_offer_combined_info(offer_ids):
             placeholders = ','.join(['?'] * len(offer_ids))
             rows = conn.execute(f"""
                 SELECT offer_id, inquiry_mpn, inquiry_qty,
-                       '询价型号 | ' || COALESCE(inquiry_mpn, '') || ' | ' || COALESCE(CAST(inquiry_qty AS TEXT), '') || ' pcs' as combined_info
+                       COALESCE(inquiry_mpn, '') || ' | ' || COALESCE(inquiry_brand, '') || ' | ' || COALESCE(CAST(inquiry_qty AS TEXT), '') || ' pcs' as combined_info
                 FROM uni_offer WHERE offer_id IN ({placeholders})
             """, offer_ids).fetchall()
             return [row['combined_info'] for row in rows]

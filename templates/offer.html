@@ -328,8 +328,13 @@
 </div>
 
 <div class="data-card">
-    <div class="table-container" style="overflow-x: auto;">
-        <table class="data-table" style="min-width: 2000px;">
+    <!-- 顶部滚动条 -->
+    <div id="topScrollContainer" style="overflow-x: auto; overflow-y: hidden; height: 16px; border-bottom: 1px solid var(--border);">
+        <div id="topScrollContent" style="height: 1px;"></div>
+    </div>
+    <!-- 表格容器 -->
+    <div class="table-container" id="tableContainer" style="overflow-x: auto;">
+        <table class="data-table" id="offerTable" style="min-width: 2000px;">
             <thead>
                 <tr>
                     {% if current_user.rule == '3' %}
@@ -338,28 +343,27 @@
                     {% endif %}
                     <th>日期</th>
                     <th>报价编号</th>
-                    <th>需求编号</th>
                     <th>客户名称</th>
-                    <th>供应商</th>
-                    <th>组合信息</th>
                     <th>询价型号</th>
                     <th>报价型号</th>
                     <th>报价品牌</th>
-                    <th>报价数量(pcs)</th>
-                    <th>批号(DC)</th>
+                    <th>报价数量</th>
+                    <th>批号</th>
                     <th>交期(LT)</th>
                     <th>成本价</th>
+                    <th>组合信息</th>
                     <th>目标价</th>
                     <th>报价(RMB)</th>
                     <th>报价(KWR)</th>
                     <th>报价(USD)</th>
                     <th>利润</th>
                     <th>总利润</th>
-                    <th>状态</th>
+                    <th>供应商</th>
                     <th>需求品牌</th>
                     <th>需求数量(pcs)</th>
                     <th>负责人</th>
-                    <th>已转</th>
+                    <th>状态</th>
+                    <th style="position: sticky; right: 60px; background: white; z-index: 1;">已转</th>
                     {% if current_user.rule == '3' %}
                     <th style="position: sticky; right: 0; background: white; z-index: 1;">操作</th>
                     {% endif %}
@@ -374,19 +378,7 @@
                     {% endif %}
                     <td>{{ row.offer_date }}</td>
                     <td class="copyable-cell">{{ row.offer_id }}<button class="copy-btn" onclick="copyToClipboard('{{ row.offer_id }}', this)">复制</button></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quote_id')"><span>{{ row.quote_id
-                            }}</span></td>
                     <td>{{ row.cli_name }}</td>
-
-                    {% if current_user.rule == '3' or current_user.rule == '0' %}
-                    <td ondblclick="makeEditableSelect(this, '{{ row.offer_id }}', 'vendor_id', '{{ row.vendor_id }}', vendorOptions)">
-                        <span>{{ row.vendor_name }}</span>
-                    </td>
-                    {% else %}
-                    <td>{{ row.vendor_name }}</td>
-                    {% endif %}
-
-                    <td style="color: var(--secondary);" class="copyable-cell" data-field="combined_info">{{ row.combined_info }}<button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.combined_info }}', this)">复制</button></td>
 
                     <td class="copyable-cell" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_mpn')"><span>{{ row.inquiry_mpn
                             }}</span><button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.inquiry_mpn }}', this)">复制</button></td>
@@ -402,6 +394,7 @@
                             row.delivery_date }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
                             "%.4f"|format(row.cost_price_rmb or 0) }}</span></td>
+                    <td style="color: var(--secondary);" class="copyable-cell" data-field="combined_info">{{ row.combined_info }}<button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.combined_info }}', this)">复制</button></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'target_price_rmb', 'number')"><span>{{
                             "%.4f"|format(row.target_price_rmb or 0) }}</span></td>
                     <td ondblclick="makeEditableRmb(this, '{{ row.offer_id }}', 'offer_price_rmb', {{ row.offer_price_rmb or 0 }})"><span>{{
@@ -412,16 +405,23 @@
                             style="color:var(--primary);">{{ "%.3f"|format(row.price_usd or 0) }}</span></td>
                     <td><span style="color:#10b981; font-weight:500;">{{ row.profit }}</span></td>
                     <td><span style="color:#10b981; font-weight:bold;">{{ row.total_profit }}</span></td>
+                    {% if current_user.rule == '3' or current_user.rule == '0' %}
+                    <td ondblclick="makeEditableSelect(this, '{{ row.offer_id }}', 'vendor_id', '{{ row.vendor_id }}', vendorOptions)">
+                        <span>{{ row.vendor_name }}</span>
+                    </td>
+                    {% else %}
+                    <td>{{ row.vendor_name }}</td>
+                    {% endif %}
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_brand')"><span>{{ row.inquiry_brand }}</span></td>
+                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_qty', 'number')"><span>{{
+                            row.inquiry_qty }}</span></td>
+                    <td>{{ row.emp_name }}</td>
                     <td ondblclick="makeStatusEditable(this, '{{ row.offer_id }}', '{{ row.status }}')">
                         <span class="badge {% if row.status == '已报价' %}badge-success{% elif row.status == '缺货' %}badge-warning{% else %}badge-info{% endif %}">
                             {{ row.status }}
                         </span>
                     </td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_brand')"><span>{{ row.inquiry_brand }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_qty', 'number')"><span>{{
-                            row.inquiry_qty }}</span></td>
-                    <td>{{ row.emp_name }}</td>
-                    <td ondblclick="makeTransferredEditable(this, '{{ row.offer_id }}', '{{ row.is_transferred }}')">
+                    <td style="position: sticky; right: 60px; background: white; z-index: 1;" ondblclick="makeTransferredEditable(this, '{{ row.offer_id }}', '{{ row.is_transferred }}')">
                         <span class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
                             {{ row.is_transferred }}
                         </span>
@@ -444,7 +444,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="23" style="text-align: center; color: var(--secondary); padding: 2rem;">暂无报价记录，请添加新报价。
+                    <td colspan="22" style="text-align: center; color: var(--secondary); padding: 2rem;">暂无报价记录，请添加新报价。
                     </td>
                 </tr>
                 {% endfor %}
@@ -624,8 +624,8 @@
         <div style="padding: 1rem; border: 1px solid var(--border); border-radius: 4px;">
             <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式二：粘贴文本导入</p>
             <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
-                格式要求与模板一致：<br>需求编号,询价型号,报价型号,询价品牌,报价品牌,询价数量,实际数量,报价数量,成本价,报价,供应商编号,货期,交期,报价语句,备注<br>
-                (注: 需求和供应商编号请先确认存在系统中，比如: Q20250101,STM..,..)
+                格式要求与模板一致：<br>日期,询价型号,报价型号,询价品牌,报价品牌,询价数量,报价数量,目标价,成本价,报价,供应商名称,货期,交期,备注<br>
+                (注: 日期格式 yyyy-mm-dd，供应商名称需先在系统中存在)
             </p>
             <form action="/offer/import" method="post">
                 <textarea name="batch_text" rows="8" placeholder=""
@@ -640,6 +640,32 @@
 </div>
 
 <script>
+    // 顶部滚动条同步功能
+    function initTopScrollSync() {
+        const topScroll = document.getElementById('topScrollContainer');
+        const tableContainer = document.getElementById('tableContainer');
+        const topContent = document.getElementById('topScrollContent');
+        const table = tableContainer.querySelector('.data-table');
+
+        if (!topScroll || !tableContainer || !table) return;
+
+        // 设置顶部滚动内容的宽度与表格相同
+        topContent.style.width = table.offsetWidth + 'px';
+
+        // 同步滚动
+        topScroll.addEventListener('scroll', () => {
+            tableContainer.scrollLeft = topScroll.scrollLeft;
+        });
+        tableContainer.addEventListener('scroll', () => {
+            topScroll.scrollLeft = tableContainer.scrollLeft;
+        });
+
+        // 如果表格不需要滚动，隐藏顶部滚动条
+        if (table.offsetWidth <= tableContainer.offsetWidth) {
+            topScroll.style.display = 'none';
+        }
+    }
+
     // 下拉菜单切换
     function toggleActionDropdown(btn, event) {
         event.stopPropagation();
@@ -1553,6 +1579,9 @@
 
     // 页面加载时从服务器获取筛选条件并恢复
     window.addEventListener('DOMContentLoaded', () => {
+        // 初始化顶部同步滚动条
+        initTopScrollSync();
+
         // 从页面数据中恢复筛选条件（由后端从 session 读取）
         const search = "{{ search }}";
         const start_date = "{{ start_date }}";
@@ -1605,5 +1634,12 @@
 
         window.location.href = url;
     }
+</script>
+<script src="/static/column-drag.js"></script>
+<script>
+    // 初始化列拖拽功能
+    window.addEventListener('DOMContentLoaded', () => {
+        initColumnDragger('offerTable', 'offer_column_order');
+    });
 </script>
 {% endblock %}
