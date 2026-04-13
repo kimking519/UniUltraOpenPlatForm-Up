@@ -177,13 +177,12 @@ def add_offer(data, emp_id, conn=None):
             try: offer_price = float(data.get('offer_price_rmb') or 0.0)
             except: pass
 
-            # Handle auto-calc based on margin
-            margin = 0.0
-            if quote_id:
-                margin_row = conn.execute("SELECT margin_rate FROM uni_cli c JOIN uni_quote q ON c.cli_id = q.cli_id WHERE q.quote_id = ?", (quote_id,)).fetchone()
-                if margin_row: margin = float(margin_row[0] or 0.0)
-
-            if cost_price > 0:
+            # Handle auto-calc based on margin (只有当报价未提供时才自动计算)
+            if offer_price == 0.0 and cost_price > 0:
+                margin = 0.0
+                if quote_id:
+                    margin_row = conn.execute("SELECT margin_rate FROM uni_cli c JOIN uni_quote q ON c.cli_id = q.cli_id WHERE q.quote_id = ?", (quote_id,)).fetchone()
+                    if margin_row: margin = float(margin_row[0] or 0.0)
                 offer_price = cost_price * (1 + margin / 100.0)
 
             # 使用缓存的汇率
