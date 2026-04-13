@@ -378,7 +378,13 @@
                     {% endif %}
                     <td>{{ row.offer_date }}</td>
                     <td class="copyable-cell">{{ row.offer_id }}<button class="copy-btn" onclick="copyToClipboard('{{ row.offer_id }}', this)">复制</button></td>
+                    {% if current_user.rule == '3' or current_user.rule == '0' %}
+                    <td ondblclick="makeEditableSelect(this, '{{ row.offer_id }}', 'cli_id', '{{ row.cli_id }}', cliOptions)">
+                        <span>{{ row.cli_name }}</span>
+                    </td>
+                    {% else %}
                     <td>{{ row.cli_name }}</td>
+                    {% endif %}
 
                     <td class="copyable-cell" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_mpn')"><span>{{ row.inquiry_mpn
                             }}</span><button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.inquiry_mpn }}', this)">复制</button></td>
@@ -687,6 +693,13 @@
         <option value="">--择供应商--</option>
         {% for v in vendor_list %}
         <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
+        {% endfor %}
+    `;
+
+    const cliOptions = `
+        <option value="">--选客户--</option>
+        {% for c in cli_list %}
+        <option value="{{ c.cli_id }}">{{ c.cli_name }}</option>
         {% endfor %}
     `;
 

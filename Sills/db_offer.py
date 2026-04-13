@@ -35,7 +35,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         params.append(status)
 
     query = f"""
-    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.margin_rate,
+    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.cli_id, c.margin_rate,
            o.status, o.target_price_rmb,
            (COALESCE(o.inquiry_mpn, '') || ' | ' || COALESCE(o.inquiry_brand, '') || ' | ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' pcs') as combined_info,
            ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' ||

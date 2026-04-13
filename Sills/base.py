@@ -464,6 +464,7 @@ def _init_db_postgresql():
         offer_columns_to_add = [
             ("status", "TEXT DEFAULT '询价中'"),
             ("target_price_rmb", "DOUBLE PRECISION"),
+            ("cli_id", "TEXT REFERENCES uni_cli(cli_id)"),
         ]
         for col_name, col_def in offer_columns_to_add:
             try:
@@ -592,6 +593,7 @@ def _init_db_sqlite():
         offer_id TEXT PRIMARY KEY,
         offer_date TEXT,
         quote_id TEXT,
+        cli_id TEXT,
         inquiry_mpn TEXT,
         quoted_mpn TEXT,
         inquiry_brand TEXT,
@@ -617,6 +619,7 @@ def _init_db_sqlite():
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id),
         FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id),
+        FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id),
         FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE SET NULL
     );
 
@@ -1117,6 +1120,13 @@ def _init_db_sqlite():
             print("[DB] 迁移完成：uni_cli 添加 domain 索引")
         except sqlite3.OperationalError:
             pass
+
+        # 迁移：为 uni_offer 添加 cli_id 列（报价可直接指定客户）
+        try:
+            conn.execute("ALTER TABLE uni_offer ADD COLUMN cli_id TEXT REFERENCES uni_cli(cli_id)")
+            print("[DB] 迁移完成：uni_offer 添加 cli_id 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
 
         conn.execute("""
             INSERT INTO uni_emp (emp_id, emp_name, account, password, rule)
