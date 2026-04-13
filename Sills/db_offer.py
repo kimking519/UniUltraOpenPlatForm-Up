@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 from Sills.base import get_db_connection, get_exchange_rates
 
-def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", is_transferred=""):
+def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", is_transferred="", status=""):
     offset = (page - 1) * page_size
 
     base_query = """
@@ -30,9 +30,14 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     if is_transferred:
         base_query += " AND o.is_transferred = ?"
         params.append(is_transferred)
+    if status:
+        base_query += " AND o.status = ?"
+        params.append(status)
 
     query = f"""
     SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.margin_rate,
+           o.status, o.target_price_rmb,
+           ('询价型号 | ' || COALESCE(o.inquiry_mpn, '') || ' | ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' pcs') as combined_info,
            ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' ||
             'Brand: ' || COALESCE(o.quoted_brand, '') || ' | ' ||
             'Amount(pcs): ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' | ' ||
@@ -201,10 +206,10 @@ def add_offer(data, emp_id, conn=None):
             sql = """
             INSERT INTO uni_offer (
                 offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
-                inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb, 
+                inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb,
                 price_kwr, price_usd, platform,
-                vendor_id, date_code, delivery_date, emp_id, offer_statement, remark, is_transferred
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                vendor_id, date_code, delivery_date, emp_id, offer_statement, remark, status, target_price_rmb, is_transferred
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
                 offer_id, offer_date, quote_id,
@@ -217,6 +222,7 @@ def add_offer(data, emp_id, conn=None):
                 vendor_id, data.get('date_code', ''),
                 data.get('delivery_date', ''), emp_id,
                 data.get('offer_statement', ''), data.get('remark', ''),
+                data.get('status', '询价中'), data.get('target_price_rmb', None),
                 data.get('is_transferred', '未转')
             )
             conn.execute(sql, params)
@@ -390,7 +396,7 @@ def batch_convert_from_quote(quote_ids, emp_id):
             # Get data from uni_quote
             placeholders = ','.join(['?'] * len(quote_ids))
             rows = conn.execute(f"SELECT * FROM uni_quote WHERE quote_id IN ({placeholders})", quote_ids).fetchall()
-            
+
             for row in rows:
                 data = dict(row)
                 # Pass connection to add_offer to stay in same transaction
@@ -407,3 +413,18 @@ def batch_convert_from_quote(quote_ids, emp_id):
         return True, f"成功转换 {success_count} 条记录" + (f" (失败 {len(errors)} 条)" if errors else "")
     except Exception as e:
         return False, str(e)
+
+def get_offer_combined_info(offer_ids):
+    """获取报价记录的组合信息列表（用于复制组合功能）"""
+    if not offer_ids: return []
+    try:
+        with get_db_connection() as conn:
+            placeholders = ','.join(['?'] * len(offer_ids))
+            rows = conn.execute(f"""
+                SELECT offer_id, inquiry_mpn, inquiry_qty,
+                       '询价型号 | ' || COALESCE(inquiry_mpn, '') || ' | ' || COALESCE(CAST(inquiry_qty AS TEXT), '') || ' pcs' as combined_info
+                FROM uni_offer WHERE offer_id IN ({placeholders})
+            """, offer_ids).fetchall()
+            return [row['combined_info'] for row in rows]
+    except Exception as e:
+        return []

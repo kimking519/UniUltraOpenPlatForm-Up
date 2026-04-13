@@ -117,12 +117,12 @@ CREATE TABLE IF NOT EXISTS uni_offer (
     emp_id TEXT,
     offer_statement TEXT,
     remark TEXT,
+    status TEXT DEFAULT '询价中',
+    target_price_rmb DOUBLE PRECISION,
     is_transferred TEXT DEFAULT '未转',
     created_at TIMESTAMP DEFAULT NOW(),
-    FOREIGN KEY (quote_id) REFERENCES uni_quote(quote_id),
     FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id),
-    FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id),
-    UNIQUE(quote_id)
+    FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id)
 );
 
 -- 销售订单表

@@ -460,7 +460,24 @@ def _init_db_postgresql():
             except Exception as e:
                 print(f"[DB] uni_mail {col_name} 列迁移: {e}")
 
-        # 迁移：uni_mail 表添加约束（如果列已存在但约束不存在）
+        # 迁移：uni_offer 表添加 status 和 target_price_rmb 列（合并需求管理功能）
+        offer_columns_to_add = [
+            ("status", "TEXT DEFAULT '询价中'"),
+            ("target_price_rmb", "DOUBLE PRECISION"),
+        ]
+        for col_name, col_def in offer_columns_to_add:
+            try:
+                cur.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'uni_offer' AND column_name = %s
+                """, (col_name,))
+                if not cur.fetchone():
+                    cur.execute(f"ALTER TABLE uni_offer ADD COLUMN {col_name} {col_def}")
+                    print(f"[DB] 迁移：uni_offer 添加 {col_name} 列")
+            except Exception as e:
+                print(f"[DB] uni_offer {col_name} 列迁移: {e}")
+
+        # 迁移：uni_offer 表添加约束（如果列已存在但约束不存在）
         try:
             cur.execute("""
                 SELECT constraint_name FROM information_schema.table_constraints
@@ -593,14 +610,14 @@ def _init_db_sqlite():
         emp_id TEXT NOT NULL,
         offer_statement TEXT,
         remark TEXT,
+        status TEXT DEFAULT '询价中',
+        target_price_rmb REAL,
         is_transferred TEXT DEFAULT '未转',
         manager_id TEXT,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
-        FOREIGN KEY (quote_id) REFERENCES uni_quote(quote_id),
         FOREIGN KEY (vendor_id) REFERENCES uni_vendor(vendor_id),
         FOREIGN KEY (emp_id) REFERENCES uni_emp(emp_id),
-        FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE SET NULL,
-        UNIQUE(quote_id)
+        FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS uni_order (
@@ -833,9 +850,10 @@ def _init_db_sqlite():
     CREATE INDEX IF NOT EXISTS idx_quote_transferred ON uni_quote(is_transferred);
 
     CREATE INDEX IF NOT EXISTS idx_offer_date ON uni_offer(offer_date);
-    CREATE INDEX IF NOT EXISTS idx_offer_quote ON uni_offer(quote_id);
     CREATE INDEX IF NOT EXISTS idx_offer_vendor ON uni_offer(vendor_id);
     CREATE INDEX IF NOT EXISTS idx_offer_transferred ON uni_offer(is_transferred);
+    CREATE INDEX IF NOT EXISTS idx_offer_status ON uni_offer(status);
+    CREATE INDEX IF NOT EXISTS idx_offer_target_price ON uni_offer(target_price_rmb);
 
     CREATE INDEX IF NOT EXISTS idx_order_date ON uni_order(order_date);
     CREATE INDEX IF NOT EXISTS idx_order_cli ON uni_order(cli_id);
