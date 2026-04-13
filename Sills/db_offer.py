@@ -13,10 +13,10 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
     LEFT JOIN uni_emp e ON o.emp_id = e.emp_id
     LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
-    LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
-    WHERE (o.inquiry_mpn LIKE ? OR o.offer_id LIKE ? OR v.vendor_name LIKE ? OR e.emp_name LIKE ?)
+    LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
+    WHERE (o.inquiry_mpn LIKE ? OR o.offer_id LIKE ? OR v.vendor_name LIKE ? OR e.emp_name LIKE ? OR c.cli_name LIKE ?)
     """
-    params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
+    params = [f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%", f"%{search_kw}%"]
 
     if start_date:
         base_query += " AND o.offer_date >= ?"
@@ -35,7 +35,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         params.append(status)
 
     query = f"""
-    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, c.cli_id, c.margin_rate,
+    SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, COALESCE(o.cli_id, c.cli_id) as cli_id, c.margin_rate,
            o.status, o.target_price_rmb,
            (COALESCE(o.inquiry_mpn, '') || ' | ' || COALESCE(o.inquiry_brand, '') || ' | ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' pcs') as combined_info,
            ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' ||
