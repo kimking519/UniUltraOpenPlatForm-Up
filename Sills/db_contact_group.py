@@ -139,7 +139,7 @@ def count_contacts_by_criteria(criteria):
     """根据筛选条件统计联系人数量
 
     Args:
-        criteria: dict {country, domain, is_bounced, has_cli}
+        criteria: dict {country, domain, is_bounced, has_cli, cli_id}
 
     Returns:
         int 符合条件的联系人数
@@ -150,6 +150,11 @@ def count_contacts_by_criteria(criteria):
 
     where_clauses = ["email IS NOT NULL AND email != ''"]
     params = []
+
+    # 特定客户筛选（优先级最高）
+    if criteria.get('cli_id'):
+        where_clauses.append("cli_id = ?")
+        params.append(criteria['cli_id'])
 
     if criteria.get('country'):
         where_clauses.append("country = ?")
@@ -163,7 +168,8 @@ def count_contacts_by_criteria(criteria):
         where_clauses.append("is_bounced = ?")
         params.append(int(criteria['is_bounced']))
 
-    if criteria.get('has_cli') is not None:
+    # has_cli筛选（仅在未指定具体cli_id时生效）
+    if not criteria.get('cli_id') and criteria.get('has_cli') is not None:
         if criteria['has_cli']:
             where_clauses.append("cli_id IS NOT NULL AND cli_id != ''")
         else:
@@ -196,6 +202,11 @@ def get_group_contacts(group_id, page=1, page_size=100):
     where_clauses = ["email IS NOT NULL AND email != ''"]
     params = []
 
+    # 特定客户筛选（优先级最高）
+    if criteria.get('cli_id'):
+        where_clauses.append("cli_id = ?")
+        params.append(criteria['cli_id'])
+
     if criteria.get('country'):
         where_clauses.append("country = ?")
         params.append(criteria['country'])
@@ -208,7 +219,8 @@ def get_group_contacts(group_id, page=1, page_size=100):
         where_clauses.append("is_bounced = ?")
         params.append(int(criteria['is_bounced']))
 
-    if criteria.get('has_cli') is not None:
+    # has_cli筛选（仅在未指定具体cli_id时生效）
+    if not criteria.get('cli_id') and criteria.get('has_cli') is not None:
         if criteria['has_cli']:
             where_clauses.append("cli_id IS NOT NULL AND cli_id != ''")
         else:

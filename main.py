@@ -4961,6 +4961,47 @@ async def api_group_contacts(
     return {"success": True, "contacts": contacts, "total": total}
 
 
+@app.get("/api/group/{group_id}/export")
+async def api_group_export(group_id: str, current_user: dict = Depends(login_required)):
+    """导出联系人组为Excel"""
+    from openpyxl import Workbook
+    from fastapi.responses import StreamingResponse
+    import io
+
+    group = get_group_by_id(group_id)
+    if not group:
+        return {"success": False, "message": "组不存在"}
+
+    contacts, _ = get_group_contacts(group_id, page_size=10000)  # 获取全部
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = group.get('group_name', '联系人')
+    ws.append(['邮箱', '姓名', '公司', '域名', '国家', '关联客户ID'])
+
+    for c in contacts:
+        ws.append([
+            c.get('email', ''),
+            c.get('contact_name', ''),
+            c.get('company', ''),
+            c.get('domain', ''),
+            c.get('country', ''),
+            c.get('cli_id', '')
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"{group.get('group_name', 'group')}_contacts.xlsx"
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
 # ==================== 发件人账号管理 ====================
 
 @app.get("/api/account/list")

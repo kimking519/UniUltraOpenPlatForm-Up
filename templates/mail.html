@@ -1692,25 +1692,23 @@
                 <div id="groupTabContent" style="display: none;">
                     <div class="settings-section" style="margin-bottom: 15px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                         <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">添加联系人组</h3>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                            <input type="text" id="newGroupName" placeholder="组名称" style="flex: 1; min-width: 150px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                            <select id="newGroupCountry" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); min-width: 120px;">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="text" id="newGroupName" placeholder="组名称" style="width: 180px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                            <select id="newGroupCli" style="width: 150px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                                <option value="">全部客户</option>
+                            </select>
+                            <select id="newGroupCountry" style="width: 120px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
                                 <option value="">全部国家</option>
                             </select>
-                            <input type="text" id="newGroupDomain" placeholder="域名关键词" style="width: 120px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                            <select id="newGroupBounced" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                            <input type="text" id="newGroupDomain" placeholder="域名" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                            <select id="newGroupBounced" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
                                 <option value="">全部</option>
                                 <option value="0">排除退信</option>
                                 <option value="1">仅退信</option>
                             </select>
-                            <select id="newGroupHasCli" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                                <option value="">全部客户</option>
-                                <option value="1">已关联客户</option>
-                                <option value="0">未关联客户</option>
-                            </select>
-                            <button class="btn btn-primary" onclick="EmailTaskManager.addGroup()">添加</button>
+                            <button class="btn btn-primary btn-sm" onclick="EmailTaskManager.addGroup()">添加</button>
                         </div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：设置筛选条件后，组将自动包含符合条件的联系人</div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：选择客户可将该客户的所有联系人加入组</div>
                     </div>
                     <div class="settings-section" style="padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                         <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">联系人组列表</h3>
@@ -5795,6 +5793,7 @@
             if (tab === 'group') {
                 this.loadGroups();
                 this.loadGroupCountries();
+                this.loadGroupClients();
             }
         },
 
@@ -5809,6 +5808,30 @@
                     const opt = document.createElement('option');
                     opt.value = c;
                     opt.textContent = c;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('加载国家列表失败', e);
+            }
+        },
+
+        // 加载客户列表到组的筛选下拉框
+        async loadGroupClients() {
+            try {
+                const res = await fetch('/api/cli/list?page_size=200');
+                const data = await res.json();
+                const select = document.getElementById('newGroupCli');
+                select.innerHTML = '<option value="">全部客户</option>';
+                (data.clients || []).forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.cli_id;
+                    opt.textContent = c.cli_name;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('加载客户列表失败', e);
+            }
+        },
                     select.appendChild(opt);
                 });
             } catch (e) {
@@ -5861,6 +5884,7 @@
                             <td>${g.created_at || '-'}</td>
                             <td>
                                 <button class="btn btn-sm" onclick="EmailTaskManager.previewGroup('${g.group_id}')">预览</button>
+                                <button class="btn btn-sm" onclick="EmailTaskManager.exportGroup('${g.group_id}', '${escapeHtml(g.group_name)}')">导出</button>
                                 <button class="btn btn-sm" style="background: #EF4444; color: white;" onclick="EmailTaskManager.deleteGroup('${g.group_id}')">删除</button>
                             </td>
                         </tr>
@@ -6118,15 +6142,15 @@
 
             // 收集筛选条件
             const filterCriteria = {};
+            const cliId = document.getElementById('newGroupCli').value;
             const country = document.getElementById('newGroupCountry').value;
             const domain = document.getElementById('newGroupDomain').value.trim();
             const bounced = document.getElementById('newGroupBounced').value;
-            const hasCli = document.getElementById('newGroupHasCli').value;
 
+            if (cliId) filterCriteria.cli_id = cliId;
             if (country) filterCriteria.country = country;
             if (domain) filterCriteria.domain = domain;
             if (bounced) filterCriteria.is_bounced = parseInt(bounced);
-            if (hasCli) filterCriteria.has_cli = parseInt(hasCli) === 1;
 
             try {
                 const res = await fetch('/api/group/add', {
@@ -6137,10 +6161,10 @@
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('newGroupName').value = '';
+                    document.getElementById('newGroupCli').value = '';
                     document.getElementById('newGroupCountry').value = '';
                     document.getElementById('newGroupDomain').value = '';
                     document.getElementById('newGroupBounced').value = '';
-                    document.getElementById('newGroupHasCli').value = '';
                     this.loadGroups();
                     alert(data.message);
                 } else {
@@ -6188,6 +6212,22 @@
                 alert(msg);
             } catch (e) {
                 alert('预览出错');
+            }
+        },
+
+        // 导出联系人组为Excel
+        async exportGroup(groupId, groupName) {
+            try {
+                // 直接下载导出文件
+                const url = `/api/group/${groupId}/export`;
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${groupName}_联系人.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } catch (e) {
+                alert('导出出错');
             }
         },
 
