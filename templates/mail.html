@@ -1692,10 +1692,25 @@
                 <div id="groupTabContent" style="display: none;">
                     <div class="settings-section" style="margin-bottom: 15px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                         <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">添加联系人组</h3>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="text" id="newGroupName" placeholder="组名称" style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <input type="text" id="newGroupName" placeholder="组名称" style="flex: 1; min-width: 150px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                            <select id="newGroupCountry" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); min-width: 120px;">
+                                <option value="">全部国家</option>
+                            </select>
+                            <input type="text" id="newGroupDomain" placeholder="域名关键词" style="width: 120px; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                            <select id="newGroupBounced" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                                <option value="">全部</option>
+                                <option value="0">排除退信</option>
+                                <option value="1">仅退信</option>
+                            </select>
+                            <select id="newGroupHasCli" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                                <option value="">全部客户</option>
+                                <option value="1">已关联客户</option>
+                                <option value="0">未关联客户</option>
+                            </select>
                             <button class="btn btn-primary" onclick="EmailTaskManager.addGroup()">添加</button>
                         </div>
+                        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：设置筛选条件后，组将自动包含符合条件的联系人</div>
                     </div>
                     <div class="settings-section" style="padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                         <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">联系人组列表</h3>
@@ -1751,7 +1766,7 @@
                 </div>
 
                 <!-- 联系人Tab内容 -->
-                <div id="contactsTabContent">
+                <div id="contactsTabContent" style="display: flex; flex-direction: column; flex: 1;">
                 <!-- 筛选区 -->
                 <div class="settings-section" style="margin-bottom: 15px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                     <div style="display: flex; gap: 0.5rem; flex-wrap: nowrap; align-items: center;">
@@ -1804,16 +1819,15 @@
                 </div>
 
                 <!-- 联系人列表 -->
-                <div class="settings-section" style="margin-bottom: 15px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+                <div class="settings-section" style="flex: 1; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border); display: flex; flex-direction: column;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <span style="font-size: 13px; color: var(--text-muted);">选中 <b id="contactSelectedCount">0</b> 个联系人</span>
-                        <button class="btn btn-sm" onclick="ContactManager.toggleSelectAll(true)">全选</button>
-                    </div>
-                    <div style="max-height: 400px; overflow-y: auto;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                            <span style="font-size: 0.85rem; color: var(--text-secondary);">已选中: <span id="contactSelectedCount">0</span> 条</span>
-                            <button class="btn btn-danger btn-sm" onclick="ContactManager.batchDelete()">批量删除</button>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-sm" onclick="ContactManager.toggleSelectAll(true)">全选</button>
+                            <button class="btn btn-danger btn-sm" onclick="ContactManager.batchDelete()" id="contactBatchDeleteBtn" style="display: none;">批量删除</button>
                         </div>
+                    </div>
+                    <div style="flex: 1; overflow-y: auto;">
                         <table class="data-table" style="width: 100%; font-size: 13px;">
                             <thead>
                                 <tr>
@@ -1838,7 +1852,7 @@
                 </div>
 
                 <!-- Prospect Tab内容 -->
-                <div id="prospectsTabContent" style="display: none;">
+                <div id="prospectsTabContent" style="display: none; flex-direction: column; flex: 1;">
                 <!-- Prospect筛选区 -->
                 <div class="settings-section" style="margin-bottom: 15px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
                     <div style="display: flex; gap: 0.5rem; flex-wrap: nowrap; align-items: center;">
@@ -1872,8 +1886,8 @@
                 </div>
 
                 <!-- Prospect列表 -->
-                <div class="settings-section" style="margin-bottom: 15px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
-                    <div style="max-height: 400px; overflow-y: auto;">
+                <div class="settings-section" style="flex: 1; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border); display: flex; flex-direction: column;">
+                    <div style="flex: 1; overflow-y: auto;">
                         <table class="data-table" style="width: 100%; font-size: 13px;">
                             <thead>
                                 <tr>
@@ -5778,7 +5792,28 @@
             ['taskTabContent', 'groupTabContent'].forEach(id => {
                 document.getElementById(id).style.display = id === tab + 'TabContent' ? 'block' : 'none';
             });
-            if (tab === 'group') this.loadGroups();
+            if (tab === 'group') {
+                this.loadGroups();
+                this.loadGroupCountries();
+            }
+        },
+
+        // 加载国家列表到组的筛选下拉框
+        async loadGroupCountries() {
+            try {
+                const res = await fetch('/api/contact/countries');
+                const data = await res.json();
+                const select = document.getElementById('newGroupCountry');
+                select.innerHTML = '<option value="">全部国家</option>';
+                (data.countries || []).forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c;
+                    opt.textContent = c;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('加载国家列表失败', e);
+            }
         },
 
         // ==================== 任务管理 ====================
@@ -6081,16 +6116,33 @@
             const name = document.getElementById('newGroupName').value.trim();
             if (!name) { alert('请输入组名称'); return; }
 
+            // 收集筛选条件
+            const filterCriteria = {};
+            const country = document.getElementById('newGroupCountry').value;
+            const domain = document.getElementById('newGroupDomain').value.trim();
+            const bounced = document.getElementById('newGroupBounced').value;
+            const hasCli = document.getElementById('newGroupHasCli').value;
+
+            if (country) filterCriteria.country = country;
+            if (domain) filterCriteria.domain = domain;
+            if (bounced) filterCriteria.is_bounced = parseInt(bounced);
+            if (hasCli) filterCriteria.has_cli = parseInt(hasCli) === 1;
+
             try {
                 const res = await fetch('/api/group/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ group_name: name })
+                    body: JSON.stringify({ group_name: name, filter_criteria: filterCriteria })
                 });
                 const data = await res.json();
                 if (data.success) {
                     document.getElementById('newGroupName').value = '';
+                    document.getElementById('newGroupCountry').value = '';
+                    document.getElementById('newGroupDomain').value = '';
+                    document.getElementById('newGroupBounced').value = '';
+                    document.getElementById('newGroupHasCli').value = '';
                     this.loadGroups();
+                    alert(data.message);
                 } else {
                     alert('添加失败: ' + data.message);
                 }
@@ -6327,7 +6379,7 @@
             if (tab === 'contacts') {
                 document.getElementById('tabContacts').className = 'btn btn-primary btn-sm';
                 document.getElementById('tabProspects').className = 'btn btn-ghost btn-sm';
-                document.getElementById('contactsTabContent').style.display = 'block';
+                document.getElementById('contactsTabContent').style.display = 'flex';
                 document.getElementById('prospectsTabContent').style.display = 'none';
                 document.getElementById('contactsTabActions').style.display = 'flex';
                 document.getElementById('prospectsTabActions').style.display = 'none';
@@ -6453,7 +6505,13 @@
         },
 
         updateSelectedCount() {
-            document.getElementById('contactSelectedCount').textContent = this.selectedIds.size;
+            const count = this.selectedIds.size;
+            document.getElementById('contactSelectedCount').textContent = count;
+            // 显示/隐藏批量删除按钮
+            const btn = document.getElementById('contactBatchDeleteBtn');
+            if (btn) {
+                btn.style.display = count > 0 ? 'inline-block' : 'none';
+            }
         },
 
         onSearchKey(e) {
@@ -6728,7 +6786,7 @@
             if (tab === 'contacts') {
                 document.getElementById('tabContacts').className = 'btn btn-primary btn-sm';
                 document.getElementById('tabProspects').className = 'btn btn-ghost btn-sm';
-                document.getElementById('contactsTabContent').style.display = 'block';
+                document.getElementById('contactsTabContent').style.display = 'flex';
                 document.getElementById('prospectsTabContent').style.display = 'none';
                 document.getElementById('contactsTabActions').style.display = 'flex';
                 document.getElementById('prospectsTabActions').style.display = 'none';
@@ -6736,7 +6794,7 @@
                 document.getElementById('tabContacts').className = 'btn btn-ghost btn-sm';
                 document.getElementById('tabProspects').className = 'btn btn-primary btn-sm';
                 document.getElementById('contactsTabContent').style.display = 'none';
-                document.getElementById('prospectsTabContent').style.display = 'block';
+                document.getElementById('prospectsTabContent').style.display = 'flex';
                 document.getElementById('contactsTabActions').style.display = 'none';
                 document.getElementById('prospectsTabActions').style.display = 'flex';
                 this.loadCountries();

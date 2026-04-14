@@ -103,6 +103,19 @@ INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "dev-local-key")
 # 开发模式：跳过认证校验（生产环境设为False）
 SKIP_AUTH = os.environ.get("SKIP_AUTH", "true").lower() == "true"
 
+# 自定义401异常处理器 - API请求返回JSON格式
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    # API请求返回JSON格式错误
+    if request.url.path.startswith('/api/') and exc.status_code == 401:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            {"success": False, "message": exc.detail},
+            status_code=401
+        )
+    # 其他异常按默认处理
+    raise exc
+
 # Add session middleware
 app.add_middleware(SessionMiddleware, secret_key="uni_platform_secret_key_2026")
 
@@ -265,11 +278,10 @@ async def login_required(request: Request, current_user: dict = Depends(get_curr
     if not current_user:
         # 判断是否是API请求（路径以/api/开头）
         if request.url.path.startswith('/api/'):
-            # API请求返回JSON错误响应
-            from fastapi.responses import JSONResponse
-            return JSONResponse(
-                {"success": False, "message": "登录已过期，请重新登录"},
-                status_code=401
+            # API请求抛出401异常，由异常处理器返回JSON
+            raise HTTPException(
+                status_code=401,
+                detail="登录已过期，请重新登录"
             )
         # 页面请求返回HTML重定向
         raise HTTPException(status_code=303, headers={"Location": "/login"})
@@ -4403,6 +4415,20 @@ async def api_contact_template(current_user: dict = Depends(login_required)):
     )
 
 
+@app.get("/api/contact/countries")
+async def api_contact_countries(current_user: dict = Depends(login_required)):
+    """获取所有国家列表"""
+    from Sills.db_contact import get_contact_countries
+    return {"countries": get_contact_countries()}
+
+
+@app.get("/api/contact/stats")
+async def api_contact_stats(current_user: dict = Depends(login_required)):
+    """获取营销统计数据"""
+    from Sills.db_contact import get_marketing_stats
+    return get_marketing_stats()
+
+
 @app.get("/api/contact/{contact_id}")
 async def api_contact_get(contact_id: str, current_user: dict = Depends(login_required)):
     """获取联系人详情"""
@@ -4619,20 +4645,6 @@ async def api_contact_import_file(request: Request, current_user: dict = Depends
         return {"success": False, "message": f"解析文件失败: {str(e)}"}
 
 
-@app.get("/api/contact/countries")
-async def api_contact_countries(current_user: dict = Depends(login_required)):
-    """获取所有国家列表"""
-    from Sills.db_contact import get_contact_countries
-    return {"countries": get_contact_countries()}
-
-
-@app.get("/api/contact/stats")
-async def api_contact_stats(current_user: dict = Depends(login_required)):
-    """获取营销统计数据"""
-    from Sills.db_contact import get_marketing_stats
-    return get_marketing_stats()
-
-
 # ==================== 待开发客户(Prospect)模块 ====================
 
 @app.get("/api/prospect/list")
@@ -4688,6 +4700,44 @@ async def api_prospect_template(current_user: dict = Depends(login_required)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=prospect_template.xlsx"}
     )
+
+
+@app.post("/api/prospect/delete")
+async def api_prospect_delete(request: Request, current_user: dict = Depends(login_required)):
+    """删除Prospect"""
+    from Sills.db_prospect import delete_prospect
+    data = await request.json()
+    prospect_id = data.get('prospect_id')
+    if not prospect_id:
+        return {"success": False, "message": "缺少prospect_id"}
+    ok, msg = delete_prospect(prospect_id)
+    return {"success": ok, "message": msg}
+
+
+@app.post("/api/prospect/batch_delete")
+async def api_prospect_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    """批量删除Prospect"""
+    from Sills.db_prospect import batch_delete_prospects
+    print("===== Prospect批量删除开始 =====")
+    data = await request.json()
+    print(f"请求数据: {data}")
+    prospect_ids = data.get('prospect_ids', [])
+    print(f"要删除的ID列表: {prospect_ids}")
+    if not prospect_ids:
+        print("错误: 未选择任何记录")
+        return {"success": False, "message": "未选择任何记录"}
+
+    print("调用 batch_delete_prospects...")
+    ok, msg = batch_delete_prospects(prospect_ids)
+    print(f"删除结果: ok={ok}, msg={msg}")
+
+    if msg is None or msg == '':
+        msg = "删除操作返回空消息"
+        print(f"消息为空，设置为: {msg}")
+
+    print(f"返回: success={ok}, message={msg}")
+    print("===== Prospect批量删除结束 =====")
+    return {"success": ok, "message": msg}
 
 
 @app.get("/api/prospect/{prospect_id}")
@@ -4829,44 +4879,6 @@ async def api_prospect_countries(current_user: dict = Depends(login_required)):
     """获取Prospect国家列表"""
     from Sills.db_prospect import get_prospect_countries
     return {"success": True, "countries": get_prospect_countries()}
-
-
-@app.post("/api/prospect/delete")
-async def api_prospect_delete(request: Request, current_user: dict = Depends(login_required)):
-    """删除Prospect"""
-    from Sills.db_prospect import delete_prospect
-    data = await request.json()
-    prospect_id = data.get('prospect_id')
-    if not prospect_id:
-        return {"success": False, "message": "缺少prospect_id"}
-    ok, msg = delete_prospect(prospect_id)
-    return {"success": ok, "message": msg}
-
-
-@app.post("/api/prospect/batch_delete")
-async def api_prospect_batch_delete(request: Request, current_user: dict = Depends(login_required)):
-    """批量删除Prospect"""
-    from Sills.db_prospect import batch_delete_prospects
-    print("===== Prospect批量删除开始 =====")
-    data = await request.json()
-    print(f"请求数据: {data}")
-    prospect_ids = data.get('prospect_ids', [])
-    print(f"要删除的ID列表: {prospect_ids}")
-    if not prospect_ids:
-        print("错误: 未选择任何记录")
-        return {"success": False, "message": "未选择任何记录"}
-
-    print("调用 batch_delete_prospects...")
-    ok, msg = batch_delete_prospects(prospect_ids)
-    print(f"删除结果: ok={ok}, msg={msg}")
-
-    if msg is None or msg == '':
-        msg = "删除操作返回空消息"
-        print(f"消息为空，设置为: {msg}")
-
-    print(f"返回: success={ok}, message={msg}")
-    print("===== Prospect批量删除结束 =====")
-    return {"success": ok, "message": msg}
 
 
 # ==================== 开发信管理模块 (Email Task Manager) ====================

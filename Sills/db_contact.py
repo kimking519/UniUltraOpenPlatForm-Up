@@ -4,6 +4,7 @@
 """
 import sqlite3
 from Sills.base import get_db_connection
+from Sills.db_config import get_datetime_now
 from datetime import datetime
 
 
@@ -15,15 +16,12 @@ def extract_domain(email):
 
 
 def get_next_contact_id():
-    """获取下一个联系人ID"""
-    with get_db_connection() as conn:
-        row = conn.execute("SELECT MAX(contact_id) FROM uni_contact").fetchone()
-        if row and row[0]:
-            # 格式: CT001, CT002, ...
-            num_part = ''.join(filter(str.isdigit, row[0]))
-            next_num = int(num_part) + 1 if num_part else 1
-            return f"CT{next_num:04d}"
-        return "CT0001"
+    """获取下一个联系人ID (CT+时间戳+随机数格式)"""
+    from datetime import datetime
+    import random
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    rand_suffix = random.randint(1000, 9999)
+    return f"CT{timestamp}{rand_suffix}"
 
 
 def get_contact_list(page=1, page_size=20, search_kw="", filters=None):
@@ -254,7 +252,8 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
                     errors.append(f"{email}: 邮箱已存在")
                     continue
 
-                domain = extract_domain(email)
+                # 优先使用传入的domain，否则从邮箱自动提取
+                domain = contact.get('domain', '').strip() if contact.get('domain') else extract_domain(email)
                 contact_id = get_next_contact_id()
 
                 # 尝试匹配客户
@@ -320,18 +319,19 @@ def update_contact_marketing_status(contact_id, status_type, increment=True):
     status_type: 'sent', 'bounced', 'read'
     """
     try:
+        dt_now = get_datetime_now()
         with get_db_connection() as conn:
             if status_type == 'sent':
                 if increment:
-                    conn.execute("""
+                    conn.execute(f"""
                         UPDATE uni_contact
-                        SET send_count = send_count + 1, last_sent_at = datetime('now', 'localtime')
+                        SET send_count = send_count + 1, last_sent_at = {dt_now}
                         WHERE contact_id = ?
                     """, (contact_id,))
                 else:
-                    conn.execute("""
+                    conn.execute(f"""
                         UPDATE uni_contact
-                        SET send_count = ?, last_sent_at = datetime('now', 'localtime')
+                        SET send_count = ?, last_sent_at = {dt_now}
                         WHERE contact_id = ?
                     """, (0, contact_id))
 
