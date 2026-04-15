@@ -2,9 +2,43 @@
 
 {% block content %}
 <style>
+    /* Override layout container padding for mail page */
+    .main-content > .container {
+        padding: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* System sidebar remains visible - mail has its own sidebar inside the content area */
+
+    .main-content {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* Make embedded views fill full width */
+    #contactView, #settingsView, #emailTaskView {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        flex: 1 !important;
+    }
+
+    /* Ensure mail-main fills full width when sidebar is hidden */
+    .mail-main-wrapper {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .mail-main {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
     .mail-container {
         display: flex;
         height: calc(100vh - 120px);
+        width: 100%;
     }
 
     .mail-sidebar {
@@ -25,6 +59,7 @@
         flex: 1;
         display: flex;
         min-width: 300px;
+        width: 100%;
     }
 
     .mail-main {
@@ -36,6 +71,7 @@
         border-radius: var(--radius-lg);
         overflow: hidden;
         margin-left: 1rem;
+        width: 100%;
     }
 
     /* 可拖动分隔条 */
@@ -473,6 +509,9 @@
         gap: 0.5rem;
         padding: 1rem;
         border-top: 1px solid var(--border);
+        width: 100%;
+        flex-shrink: 0;
+        margin-top: auto;
     }
 
     .pagination button {
@@ -1320,7 +1359,7 @@
         <!-- 营销功能区（绝对定位到底部） -->
         <div class="settings-link">
             <div style="padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
-                <a href="#" onclick="EmailTaskManager.open(event)">
+                <a href="/email_task">
                     <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/>
                     </svg>
@@ -1328,14 +1367,14 @@
                 </a>
             </div>
             <div style="padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
-                <a href="#" onclick="ContactManager.open(event)">
+                <a href="/contact">
                     <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
                     </svg>
                     联系人管理
                 </a>
             </div>
-            <a href="#" onclick="switchToSettings(event)">
+            <a href="/mail_settings">
                 <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -1685,7 +1724,6 @@
                             </table>
                         </div>
                     </div>
-                </div>
 
                 <!-- 联系人组Tab -->
                 <div id="groupTabContent" style="display: none;">
@@ -5171,10 +5209,8 @@
     // 切换到设置视图
     function switchToSettings(e) {
         e.preventDefault();
-        document.getElementById('mailList').style.display = 'none';
-        document.getElementById('pagination').style.display = 'none';
-        document.querySelector('.mail-list-header').style.display = 'none';
-        document.querySelector('.mail-toolbar').style.display = 'none';
+        document.querySelector('.mail-sidebar').style.display = 'none';
+        document.querySelector('.mail-main').style.display = 'none';  // 隐藏mail-main本身
         document.getElementById('contactView').style.display = 'none';
         document.getElementById('emailTaskView').style.display = 'none';
         document.getElementById('settingsView').style.display = 'block';
@@ -5183,11 +5219,9 @@
 
     // 关闭设置视图
     function closeSettingsView() {
+        document.querySelector('.mail-sidebar').style.display = 'flex';
+        document.querySelector('.mail-main').style.display = 'flex';  // 恢复mail-main显示
         document.getElementById('settingsView').style.display = 'none';
-        document.getElementById('mailList').style.display = 'block';
-        document.getElementById('pagination').style.display = 'flex';
-        document.querySelector('.mail-list-header').style.display = 'flex';
-        document.querySelector('.mail-toolbar').style.display = 'flex';
     }
 
     // Utility functions
@@ -5603,7 +5637,7 @@
     }
 
     function handlePaste(e) {
-        const items = e.clipboardData?.items;
+        const items = e.clipboardData && e.clipboardData.items;
         if (!items) return;
 
         // 阻止事件冒泡，防止重复处理
@@ -5770,10 +5804,8 @@
         // 打开任务管理视图
         open(e) {
             if (e) e.preventDefault();
-            document.getElementById('mailList').style.display = 'none';
-            document.getElementById('pagination').style.display = 'none';
-            document.querySelector('.mail-list-header').style.display = 'none';
-            document.querySelector('.mail-toolbar').style.display = 'none';
+            document.querySelector('.mail-sidebar').style.display = 'none';
+            document.querySelector('.mail-main').style.display = 'none';  // 隐藏mail-main本身
             document.getElementById('settingsView').style.display = 'none';
             document.getElementById('contactView').style.display = 'none';
             document.getElementById('emailTaskView').style.display = 'block';
@@ -5785,11 +5817,9 @@
 
         // 关闭任务管理视图
         close() {
+            document.querySelector('.mail-sidebar').style.display = 'flex';
+            document.querySelector('.mail-main').style.display = 'flex';  // 恢复mail-main显示
             document.getElementById('emailTaskView').style.display = 'none';
-            document.getElementById('mailList').style.display = 'block';
-            document.getElementById('pagination').style.display = 'flex';
-            document.querySelector('.mail-list-header').style.display = 'flex';
-            document.querySelector('.mail-toolbar').style.display = 'flex';
             if (this.progressTimer) {
                 clearInterval(this.progressTimer);
                 this.progressTimer = null;
@@ -5845,12 +5875,6 @@
                 });
             } catch (e) {
                 console.error('加载客户列表失败', e);
-            }
-        },
-                    select.appendChild(opt);
-                });
-            } catch (e) {
-                console.error('加载国家列表失败', e);
             }
         },
 
@@ -5934,15 +5958,15 @@
 
                 document.getElementById('activeTaskName').textContent = data.task.task_name || '-';
                 const statusEl = document.getElementById('activeTaskStatus');
-                statusEl.textContent = data.progress?.status || 'running';
-                statusEl.style.background = data.progress?.status === 'running' ? '#10B981' :
-                    data.progress?.status === 'completed' ? '#059669' : '#EF4444';
+                statusEl.textContent = (data.progress && data.progress.status) || 'running';
+                statusEl.style.background = (data.progress && data.progress.status) === 'running' ? '#10B981' :
+                    (data.progress && data.progress.status) === 'completed' ? '#059669' : '#EF4444';
                 statusEl.style.color = 'white';
 
                 this.updateProgressUI(data.progress, data.stats);
 
                 // 启动定时刷新
-                if (!this.progressTimer && data.progress?.status === 'running') {
+                if (!this.progressTimer && (data.progress && data.progress.status) === 'running') {
                     this.progressTimer = setInterval(() => this.refreshActiveTask(), 5000);
                 }
             } catch (e) {
@@ -5953,8 +5977,8 @@
         updateProgressUI(progress, stats) {
             if (!progress) return;
             const total = progress.total_count || 0;
-            const sent = stats?.sent || progress.sent_count || 0;
-            const failed = stats?.failed || progress.failed_count || 0;
+            const sent = (stats && stats.sent) || progress.sent_count || 0;
+            const failed = (stats && stats.failed) || progress.failed_count || 0;
             const percent = total > 0 ? Math.round((sent + failed) / total * 100) : 0;
 
             document.getElementById('activeTaskProgress').style.width = percent + '%';
@@ -5981,7 +6005,7 @@
                 const data = await res.json();
                 this.updateProgressUI(data.progress, data.stats);
 
-                if (data.progress?.status !== 'running') {
+                if (data.progress && data.progress.status !== 'running') {
                     if (this.progressTimer) {
                         clearInterval(this.progressTimer);
                         this.progressTimer = null;
@@ -6128,7 +6152,7 @@
             try {
                 const res = await fetch(`/api/task/${taskId}/progress`);
                 const data = await res.json();
-                alert(`任务详情:\n名称: ${data.progress?.task_name || '-'}\n状态: ${data.progress?.status || '-'}\n总数: ${data.progress?.total_count || 0}\n已发: ${data.stats?.sent || 0}\n失败: ${data.stats?.failed || 0}\n开始时间: ${data.progress?.started_at || '-'}`);
+                alert(`任务详情:\n名称: ${(data.progress && data.progress.task_name) || '-'}\n状态: ${(data.progress && data.progress.status) || '-'}\n总数: ${(data.progress && data.progress.total_count) || 0}\n已发: ${(data.stats && data.stats.sent) || 0}\n失败: ${(data.stats && data.stats.failed) || 0}\n开始时间: ${(data.progress && data.progress.started_at) || '-'}`);
             } catch (e) {
                 alert('获取详情出错');
             }
@@ -6424,13 +6448,14 @@
         // 打开联系人视图
         open(e) {
             if (e) e.preventDefault();
-            document.getElementById('mailList').style.display = 'none';
-            document.getElementById('pagination').style.display = 'none';
-            document.querySelector('.mail-list-header').style.display = 'none';
-            document.querySelector('.mail-toolbar').style.display = 'none';
+            document.querySelector('.mail-sidebar').style.display = 'none';
+            document.querySelector('.mail-main').style.display = 'none';  // 隐藏mail-main本身
+            document.getElementById('contactView').style.display = 'flex';
+            document.getElementById('contactView').style.flexDirection = 'column';
+            document.getElementById('contactView').style.flex = '1';
+            document.getElementById('contactView').style.width = '100%';
             document.getElementById('settingsView').style.display = 'none';
             document.getElementById('emailTaskView').style.display = 'none';
-            document.getElementById('contactView').style.display = 'block';
             this.loadCountries();
             this.loadStats();
             this.load();
@@ -6438,11 +6463,9 @@
 
         // 关闭联系人视图
         close() {
+            document.querySelector('.mail-sidebar').style.display = 'flex';
+            document.querySelector('.mail-main').style.display = 'flex';  // 恢复mail-main显示
             document.getElementById('contactView').style.display = 'none';
-            document.getElementById('mailList').style.display = 'block';
-            document.getElementById('pagination').style.display = 'flex';
-            document.querySelector('.mail-list-header').style.display = 'flex';
-            document.querySelector('.mail-toolbar').style.display = 'flex';
         },
 
         // Tab切换
