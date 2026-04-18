@@ -32,14 +32,15 @@ def _init_pg_pool():
     global _pg_pool
     if _pg_pool is None and is_postgresql():
         try:
-            import psycopg2
-            from psycopg2 import pool
-            from psycopg2.extras import RealDictCursor
-            _pg_pool = pool.ThreadedConnectionPool(
-                minconn=1,
-                maxconn=POOL_SIZE,
-                cursor_factory=RealDictCursor,
-                **PG_CONFIG
+            import psycopg
+            from psycopg_pool import ConnectionPool
+            # psycopg3 使用 dbname 而不是 database
+            pg_config = PG_CONFIG.copy()
+            pg_config['dbname'] = pg_config.pop('database')
+            _pg_pool = ConnectionPool(
+                min_size=1,
+                max_size=POOL_SIZE,
+                kwargs=pg_config
             )
             print(f"[DB] PostgreSQL 连接池已初始化: {PG_CONFIG['host']}:{PG_CONFIG['port']}/{PG_CONFIG['database']}")
         except Exception as e:
@@ -120,13 +121,15 @@ def get_db_path():
 def get_db_connection():
     """获取数据库连接，支持 SQLite 和 PostgreSQL"""
     if is_postgresql():
-        # PostgreSQL 模式
+        # PostgreSQL 模式 - psycopg3
         pool = _init_pg_pool()
-        conn = pool.getconn()
+        # psycopg3 ConnectionPool 使用 pool.connection() 返回连接上下文管理器
+        conn_ctx = pool.connection()
+        conn = conn_ctx.__enter__()
         # 追踪连接
         with _connection_lock:
             _active_connections.add(conn)
-        return _PgConnectionWrapper(conn, pool)
+        return _PgConnectionWrapper(conn, pool, conn_ctx)
     else:
         # SQLite 模式
         conn = sqlite3.connect(get_db_path(), timeout=POOL_TIMEOUT, check_same_thread=False)
@@ -200,9 +203,10 @@ class _DictCursorWrapper:
 class _PgConnectionWrapper:
     """PostgreSQL 连接包装器，模拟 SQLite 接口"""
 
-    def __init__(self, conn, pool):
+    def __init__(self, conn, pool, conn_ctx=None):
         self._conn = conn
         self._pool = pool
+        self._conn_ctx = conn_ctx  # psycopg3 连接上下文管理器
 
     def execute(self, sql, params=None):
         """执行 SQL，自动转换占位符和 SQLite 函数"""
@@ -256,7 +260,12 @@ class _PgConnectionWrapper:
         """归还连接到池"""
         with _connection_lock:
             _active_connections.discard(self._conn)
-        self._pool.putconn(self._conn)
+        if self._conn_ctx:
+            # psycopg3 使用上下文管理器
+            self._conn_ctx.__exit__(None, None, None)
+        else:
+            # psycopg2 兼容
+            self._pool.putconn(self._conn)
 
     def cursor(self):
         return self._conn.cursor()
@@ -413,6 +422,7 @@ def _init_db_postgresql():
                 """)
                 print("[DB] 迁移：uni_cli 表已添加营销字段 (domain, is_contacted, has_inquiry, has_order)")
         except Exception as e:
+            conn.rollback()
             print(f"[DB] uni_cli 营销字段迁移: {e}")
 
         # 迁移：uni_order_manager_rel 表从 order_id 改为 offer_id
@@ -427,6 +437,7 @@ def _init_db_postgresql():
                 cur.execute("DROP TABLE IF EXISTS uni_order_manager_rel CASCADE")
                 print("[DB] 迁移：uni_order_manager_rel 表已删除，将重建为关联报价订单")
         except Exception as e:
+            conn.rollback()
             print(f"[DB] 迁移检查: {e}")
 
         # 迁移：uni_mail 表添加新字段（邮件分类、同步优化等功能）
@@ -458,6 +469,7 @@ def _init_db_postgresql():
                     cur.execute(f"ALTER TABLE uni_mail ADD COLUMN {col_name} {col_def}")
                     print(f"[DB] 迁移：uni_mail 添加 {col_name} 列")
             except Exception as e:
+                conn.rollback()
                 print(f"[DB] uni_mail {col_name} 列迁移: {e}")
 
         # 迁移：uni_offer 表添加 status 和 target_price_rmb 列（合并需求管理功能）
@@ -476,6 +488,7 @@ def _init_db_postgresql():
                     cur.execute(f"ALTER TABLE uni_offer ADD COLUMN {col_name} {col_def}")
                     print(f"[DB] 迁移：uni_offer 添加 {col_name} 列")
             except Exception as e:
+                conn.rollback()
                 print(f"[DB] uni_offer {col_name} 列迁移: {e}")
 
         # 迁移：uni_offer 表添加约束（如果列已存在但约束不存在）
@@ -501,7 +514,15 @@ def _init_db_postgresql():
                     except Exception:
                         pass  # 约束可能已存在或有其他问题
         except Exception as e:
+            conn.rollback()
             print(f"[DB] uni_mail 约束检查: {e}")
+
+        # 清除事务状态，确保后续操作在新事务中执行
+        try:
+            conn.commit()
+        except:
+            conn.rollback()
+            conn.commit()
 
         # 执行 schema
         cur.execute(PG_SCHEMA)
@@ -871,7 +892,7 @@ def _init_db_sqlite():
     CREATE INDEX IF NOT EXISTS idx_order_manager_cli ON uni_order_manager(cli_id);
     CREATE INDEX IF NOT EXISTS idx_order_manager_date ON uni_order_manager(order_date);
     CREATE INDEX IF NOT EXISTS idx_order_manager_rel_manager ON uni_order_manager_rel(manager_id);
-    CREATE INDEX IF NOT EXISTS idx_order_manager_rel_order ON uni_order_manager_rel(order_id);
+    CREATE INDEX IF NOT EXISTS idx_order_manager_rel_offer ON uni_order_manager_rel(offer_id);
 
     CREATE INDEX IF NOT EXISTS idx_daily_date ON uni_daily(record_date);
     CREATE INDEX IF NOT EXISTS idx_daily_currency ON uni_daily(currency_code);
@@ -1156,6 +1177,19 @@ def _init_db_sqlite():
                 pass  # 表不存在，将由 schema 创建
             else:
                 print(f"[DB] 迁移警告 (uni_order_manager_rel): {e}")
+
+        # 迁移：为 uni_offer 添加 status 和 target_price_rmb 列（必须在 executescript 之前，因为 schema 中有索引）
+        try:
+            conn.execute("ALTER TABLE uni_offer ADD COLUMN status TEXT DEFAULT '询价中'")
+            print("[DB] 迁移完成：uni_offer 添加 status 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        try:
+            conn.execute("ALTER TABLE uni_offer ADD COLUMN target_price_rmb REAL")
+            print("[DB] 迁移完成：uni_offer 添加 target_price_rmb 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
 
         conn.executescript(schema)
 

@@ -495,7 +495,10 @@ CREATE TABLE IF NOT EXISTS uni_contact_group (
     group_id TEXT PRIMARY KEY,
     group_name TEXT NOT NULL,
     description TEXT,
-    filter_criteria TEXT,
+    group_type TEXT DEFAULT 'dynamic',     -- dynamic(筛选条件组) / static(手动邮件列表组)
+    filter_criteria TEXT,                  -- dynamic组: 筛选条件JSON
+    email_list TEXT,                       -- static组: 邮件JSON列表 [{"email": "x@x.com", "company": "公司名"}, ...]
+    manual_emails TEXT,                    -- 手动添加的邮件JSON列表（可与筛选条件合并）
     contact_count INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP
@@ -573,6 +576,11 @@ CREATE INDEX IF NOT EXISTS idx_account_email ON uni_email_account(email);
 CREATE INDEX IF NOT EXISTS idx_group_name ON uni_contact_group(group_name);
 CREATE INDEX IF NOT EXISTS idx_group_rel_group ON uni_contact_group_rel(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_rel_contact ON uni_contact_group_rel(contact_id);
+
+-- 表结构升级（新增字段）
+ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS group_type TEXT DEFAULT 'dynamic';
+ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS email_list TEXT;
+ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS manual_emails TEXT;
 """
 
 # 默认管理员插入语句

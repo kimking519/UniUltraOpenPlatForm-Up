@@ -6,3 +6,12 @@ psutil
 python-dotenv
 psycopg2-binary
 openpyxl
+itsdangerous
+httpx
+scrapling
+curl_cffi
+patchright
+browserforge
+camoufox
+msgspec
+playwright
