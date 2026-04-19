@@ -5123,12 +5123,14 @@ async def api_group_export(group_id: str, current_user: dict = Depends(login_req
     from openpyxl import Workbook
     from fastapi.responses import StreamingResponse
     import io
+    from Sills.db_contact_group import get_group_by_id, get_group_contacts_all_types
 
     group = get_group_by_id(group_id)
     if not group:
         return {"success": False, "message": "组不存在"}
 
-    contacts, _ = get_group_contacts(group_id, page_size=10000)  # 获取全部
+    # 使用统一的 get_group_contacts_all_types 函数，支持静态组和动态组
+    contacts, _ = get_group_contacts_all_types(group_id, page_size=10000)  # 获取全部
 
     wb = Workbook()
     ws = wb.active
@@ -5327,6 +5329,170 @@ async def api_task_failed(task_id: str, current_user: dict = Depends(login_requi
     """获取任务失败日志"""
     failed = get_failed_logs(task_id)
     return {"success": True, "failed": failed}
+
+
+@app.post("/api/task/retry")
+async def api_task_retry(request: Request, current_user: dict = Depends(login_required)):
+    """重试任务中发送失败的邮件"""
+    from Sills.db_email_task import retry_failed_task, get_task_by_id
+    from Sills.email_sender import start_email_worker
+
+    data = await request.json()
+    task_id = data.get('task_id', '')
+
+    success, message = retry_failed_task(task_id)
+    if success:
+        # 启动后台Worker（重试模式）
+        start_email_worker(task_id, retry_mode=True)
+        return {"success": True, "message": message}
+    return {"success": False, "message": message}
+
+
+@app.get("/api/task/{task_id}/stats")
+async def api_task_stats(task_id: str, current_user: dict = Depends(login_required)):
+    """获取任务完整统计信息"""
+    from Sills.db_email_task import get_task_full_stats
+    stats = get_task_full_stats(task_id)
+    if stats:
+        return {"success": True, "stats": stats}
+    return {"success": False, "message": "任务不存在"}
+
+
+@app.get("/api/task/{task_id}/export")
+async def api_task_export(task_id: str, current_user: dict = Depends(login_required)):
+    """导出任务联系人发送状态到Excel"""
+    from Sills.db_email_log import export_task_contacts_to_excel
+    import os
+
+    # 生成输出路径
+    output_dir = "exports"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    output_path = os.path.join(output_dir, f"task_{task_id}_contacts_{timestamp}.xlsx")
+
+    success, result = export_task_contacts_to_excel(task_id, output_path)
+    if success:
+        return {"success": True, "file_path": result, "download_url": f"/exports/{os.path.basename(result)}"}
+    return {"success": False, "message": result}
+
+
+@app.post("/api/group/add-static")
+async def api_group_add_static(request: Request, current_user: dict = Depends(login_required)):
+    """添加静态邮件组（手动邮件列表）"""
+    from Sills.db_contact_group import add_static_group
+
+    data = await request.json()
+    group_name = data.get('group_name', '')
+    email_list = data.get('email_list', [])  # [{"email": "x@x.com", "company": "公司名"}, ...]
+    description = data.get('description', '')
+
+    success, message = add_static_group(group_name, email_list, description)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/group/create-from-contacts")
+async def api_group_create_from_contacts(request: Request, current_user: dict = Depends(login_required)):
+    """从现有联系人组创建静态邮件组（用于测试）"""
+    from Sills.db_contact_group import add_static_group, get_group_contacts_all_types
+
+    data = await request.json()
+    group_name = data.get('group_name', '')
+    source_group_ids = data.get('source_group_ids', [])  # 源组ID列表
+    description = data.get('description', '')
+
+    if not source_group_ids:
+        return {"success": False, "message": "请选择至少一个源联系人组"}
+
+    # 从源组获取联系人
+    contacts = []
+    for group_id in source_group_ids:
+        group_contacts, _ = get_group_contacts_all_types(group_id)
+        for c in group_contacts:
+            contacts.append({
+                'email': c.get('email', ''),
+                'company': c.get('company', ''),
+                'contact_name': c.get('contact_name', '')
+            })
+
+    if not contacts:
+        return {"success": False, "message": "源组中没有联系人"}
+
+    success, message = add_static_group(group_name, contacts, description)
+    return {"success": success, "message": message}
+
+
+@app.get("/api/group/{group_id}/contacts-all")
+async def api_group_contacts_all(
+    group_id: str,
+    page: int = 1,
+    page_size: int = 100,
+    current_user: dict = Depends(login_required)
+):
+    """获取联系人组内联系人（支持动态+手动邮件合并）"""
+    from Sills.db_contact_group import get_group_contacts_all_types
+    contacts, total = get_group_contacts_all_types(group_id, page, page_size)
+    return {"success": True, "contacts": contacts, "total": total, "page": page, "page_size": page_size}
+
+
+@app.get("/api/group/{group_id}/manual-emails")
+async def api_group_manual_emails(group_id: str, current_user: dict = Depends(login_required)):
+    """获取联系人组的手动邮件列表"""
+    from Sills.db_contact_group import get_group_manual_emails
+    emails = get_group_manual_emails(group_id)
+    return {"success": True, "emails": emails}
+
+
+@app.post("/api/group/{group_id}/add-emails")
+async def api_group_add_emails(
+    group_id: str,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """向联系人组添加手动邮件（数量不限）"""
+    from Sills.db_contact_group import add_manual_emails_to_group
+
+    data = await request.json()
+    emails = data.get('emails', [])  # [{"email": "x@x.com", "company": "公司名"}, ...]
+
+    if not emails:
+        return {"success": False, "message": "请提供要添加的邮件列表"}
+
+    success, message = add_manual_emails_to_group(group_id, emails)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/group/{group_id}/remove-email")
+async def api_group_remove_email(
+    group_id: str,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """从联系人组移除手动邮件"""
+    from Sills.db_contact_group import remove_manual_email_from_group
+
+    data = await request.json()
+    email = data.get('email', '')
+
+    if not email:
+        return {"success": False, "message": "请提供要移除的邮箱地址"}
+
+    success, message = remove_manual_email_from_group(group_id, email)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/group/update-with-emails")
+async def api_group_update_with_emails(request: Request, current_user: dict = Depends(login_required)):
+    """更新联系人组（支持筛选条件 + 手动邮件）"""
+    data = await request.json()
+    group_id = data.get('group_id', '')
+    group_name = data.get('group_name', '')
+    filter_criteria = data.get('filter_criteria', {})
+    manual_emails = data.get('manual_emails', None)  # [{"email": "x@x.com", "company": "公司名"}, ...]
+
+    success, message = update_group(group_id, group_name, filter_criteria, manual_emails)
+    return {"success": success, "message": message}
 
 # ==================== 开发信管理模块结束 ====================
 
