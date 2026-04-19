@@ -47,6 +47,10 @@
     .data-table tbody tr:hover {
         background: var(--bg-hover);
     }
+    .group-item:hover {
+        transform: scale(1.02);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
 </style>
 
 <div class="page-header">
@@ -75,9 +79,23 @@
             <select id="taskAccount" style="width: 200px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
                 <option value="">选择发件人账号</option>
             </select>
-            <select id="taskGroups" multiple style="width: 250px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); min-height: 60px;">
-            </select>
-            <span style="font-size: 12px; color: var(--text-muted);">可多选联系人组</span>
+        </div>
+        <!-- 联系人组选择器（点击添加/删除） -->
+        <div style="margin-top: 10px;">
+            <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">选择联系人组：</span>
+            <div style="display: flex; gap: 15px; margin-top: 8px;">
+                <!-- 可选组列表 -->
+                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">可选组（点击添加）</div>
+                    <div id="availableGroupsList"></div>
+                </div>
+                <!-- 已选组列表 -->
+                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">已选组（点击移除）</div>
+                    <div id="selectedGroupsList"></div>
+                </div>
+            </div>
+            <div id="selectedGroupsStats" style="font-size: 13px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何组</div>
         </div>
         <div style="margin-top: 10px;">
             <input type="text" id="taskSubject" placeholder="邮件主题（支持{公司名}占位符）" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
@@ -128,8 +146,25 @@
 
 <!-- 联系人组Tab -->
 <div id="groupTabContent" style="display: none;">
+    <!-- 创建手动邮件组 -->
     <div class="settings-section">
-        <h3>添加联系人组</h3>
+        <h3>创建手动邮件组（用于测试）</h3>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
+            <input type="text" id="staticGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+            <button class="btn btn-primary btn-sm" onclick="showAddEmailsModal()">添加邮件</button>
+            <span id="staticGroupEmailCount" style="font-size: 12px; color: var(--text-muted);">已添加 0 个邮件</span>
+        </div>
+        <div id="staticGroupEmailList" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--bg-main); display: none;">
+            <!-- 邮件列表显示区域 -->
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+            <button class="btn btn-primary btn-sm" onclick="createStaticGroup()">创建组</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearStaticGroupForm()">清空</button>
+        </div>
+    </div>
+    <!-- 添加筛选条件组 -->
+    <div class="settings-section">
+        <h3>添加筛选条件组</h3>
         <div style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 8px;">
             <input type="text" id="newGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
             <input type="text" id="newGroupDomain" placeholder="域名筛选" style="width: 140px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
@@ -244,6 +279,21 @@
     </div>
 </div>
 
+<!-- 添加邮件弹窗 -->
+<div id="addEmailsModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 450px; max-height: 80vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 15px 0;">添加邮件到组</h3>
+        <div style="margin-bottom: 10px;">
+            <textarea id="emailsInput" placeholder="输入邮件地址，每行一个：&#10;test@example.com, 公司名&#10;user@domain.com" style="width: 100%; height: 150px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); font-size: 13px; resize: vertical;"></textarea>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">格式：邮箱, 公司名（可选）或仅邮箱</div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button class="btn" onclick="closeAddEmailsModal()">取消</button>
+            <button class="btn btn-primary" onclick="confirmAddEmails()">添加</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // Tab切换
     function switchTab(tab) {
@@ -267,6 +317,9 @@
         document.execCommand(cmd, false, value);
     }
 
+    // 已选联系人组（用于任务创建）
+    let selectedGroups = [];
+
     // 加载账户列表
     async function loadAccounts() {
         try {
@@ -277,59 +330,122 @@
             select.innerHTML = '<option value="">选择发件人账号</option>';
             data.forEach(acc => {
                 const displayName = acc.account_name || acc.username;
-                select.innerHTML += `<option value="${acc.username}">${displayName}</option>`;
+                select.innerHTML += '<option value="' + acc.id + '">' + displayName + ' (' + acc.username + ')</option>';
             });
         } catch (e) {
             console.error('加载账户失败', e);
         }
     }
 
-    // 加载联系人组
+    // 加载联系人组（用于任务创建的选择器）
+    async function loadGroupsForTask() {
+        try {
+            const res = await fetch('/api/group/list');
+            const result = await res.json();
+            const data = result.groups || [];
+            renderGroupSelector(data);
+        } catch (e) {
+            console.error('加载组失败', e);
+        }
+    }
+
+    // 渲染联系人组选择器
+    function renderGroupSelector(groups) {
+        const availableContainer = document.getElementById('availableGroupsList');
+        const selectedContainer = document.getElementById('selectedGroupsList');
+
+        // 可选组列表
+        availableContainer.innerHTML = '';
+        groups.forEach(g => {
+            if (!selectedGroups.find(s => s.group_id === g.group_id)) {
+                const div = document.createElement('div');
+                div.className = 'group-item';
+                div.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin: 3px 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;';
+                div.innerHTML = '<span style="font-size: 13px; color: var(--text-main);">' + g.group_name + '</span><span style="font-size: 11px; color: var(--text-muted);">' + (g.contact_count || 0) + '人</span>';
+                div.onclick = function() { addGroupToSelection(g.group_id, g.group_name, g.contact_count || 0); };
+                availableContainer.appendChild(div);
+            }
+        });
+
+        // 已选组列表
+        selectedContainer.innerHTML = '';
+        if (selectedGroups.length === 0) {
+            selectedContainer.innerHTML = '<div style="font-size: 12px; color: var(--text-muted); padding: 10px;">尚未选择任何组</div>';
+        } else {
+            selectedGroups.forEach(g => {
+                const div = document.createElement('div');
+                div.className = 'group-item';
+                div.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin: 3px 0; background: #3B82F6; border: 1px solid #2563EB; border-radius: var(--radius); cursor: pointer;';
+                div.innerHTML = '<span style="font-size: 13px; color: white; font-weight: 500;">' + g.group_name + '</span><span style="font-size: 11px; color: #93C5FD;">' + g.contact_count + '人 ✕</span>';
+                div.onclick = function() { removeGroupFromSelection(g.group_id); };
+                selectedContainer.appendChild(div);
+            });
+        }
+
+        // 更新统计
+        const statsEl = document.getElementById('selectedGroupsStats');
+        if (statsEl) {
+            const totalCount = selectedGroups.reduce((sum, g) => sum + g.contact_count, 0);
+            statsEl.textContent = '已选 ' + selectedGroups.length + ' 个组，共 ' + totalCount + ' 个联系人';
+        }
+    }
+
+    // 添加组到已选列表
+    function addGroupToSelection(group_id, group_name, contact_count) {
+        if (!selectedGroups.find(s => s.group_id === group_id)) {
+            selectedGroups.push({ group_id, group_name, contact_count });
+            loadGroupsForTask();
+        }
+    }
+
+    // 从已选列表移除组
+    function removeGroupFromSelection(group_id) {
+        selectedGroups = selectedGroups.filter(s => s.group_id !== group_id);
+        loadGroupsForTask();
+    }
+
+    // 加载联系人组（用于联系人组Tab）
     async function loadGroups() {
         try {
             const res = await fetch('/api/group/list');
             const result = await res.json();
             const data = result.groups || [];
-            const select = document.getElementById('taskGroups');
-            select.innerHTML = '';
-            data.forEach(g => {
-                select.innerHTML += `<option value="${g.group_id}">${g.group_name} (${g.contact_count || 0}人)</option>`;
-            });
-            // 更新组列表表格
             const tbody = document.getElementById('groupList');
             tbody.innerHTML = '';
             data.forEach(g => {
-                // 解析筛选条件显示
                 let criteriaText = '-';
                 if (g.filter_criteria) {
                     try {
                         const criteria = JSON.parse(g.filter_criteria);
                         const parts = [];
-                        if (criteria.countries && criteria.countries.length > 0) parts.push(`国家:${criteria.countries.join(',')}`);
-                        if (criteria.country) parts.push(`国家:${criteria.country}`); // 兼容旧格式
-                        if (criteria.domain) parts.push(`域名:${criteria.domain}`);
+                        if (criteria.countries && criteria.countries.length > 0) parts.push('国家:' + criteria.countries.join(','));
+                        if (criteria.country) parts.push('国家:' + criteria.country);
+                        if (criteria.domain) parts.push('域名:' + criteria.domain);
                         if (criteria.has_cli) parts.push('已关联客户');
                         if (criteria.send_status !== undefined) parts.push(criteria.send_status == 0 ? '未发送' : '已发送');
                         if (criteria.read_status !== undefined) parts.push(criteria.read_status == 0 ? '未读' : '已读');
                         if (criteria.bounce_status !== undefined) parts.push(criteria.bounce_status == 0 ? '未退信' : '已退信');
-                        if (criteria.send_count) parts.push(`发送:${criteria.send_count}次`);
-                        if (criteria.last_sent_days) parts.push(`${criteria.last_sent_days}天未联系`);
+                        if (criteria.send_count) parts.push('发送:' + criteria.send_count + '次');
+                        if (criteria.last_sent_days) parts.push(criteria.last_sent_days + '天未联系');
                         criteriaText = parts.length > 0 ? parts.join(', ') : '-';
                     } catch (e) {
                         criteriaText = '-';
                     }
                 }
-                tbody.innerHTML += `<tr data-group-id="${g.group_id}" data-group-name="${g.group_name}" data-filter="${encodeURIComponent(g.filter_criteria || '')}">
-                    <td>${g.group_name}</td>
-                    <td style="font-size: 12px; color: var(--text-muted);">${criteriaText}</td>
-                    <td>${g.contact_count || 0}</td>
-                    <td>${g.created_at || '-'}</td>
-                    <td>
-                        <button class="btn btn-sm" onclick="editGroup('${g.group_id}')">编辑</button>
-                        <button class="btn btn-sm" onclick="exportGroup('${g.group_id}')">导出</button>
-                        <button class="btn btn-sm" onclick="deleteGroup('${g.group_id}')">删除</button>
-                    </td>
-                </tr>`;
+                let manualText = '';
+                if (g.manual_emails) {
+                    try {
+                        const manual = JSON.parse(g.manual_emails);
+                        if (manual.length > 0) manualText = '+' + manual.length + '手动';
+                    } catch (e) {}
+                }
+                const tr = document.createElement('tr');
+                tr.dataset.groupId = g.group_id;
+                tr.dataset.groupName = g.group_name;
+                tr.dataset.filter = encodeURIComponent(g.filter_criteria || '');
+                tr.dataset.manual = encodeURIComponent(g.manual_emails || '');
+                tr.innerHTML = '<td>' + g.group_name + '</td><td style="font-size: 12px; color: var(--text-muted);">' + criteriaText + manualText + '</td><td>' + (g.contact_count || 0) + '</td><td>' + (g.created_at || '-') + '</td><td><button class="btn btn-sm" onclick="editGroup(\'' + g.group_id + '\')">编辑</button> <button class="btn btn-sm" onclick="exportGroup(\'' + g.group_id + '\')">导出</button> <button class="btn btn-sm" onclick="deleteGroup(\'' + g.group_id + '\')">删除</button></td>';
+                tbody.appendChild(tr);
             });
         } catch (e) {
             console.error('加载组失败', e);
@@ -365,14 +481,14 @@
     async function createTask() {
         const name = document.getElementById('taskName').value;
         const account = document.getElementById('taskAccount').value;
-        const groups = Array.from(document.getElementById('taskGroups').selectedOptions).map(o => o.value);
+        const group_ids = selectedGroups.map(g => g.group_id);  // 从selectedGroups获取
         const subject = document.getElementById('taskSubject').value;
         const body = document.getElementById('taskBody').innerHTML;
         const scheduleStart = document.getElementById('taskScheduleStart').value;
         const scheduleEnd = document.getElementById('taskScheduleEnd').value;
 
-        if (!name || !account || groups.length === 0 || !subject || !body) {
-            alert('请填写完整任务信息');
+        if (!name || !account || group_ids.length === 0 || !subject || !body) {
+            alert('请填写完整任务信息并选择至少一个联系人组');
             return;
         }
 
@@ -383,7 +499,7 @@
                 body: JSON.stringify({
                     task_name: name,
                     account_id: account,
-                    group_ids: groups,
+                    group_ids: group_ids,
                     subject: subject,
                     body: body,
                     schedule_start: scheduleStart,
@@ -393,6 +509,8 @@
             const data = await res.json();
             if (data.success) {
                 alert('任务创建成功');
+                selectedGroups = [];  // 清空已选
+                loadGroupsForTask();
                 loadTaskHistory();
             } else {
                 alert('创建失败: ' + (data.message || '未知错误'));
@@ -636,8 +754,124 @@
     // 页面初始化
     loadCountries();
     loadAccounts();
-    loadGroups();
+    loadGroupsForTask();  // 加载任务创建用的组选择器
+    loadGroups();         // 加载组Tab的组列表
     loadTaskHistory();
+
+    // ==================== 手动邮件组功能 ====================
+    let staticGroupEmails = [];  // 临时存储添加的邮件
+
+    // 显示添加邮件弹窗
+    function showAddEmailsModal() {
+        document.getElementById('addEmailsModal').style.display = 'flex';
+        document.getElementById('emailsInput').value = '';
+    }
+
+    // 关闭添加邮件弹窗
+    function closeAddEmailsModal() {
+        document.getElementById('addEmailsModal').style.display = 'none';
+    }
+
+    // 确认添加邮件
+    function confirmAddEmails() {
+        const input = document.getElementById('emailsInput').value;
+        const lines = input.split('\n').filter(line => line.trim());
+
+        let addedCount = 0;
+        for (const line of lines) {
+            const parts = line.split(',').map(p => p.trim());
+            const email = parts[0];
+            if (email && email.includes('@')) {
+                // 检查是否已存在
+                if (!staticGroupEmails.find(e => e.email === email.toLowerCase())) {
+                    staticGroupEmails.push({
+                        email: email.toLowerCase(),
+                        company: parts[1] || '',
+                        contact_name: ''
+                    });
+                    addedCount++;
+                }
+            }
+        }
+
+        closeAddEmailsModal();
+        updateStaticGroupEmailList();
+
+        if (addedCount > 0) {
+            alert('已添加 ' + addedCount + ' 个邮件');
+        } else {
+            alert('没有有效的邮件地址');
+        }
+    }
+
+    // 更新邮件列表显示
+    function updateStaticGroupEmailList() {
+        const container = document.getElementById('staticGroupEmailList');
+        const countSpan = document.getElementById('staticGroupEmailCount');
+
+        countSpan.textContent = '已添加 ' + staticGroupEmails.length + ' 个邮件';
+
+        if (staticGroupEmails.length > 0) {
+            container.style.display = 'block';
+            container.innerHTML = '';
+            staticGroupEmails.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; margin: 2px 0; background: var(--card-bg); border-radius: var(--radius);';
+                div.innerHTML = '<span style="font-size: 13px; color: var(--text-main);">' + item.email + (item.company ? ' <span style="color: var(--text-muted);">(' + item.company + ')</span>' : '') + '</span><button class="btn btn-ghost btn-sm" onclick="removeStaticEmail(' + index + ')">移除</button>';
+                container.appendChild(div);
+            });
+        } else {
+            container.style.display = 'none';
+        }
+    }
+
+    // 移除单个邮件
+    function removeStaticEmail(index) {
+        staticGroupEmails.splice(index, 1);
+        updateStaticGroupEmailList();
+    }
+
+    // 创建手动邮件组
+    async function createStaticGroup() {
+        const name = document.getElementById('staticGroupName').value;
+        if (!name) {
+            alert('请输入组名称');
+            return;
+        }
+        if (staticGroupEmails.length === 0) {
+            alert('请先添加邮件');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/group/add-static', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    group_name: name,
+                    email_list: staticGroupEmails,
+                    description: '手动创建的测试组'
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || '创建成功');
+                clearStaticGroupForm();
+                loadGroups();
+            } else {
+                alert('创建失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('创建失败: ' + e.message);
+        }
+    }
+
+    // 清空手动邮件组表单
+    function clearStaticGroupForm() {
+        document.getElementById('staticGroupName').value = '';
+        staticGroupEmails = [];
+        updateStaticGroupEmailList();
+    }
 
     // Esc快捷键返回邮件列表
     document.addEventListener('keydown', (e) => {
