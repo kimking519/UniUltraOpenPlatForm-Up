@@ -11,7 +11,7 @@ from email.mime.text import MIMEText
 import os
 
 from Sills.db_email_task import (
-    get_task_by_id, get_task_contacts, update_task_progress,
+    get_task_by_id, get_task_contacts, get_task_failed_contacts, update_task_progress,
     is_cancel_requested, complete_task, error_task
 )
 from Sills.db_email_log import add_log
@@ -32,8 +32,9 @@ PRIMARY_EMAIL = "joy@unicornsemi.com"
 class EmailSenderWorker:
     """邮件发送Worker类"""
 
-    def __init__(self, task_id):
+    def __init__(self, task_id, retry_mode=False):
         self.task_id = task_id
+        self.retry_mode = retry_mode  # 是否重试模式（只发失败邮件）
         self.task = None
         self.account = None
         self.contacts = []
@@ -58,8 +59,13 @@ class EmailSenderWorker:
             except:
                 pass
 
-        # 获取联系人列表
-        self.contacts = get_task_contacts(self.task_id)
+        # 获取联系人列表：重试模式只获取失败联系人
+        if self.retry_mode:
+            self.contacts = get_task_failed_contacts(self.task_id)
+            if not self.contacts:
+                raise ValueError("没有发送失败的联系人，无需重试")
+        else:
+            self.contacts = get_task_contacts(self.task_id)
 
     def connect_smtp(self):
         """连接SMTP服务器"""
@@ -84,9 +90,9 @@ class EmailSenderWorker:
         subject = self.task['subject']
         body = self.task['body']
 
-        # 替换占位符
-        subject = subject.replace('{公司名}', company_name)
-        body = body.replace('{公司名}', company_name)
+        # 替换占位符（支持 {公司名} 和 @# 两种格式）
+        subject = subject.replace('{公司名}', company_name).replace('@#', company_name)
+        body = body.replace('{公司名}', company_name).replace('@#', company_name)
 
         message = MIMEMultipart()
         html_part = MIMEText(body, 'html', 'utf-8')
@@ -135,6 +141,7 @@ class EmailSenderWorker:
             server = self.connect_smtp()
 
             total = len(self.contacts)
+            mode_str = "[重试模式]" if self.retry_mode else ""
 
             for idx, contact in enumerate(self.contacts):
                 # 检查取消请求
@@ -173,24 +180,34 @@ class EmailSenderWorker:
 
                 try:
                     self.send_single_email(server, email, company_name)
-                    add_log(self.task_id, contact_id, email, company_name, 'sent')
+                    # 重试模式：更新之前失败的日志状态为成功
+                    if self.retry_mode:
+                        from Sills.db_email_log import update_log_status
+                        update_log_status(self.task_id, email, 'sent', None)
+                    else:
+                        add_log(self.task_id, contact_id, email, company_name, 'sent')
                     sent_count += 1
                     increment_sent_count(self.task['account_id'])
 
                     # 更新进度
                     update_task_progress(self.task_id, sent_count, failed_count)
 
-                    print(f"[Worker] 已发送 {sent_count}/{total} 到 {email}")
+                    print(f"[Worker] {mode_str} 已发送 {sent_count}/{total} 到 {email}")
 
                     # 发送间隔(避免过快)
                     time.sleep(2)
 
                 except Exception as e:
                     error_msg = str(e)
-                    add_log(self.task_id, contact_id, email, company_name, 'failed', error_msg)
+                    # 重试模式：更新之前失败的日志，保持failed状态但更新错误信息
+                    if self.retry_mode:
+                        from Sills.db_email_log import update_log_status
+                        update_log_status(self.task_id, email, 'failed', error_msg)
+                    else:
+                        add_log(self.task_id, contact_id, email, company_name, 'failed', error_msg)
                     failed_count += 1
                     update_task_progress(self.task_id, sent_count, failed_count)
-                    print(f"[Worker] 发送失败 {email}: {error_msg}")
+                    print(f"[Worker] {mode_str} 发送失败 {email}: {error_msg}")
                     # 继续发送下一个
 
             # 断开连接
@@ -212,16 +229,18 @@ class EmailSenderWorker:
         try:
             server = self.connect_smtp()
 
-            subject = f"[开发信管理] 任务完成报告 - {self.task['task_name']}"
+            mode_str = "(重试)" if self.retry_mode else ""
+            subject = f"[开发信管理] 任务完成报告{mode_str} - {self.task['task_name']}"
             body = f"""
             <html>
             <body>
             <h2>邮件任务完成报告</h2>
             <p><strong>任务名称:</strong> {self.task['task_name']}</p>
             <p><strong>发件人:</strong> {self.account['email']}</p>
+            <p><strong>发送模式:</strong> {mode_str if self.retry_mode else "正常发送"}</p>
             <p><strong>发送时间:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <hr>
-            <p><strong>总收件人:</strong> {len(self.contacts)}</p>
+            <p><strong>本次处理:</strong> {len(self.contacts)}</p>
             <p><strong style="color: green;">成功发送:</strong> {sent_count}</p>
             <p><strong style="color: red;">发送失败:</strong> {failed_count}</p>
             <hr>
@@ -263,16 +282,17 @@ class EmailSenderWorker:
         self.stop_flag = True
 
 
-def start_email_worker(task_id):
+def start_email_worker(task_id, retry_mode=False):
     """启动邮件发送Worker
 
     Args:
         task_id: 任务ID
+        retry_mode: 是否重试模式（只发送失败邮件）
 
     Returns:
         EmailSenderWorker instance
     """
-    worker = EmailSenderWorker(task_id)
+    worker = EmailSenderWorker(task_id, retry_mode)
     worker.start()
     return worker
 
