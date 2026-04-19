@@ -53,6 +53,17 @@ def get_mail_account_by_id(account_id: int) -> Optional[Dict[str, Any]]:
 
 def add_mail_account(config: Dict[str, Any]) -> int:
     """添加新邮件账户"""
+    from Sills.db_config import is_postgresql
+
+    # 检查重复账号（用户名或账户名称）
+    with get_db_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM mail_config WHERE username = ? OR account_name = ?",
+            (config.get('username'), config.get('account_name'))
+        ).fetchone()
+        if existing:
+            raise ValueError("该邮箱账号已存在，不能重复添加")
+
     password = config.get('password', '')
     if password:
         try:
@@ -65,23 +76,45 @@ def add_mail_account(config: Dict[str, Any]) -> int:
         count = conn.execute("SELECT COUNT(*) FROM mail_config").fetchone()[0]
         is_current = 1 if count == 0 else 0
 
-        cursor = conn.execute("""
-            INSERT INTO mail_config (account_name, smtp_server, smtp_port, imap_server,
-                                     imap_port, username, password, use_tls, is_current)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            config.get('account_name', '新账户'),
-            config.get('smtp_server'),
-            config.get('smtp_port', 587),
-            config.get('imap_server'),
-            config.get('imap_port', 993),
-            config.get('username'),
-            password,
-            config.get('use_tls', 1),
-            is_current
-        ))
-        conn.commit()
-        return cursor.lastrowid
+        if is_postgresql():
+            # PostgreSQL 使用 RETURNING id
+            row = conn.execute("""
+                INSERT INTO mail_config (account_name, smtp_server, smtp_port, imap_server,
+                                         imap_port, username, password, use_tls, is_current)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+            """, (
+                config.get('account_name', '新账户'),
+                config.get('smtp_server'),
+                config.get('smtp_port', 587),
+                config.get('imap_server'),
+                config.get('imap_port', 993),
+                config.get('username'),
+                password,
+                config.get('use_tls', 1),
+                is_current
+            )).fetchone()
+            conn.commit()
+            return row['id'] if isinstance(row, dict) else row[0]
+        else:
+            # SQLite 使用 lastrowid
+            cursor = conn.execute("""
+                INSERT INTO mail_config (account_name, smtp_server, smtp_port, imap_server,
+                                         imap_port, username, password, use_tls, is_current)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                config.get('account_name', '新账户'),
+                config.get('smtp_server'),
+                config.get('smtp_port', 587),
+                config.get('imap_server'),
+                config.get('imap_port', 993),
+                config.get('username'),
+                password,
+                config.get('use_tls', 1),
+                is_current
+            ))
+            conn.commit()
+            return cursor.lastrowid
 
 
 def update_mail_account(account_id: int, config: Dict[str, Any]) -> bool:

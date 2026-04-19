@@ -197,6 +197,19 @@ class _DictCursorWrapper:
         return [self._wrap_row(r) for r in rows] if rows else []
 
     def __getattr__(self, name):
+        # PostgreSQL 没有 lastrowid，需要特殊处理
+        if name == 'lastrowid':
+            # 尝试从最后一次 INSERT 获取 ID
+            # 如果有 RETURNING id 的结果，使用它
+            if hasattr(self._cursor, 'description') and self._cursor.description:
+                # 如果是 RETURNING 结果，取第一行第一列
+                try:
+                    row = self._cursor.fetchone()
+                    if row:
+                        return row[0] if isinstance(row, (tuple, list)) else row.get('id', row.get(0))
+                except:
+                    pass
+            return None
         return getattr(self._cursor, name)
 
 
