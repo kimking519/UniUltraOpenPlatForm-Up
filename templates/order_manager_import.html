@@ -193,17 +193,22 @@
             </tr>
         </thead>
         <tbody>
+            <tr><td>日期</td><td>order_date</td><td><span class="optional-badge">可选</span></td><td>订单日期，格式: YYYY-MM-DD</td></tr>
             <tr><td>客户订单号</td><td>customer_order_no</td><td><span class="required-badge">必填</span></td><td>客户订单编号，相同编号的行归为同一订单</td></tr>
             <tr><td>客户名称</td><td>cli_name</td><td><span class="required-badge">必填</span></td><td>自动匹配已有客户，匹配失败自动创建新客户</td></tr>
-            <tr><td>订单日期</td><td>order_date</td><td><span class="optional-badge">可选</span></td><td>格式: YYYY-MM-DD</td></tr>
-            <tr><td>型号</td><td>inquiry_mpn</td><td><span class="required-badge">必填</span></td><td>产品型号</td></tr>
-            <tr><td>品牌</td><td>inquiry_brand</td><td><span class="optional-badge">可选</span></td><td>产品品牌</td></tr>
-            <tr><td>数量</td><td>quoted_qty</td><td><span class="required-badge">必填</span></td><td>报价数量</td></tr>
-            <tr><td>单价(RMB)</td><td>offer_price_rmb</td><td><span class="required-badge">必填</span></td><td>人民币单价</td></tr>
-            <tr><td>成本价(RMB)</td><td>cost_price_rmb</td><td><span class="optional-badge">可选</span></td><td>人民币成本价</td></tr>
+            <tr><td>询价型号</td><td>inquiry_mpn</td><td><span class="required-badge">必填</span></td><td>询价型号，为空则跳过该行</td></tr>
+            <tr><td>报价型号</td><td>quoted_mpn</td><td><span class="optional-badge">可选</span></td><td>报价型号，为空时使用询价型号</td></tr>
+            <tr><td>询价品牌</td><td>inquiry_brand</td><td><span class="optional-badge">可选</span></td><td>询价品牌</td></tr>
+            <tr><td>报价品牌</td><td>quoted_brand</td><td><span class="optional-badge">可选</span></td><td>报价品牌，为空时使用询价品牌</td></tr>
+            <tr><td>询价数量</td><td>inquiry_qty</td><td><span class="optional-badge">可选</span></td><td>询价数量</td></tr>
+            <tr><td>报价数量</td><td>quoted_qty</td><td><span class="required-badge">必填</span></td><td>报价数量</td></tr>
+            <tr><td>目标价(RMB)</td><td>target_price_rmb</td><td><span class="optional-badge">可选</span></td><td>目标价格（人民币）</td></tr>
+            <tr><td>成本价(RMB)</td><td>cost_price_rmb</td><td><span class="optional-badge">可选</span></td><td>成本价格（人民币）</td></tr>
+            <tr><td>报价(RMB)</td><td>offer_price_rmb</td><td><span class="required-badge">必填</span></td><td>报价单价（人民币）</td></tr>
             <tr><td>批号</td><td>date_code</td><td><span class="optional-badge">可选</span></td><td>产品批号</td></tr>
             <tr><td>交期</td><td>delivery_date</td><td><span class="optional-badge">可选</span></td><td>交货日期</td></tr>
             <tr><td>备注</td><td>remark</td><td><span class="optional-badge">可选</span></td><td>备注信息</td></tr>
+            <tr><td>状态</td><td>status</td><td><span class="optional-badge">可选</span></td><td>报价状态，默认"询价中"</td></tr>
         </tbody>
     </table>
     <div style="margin-top: 1rem;">

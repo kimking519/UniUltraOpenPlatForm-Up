@@ -1826,12 +1826,14 @@ async def api_order_manager_import_template(current_user: dict = Depends(get_cur
 
     # 表头
     headers = [
-        "客户订单号", "客户名称", "订单日期", "型号", "品牌",
-        "数量", "单价(RMB)", "成本价(RMB)", "批号", "交期", "备注"
+        "日期", "客户订单号", "客户名称", "询价型号", "报价型号",
+        "询价品牌", "报价品牌", "询价数量", "报价数量",
+        "目标价(RMB)", "成本价(RMB)", "报价(RMB)",
+        "批号", "交期", "备注", "状态"
     ]
 
     # 必填列标识
-    required_cols = [0, 1, 3, 5, 6]  # 客户订单号, 客户名称, 型号, 数量, 单价(RMB)
+    required_cols = [1, 2, 3, 8, 11]  # 客户订单号, 客户名称, 询价型号, 报价数量, 报价(RMB)
 
     # 样式
     header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
@@ -1858,9 +1860,9 @@ async def api_order_manager_import_template(current_user: dict = Depends(get_cur
 
     # 添加示例数据行
     sample_data = [
-        ["CO20260101001", "示例客户A", "2026-01-01", "STM32F103C8T6", "ST", 100, 10.5, 8.0, "2345", "2026-01-15", "示例备注"],
-        ["CO20260101001", "示例客户A", "2026-01-01", "LM358DR", "TI", 200, 2.5, 1.8, "", "", ""],
-        ["CO20260101002", "示例客户B", "2026-01-02", "NE555D", "TI", 50, 1.2, 0.8, "2350", "2026-01-20", ""],
+        ["2026-01-01", "CO20260101001", "示例客户A", "STM32F103C8T6", "STM32F103C8T6", "ST", "ST", 100, 100, 12.0, 8.0, 10.5, "2345", "2026-01-15", "示例备注", "已报价"],
+        ["2026-01-01", "CO20260101001", "示例客户A", "LM358DR", "LM358DR", "TI", "TI", 200, 200, 3.0, 1.8, 2.5, "", "", "", ""],
+        ["2026-01-02", "CO20260101002", "示例客户B", "NE555D", "NE555D", "TI", "TI", 50, 50, 1.5, 0.8, 1.2, "2350", "2026-01-20", "", "待确认"],
     ]
 
     for row_idx, row_data in enumerate(sample_data, 2):
@@ -1870,9 +1872,12 @@ async def api_order_manager_import_template(current_user: dict = Depends(get_cur
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
     # 设置列宽
-    col_widths = [15, 12, 12, 18, 10, 10, 12, 12, 10, 12, 15]
+    col_widths = [12, 15, 12, 18, 18, 10, 10, 10, 10, 12, 12, 12, 10, 12, 15, 10]
     for i, width in enumerate(col_widths, 1):
-        ws.column_dimensions[chr(64 + i)].width = width
+        if i <= 26:
+            ws.column_dimensions[chr(64 + i)].width = width
+        else:
+            ws.column_dimensions['A' + chr(64 + i - 26)].width = width
 
     # 输出到内存
     output = io.BytesIO()

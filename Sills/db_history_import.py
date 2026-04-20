@@ -14,7 +14,8 @@ from Sills.db_cli import get_next_cli_id
 def parse_excel(file_path):
     """
     解析Excel文件，返回DataFrame
-    期望的列名：客户订单号, 客户名称, 订单日期, 型号, 品牌, 数量, 单价(RMB), 成本价(RMB), 批号, 交期, 备注
+    期望的列名：日期, 客户订单号, 客户名称, 询价型号, 报价型号, 询价品牌, 报价品牌,
+              询价数量, 报价数量, 目标价(RMB), 成本价(RMB), 报价(RMB), 批号, 交期, 备注, 状态
     """
     try:
         df = pd.read_excel(file_path)
@@ -88,7 +89,7 @@ def import_history_orders(file_path, emp_id):
             return 0, 0, 0, ["Excel文件为空"]
 
         # 检查必要列
-        required_cols = ['客户订单号', '客户名称', '型号']
+        required_cols = ['客户订单号', '客户名称', '询价型号', '报价数量', '报价(RMB)']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             return 0, 0, 0, [f"缺少必要列: {', '.join(missing_cols)}"]
@@ -114,8 +115,8 @@ def import_history_orders(file_path, emp_id):
                         fail_count += len(group)
                         continue
 
-                    # 获取订单日期
-                    order_date_raw = first_row.get('订单日期', '')
+                    # 获取订单日期（日期列）
+                    order_date_raw = first_row.get('日期', '')
                     if pd.notna(order_date_raw) and str(order_date_raw).strip():
                         try:
                             # 尝试解析日期
@@ -147,26 +148,41 @@ def import_history_orders(file_path, emp_id):
                     # 遍历每行报价数据
                     for idx, row in group.iterrows():
                         try:
-                            mpn = str(row.get('型号', '')).strip()
-                            if not mpn:
-                                errors.append(f"订单 {order_no} 第{idx+1}行: 型号为空")
+                            # 询价型号为空则跳过
+                            inquiry_mpn = str(row.get('询价型号', '')).strip()
+                            if not inquiry_mpn:
+                                errors.append(f"订单 {order_no} 第{idx+1}行: 询价型号为空")
                                 skip_count += 1
                                 continue
 
-                            # 检查重复
-                            if check_duplicate(manager_id, mpn, conn):
-                                errors.append(f"订单 {order_no} 型号 {mpn}: 已存在，跳过")
+                            # 报价型号默认使用询价型号
+                            quoted_mpn = str(row.get('报价型号', '')).strip()
+                            if not quoted_mpn:
+                                quoted_mpn = inquiry_mpn
+
+                            # 检查重复（使用报价型号）
+                            if check_duplicate(manager_id, quoted_mpn, conn):
+                                errors.append(f"订单 {order_no} 型号 {quoted_mpn}: 已存在，跳过")
                                 skip_count += 1
                                 continue
 
                             # 准备报价数据
-                            brand = str(row.get('品牌', '')).strip()
-                            qty = int(row.get('数量', 1) or 1)
-                            offer_price = float(row.get('单价(RMB)', 0) or 0)
+                            inquiry_brand = str(row.get('询价品牌', '')).strip()
+                            quoted_brand = str(row.get('报价品牌', '')).strip()
+                            if not quoted_brand:
+                                quoted_brand = inquiry_brand
+
+                            inquiry_qty = int(row.get('询价数量', 0) or 0)
+                            quoted_qty = int(row.get('报价数量', 1) or 1)
+
+                            target_price = float(row.get('目标价(RMB)', 0) or 0)
                             cost_price = float(row.get('成本价(RMB)', 0) or 0)
+                            offer_price = float(row.get('报价(RMB)', 0) or 0)
+
                             date_code = str(row.get('批号', '')).strip()
                             delivery_date = str(row.get('交期', '')).strip()
                             remark = str(row.get('备注', '')).strip()
+                            status = str(row.get('状态', '询价中') or '询价中').strip()
 
                             # 计算汇率价格
                             krw_val, usd_val = get_exchange_rates()
@@ -195,14 +211,15 @@ def import_history_orders(file_path, emp_id):
                                 INSERT INTO uni_offer (
                                     offer_id, offer_date, quote_id, inquiry_mpn, quoted_mpn,
                                     inquiry_brand, quoted_brand, inquiry_qty, quoted_qty,
-                                    cost_price_rmb, offer_price_rmb, price_kwr, price_usd,
-                                    date_code, delivery_date, emp_id, remark, is_transferred
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    target_price_rmb, cost_price_rmb, offer_price_rmb, price_kwr, price_usd,
+                                    date_code, delivery_date, emp_id, remark, status, is_transferred
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 offer_id, datetime.now().strftime('%Y-%m-%d'), None,
-                                mpn, mpn, brand, brand, qty, qty,
-                                cost_price, offer_price, price_kwr, price_usd,
-                                date_code, delivery_date, emp_id, remark, '未转'
+                                inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
+                                inquiry_qty, quoted_qty,
+                                target_price, cost_price, offer_price, price_kwr, price_usd,
+                                date_code, delivery_date, emp_id, remark, status, '未转'
                             ))
 
                             # 建立关联
@@ -214,7 +231,7 @@ def import_history_orders(file_path, emp_id):
                             success_count += 1
 
                         except Exception as e:
-                            errors.append(f"订单 {order_no} 型号 {mpn}: {str(e)}")
+                            errors.append(f"订单 {order_no} 型号 {quoted_mpn}: {str(e)}")
                             fail_count += 1
 
                     # 提交当前订单的事务
