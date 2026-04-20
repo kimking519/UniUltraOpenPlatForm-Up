@@ -187,7 +187,7 @@ class EmailSenderWorker:
                 if not email:
                     continue
 
-                # 跳过已发送成功的联系人
+                # 跳过已发送成功的联系人（已计入base_sent，不再累加）
                 if email.lower() in sent_email_set:
                     print(f"[Worker] {mode_str} 跳过已发送: {email}")
                     continue

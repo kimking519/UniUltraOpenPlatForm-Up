@@ -897,7 +897,7 @@ def sync_inbox(background_tasks=None) -> Dict[str, Any]:
             return {"status": "error", "message": "Mail config not found"}
 
         # 获取当前账户ID用于用户隔离
-        current_account_id = config.get('id')
+        current_account_id = config.get('account_id')
         sync_days = get_sync_days()
         date_range = get_sync_date_range()
         print(f"[Mail] sync_inbox: sync_days={sync_days}, date_range={date_range}")
@@ -1231,7 +1231,7 @@ def sync_new_emails(background_tasks=None) -> Dict[str, Any]:
             update_sync_progress(0, 1, "邮件配置未找到")
             return {"status": "error", "message": "Mail config not found"}
 
-        current_account_id = config.get('id')
+        current_account_id = config.get('account_id')
 
         # 获取同步日期范围设置
         date_range = get_sync_date_range()
@@ -1477,7 +1477,7 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
             update_sync_progress(0, 1, "邮件配置未找到")
             return {"status": "error", "message": "邮件配置未找到"}
 
-        current_account_id = config.get('id')
+        current_account_id = config.get('account_id')
 
         # 获取同步日期范围设置
         from Sills.db_mail import get_sync_date_range
@@ -1711,7 +1711,7 @@ def send_email_now(to: str, subject: str, body: str,
                     'is_sent': 1,
                     'message_id': message_id,
                     'sync_status': 'completed',
-                    'account_id': smtp_client.config.get('id')  # 关联当前账户ID
+                    'account_id': smtp_client.config.get('account_id')  # 关联当前账户ID
                 })
 
         return result
@@ -1827,7 +1827,7 @@ def send_email_with_attachments(to: str, subject: str, body: str,
                     'is_sent': 1,
                     'message_id': message_id,
                     'sync_status': 'completed',
-                    'account_id': config.get('id')
+                    'account_id': config.get('account_id')
                 })
 
         return result

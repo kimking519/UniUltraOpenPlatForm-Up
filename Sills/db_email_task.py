@@ -251,6 +251,51 @@ def error_task(task_id, error_message):
         return False, str(e)
 
 
+def update_task_account(task_id, new_account_id):
+    """更新任务的发件人账号（仅非执行状态可用）
+
+    Args:
+        task_id: 任务ID
+        new_account_id: 新的发件人账号ID
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        with get_db_connection() as conn:
+            # 检查任务状态
+            task = conn.execute(
+                "SELECT status FROM uni_email_task WHERE task_id = ?",
+                (task_id,)
+            ).fetchone()
+
+            if not task:
+                return False, "任务不存在"
+
+            status = task[0] if isinstance(task, tuple) else task.get('status')
+
+            # 只有非执行状态可以修改
+            if status == 'running':
+                return False, "正在执行的任务不能修改发件人账号"
+
+            # 验证新账号是否存在
+            from Sills.db_email_account import get_account_by_id
+            account = get_account_by_id(new_account_id)
+            if not account:
+                return False, "发件人账号不存在"
+
+            # 更新账号
+            conn.execute("""
+                UPDATE uni_email_task
+                SET account_id = ?
+                WHERE task_id = ?
+            """, (new_account_id, task_id))
+            conn.commit()
+            return True, "发件人账号已更新"
+    except Exception as e:
+        return False, str(e)
+
+
 def get_task_progress(task_id):
     """获取任务进度信息"""
     with get_db_connection() as conn:

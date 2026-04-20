@@ -137,6 +137,7 @@
                 <thead>
                     <tr>
                         <th style="width: 30px;"><input type="checkbox" id="selectAllTasks" onchange="toggleSelectAllTasks()"></th>
+                        <th>任务ID</th>
                         <th>任务名称</th>
                         <th>发件人</th>
                         <th>状态</th>
@@ -297,6 +298,25 @@
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
             <button class="btn" onclick="closeAddEmailsModal()">取消</button>
             <button class="btn btn-primary" onclick="confirmAddEmails()">添加</button>
+        </div>
+    </div>
+</div>
+
+<!-- 修改发件人账号弹窗 -->
+<div id="changeAccountModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 400px;">
+        <h3 style="margin: 0 0 15px 0;">修改发件人账号</h3>
+        <input type="hidden" id="changeAccountTaskId">
+        <div style="margin-bottom: 15px;">
+            <label style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">选择新发件人账号：</label>
+            <select id="changeAccountSelect" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <option value="">请选择...</option>
+            </select>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">注意：修改后，继续执行时将使用新账号发送剩余邮件</div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button class="btn" onclick="closeChangeAccountModal()">取消</button>
+            <button class="btn btn-primary" onclick="changeTaskAccount()">确认修改</button>
         </div>
     </div>
 </div>
@@ -478,15 +498,15 @@
                 // 根据状态显示不同操作按钮
                 let actionButtons = '';
                 if (t.status === 'pending') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'running') {
                     actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
                 } else if (t.status === 'paused') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'error') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'completed') {
-                    actionButtons = `<button class="btn btn-sm" onclick="viewTaskLogs('${t.task_id}')">查看日志</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-sm" onclick="viewTaskLogs('${t.task_id}')">查看日志</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 }
 
                 // 进度条
@@ -504,6 +524,7 @@
 
                 tbody.innerHTML += `<tr data-task-id="${t.task_id}" data-schedule-start="${t.schedule_start || '09:00'}" data-schedule-end="${t.schedule_end || '18:00'}">
                     <td><input type="checkbox" class="task-checkbox" value="${t.task_id}" onchange="updateBatchDeleteBtn()"></td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${t.task_id}</td>
                     <td>${t.task_name}</td>
                     <td>${t.account_name || t.account_id || '-'}</td>
                     <td style="color: ${statusColor};">${statusText}</td>
@@ -1139,6 +1160,82 @@
         document.getElementById('staticGroupName').value = '';
         staticGroupEmails = [];
         updateStaticGroupEmailList();
+    }
+
+    // ==================== 修改发件人账号功能 ====================
+    async function showChangeAccountModal(task_id) {
+        document.getElementById('changeAccountTaskId').value = task_id;
+        document.getElementById('changeAccountModal').style.display = 'flex';
+
+        // 加载账号列表
+        try {
+            const res = await fetch('/api/mail/accounts');
+            const result = await res.json();
+            const accounts = result.accounts || [];
+            const select = document.getElementById('changeAccountSelect');
+            select.innerHTML = '<option value="">请选择...</option>';
+            accounts.forEach(acc => {
+                const displayName = acc.account_name || acc.email;
+                select.innerHTML += `<option value="${acc.account_id}">${displayName} (${acc.email})</option>`;
+            });
+        } catch (e) {
+            console.error('加载账号失败', e);
+        }
+    }
+
+    function closeChangeAccountModal() {
+        document.getElementById('changeAccountModal').style.display = 'none';
+    }
+
+    async function changeTaskAccount() {
+        const task_id = document.getElementById('changeAccountTaskId').value;
+        const account_id = document.getElementById('changeAccountSelect').value;
+
+        if (!account_id) {
+            alert('请选择发件人账号');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/task/update-account', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task_id, account_id})
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('发件人账号已更新');
+                closeChangeAccountModal();
+                loadTaskHistory();
+            } else {
+                alert('修改失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('修改失败: ' + e.message);
+        }
+    }
+
+    // 重试失败邮件
+    async function retryFailedEmails(task_id) {
+        if (!confirm('确定要重试发送失败的邮件？')) return;
+        try {
+            const res = await fetch('/api/task/retry', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task_id})
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || '重试已启动');
+                loadTaskHistory();
+                // 启动进度轮询
+                startProgressPolling(task_id);
+            } else {
+                alert('重试失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('重试失败: ' + e.message);
+        }
     }
 
     // Esc快捷键返回邮件列表

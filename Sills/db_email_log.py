@@ -250,6 +250,11 @@ def export_task_contacts_to_excel(task_id, output_path=None):
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
         from datetime import datetime
 
+        # 获取任务信息
+        from Sills.db_email_task import get_task_by_id
+        from Sills.db_email_account import get_account_by_id
+        task = get_task_by_id(task_id)
+
         # 获取联系人数据
         contacts = get_all_task_contacts_with_status(task_id)
         if not contacts:
@@ -265,11 +270,46 @@ def export_task_contacts_to_excel(task_id, output_path=None):
         ws = wb.active
         ws.title = "联系人发送状态"
 
-        # 定义表头
+        # 获取发件人账号信息
+        account_name = ''
+        account_email = ''
+        if task and task.get('account_id'):
+            account = get_account_by_id(task['account_id'])
+            if account:
+                account_name = account.get('account_name', '')
+                account_email = account.get('email', '')
+
+        # 写入任务信息（顶部）
+        task_info_font = Font(bold=True, size=12)
+        info_row = 1
+
+        # 任务基本信息
+        ws.cell(row=info_row, column=1, value='任务ID:').font = task_info_font
+        ws.cell(row=info_row, column=2, value=task_id)
+        ws.merge_cells(start_row=info_row, start_column=2, end_row=info_row, end_column=4)
+
+        ws.cell(row=info_row, column=5, value='任务名称:').font = task_info_font
+        ws.cell(row=info_row, column=6, value=task.get('task_name', '') if task else '')
+        ws.merge_cells(start_row=info_row, start_column=6, end_row=info_row, end_column=10)
+
+        info_row += 1
+        ws.cell(row=info_row, column=1, value='创建时间:').font = task_info_font
+        ws.cell(row=info_row, column=2, value=task.get('created_at', '') if task else '')
+        ws.merge_cells(start_row=info_row, start_column=2, end_row=info_row, end_column=4)
+
+        ws.cell(row=info_row, column=5, value='发件人账号:').font = task_info_font
+        account_display = f"{account_name} ({account_email})" if account_name else account_email
+        ws.cell(row=info_row, column=6, value=account_display)
+        ws.merge_cells(start_row=info_row, start_column=6, end_row=info_row, end_column=10)
+
+        # 空行
+        info_row += 2
+
+        # 定义表头（从info_row行开始）
         headers = [
             '联系人ID', '邮箱', '公司', '联系人姓名', '国家', '域名',
             '职位', '电话', '是否退信', '发送次数', '退信次数', '已读次数',
-            '最后发送时间', '备注', '本次发送状态', '发送时间', '错误信息'
+            '最后发送时间', '备注', '账号名', '发件邮箱', '本次发送状态', '发送时间', '错误信息'
         ]
 
         # 设置表头样式
@@ -284,8 +324,9 @@ def export_task_contacts_to_excel(task_id, output_path=None):
         )
 
         # 写入表头
+        header_row = info_row
         for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=header)
+            cell = ws.cell(row=header_row, column=col, value=header)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = header_alignment
@@ -299,7 +340,7 @@ def export_task_contacts_to_excel(task_id, output_path=None):
         }
 
         # 写入数据
-        for row_idx, contact in enumerate(contacts, 2):
+        for row_idx, contact in enumerate(contacts, header_row + 1):
             data = [
                 contact.get('contact_id', ''),
                 contact.get('email', ''),
@@ -315,6 +356,8 @@ def export_task_contacts_to_excel(task_id, output_path=None):
                 contact.get('read_count', 0),
                 contact.get('last_sent_at', ''),
                 contact.get('remark', ''),
+                account_name,  # 账号名
+                account_email,  # 发件邮箱
                 contact.get('send_status', 'pending'),
                 contact.get('sent_at', ''),
                 contact.get('error_message', '')
@@ -325,16 +368,17 @@ def export_task_contacts_to_excel(task_id, output_path=None):
                 cell.border = thin_border
                 cell.alignment = Alignment(vertical='center')
 
-                # 根据发送状态设置背景色
-                if col == 15:  # 发送状态列
+                # 根据发送状态设置背景色（现在在第17列）
+                if col == 17:  # 发送状态列
                     status = str(value)
                     if status in status_fills:
                         cell.fill = status_fills[status]
 
-        # 调整列宽
-        column_widths = [15, 30, 25, 15, 10, 30, 15, 15, 10, 10, 10, 10, 20, 30, 12, 20, 40]
+        # 调整列宽（新增2列）
+        column_widths = [15, 30, 25, 15, 10, 30, 15, 15, 10, 10, 10, 10, 20, 30, 15, 30, 12, 20, 40]
         for col, width in enumerate(column_widths, 1):
-            ws.column_dimensions[chr(64 + col) if col <= 26 else 'A' + chr(64 + col - 26)].width = width
+            col_letter = chr(64 + col) if col <= 26 else 'A' + chr(64 + col - 26)
+            ws.column_dimensions[col_letter].width = width
 
         # 保存文件
         wb.save(output_path)

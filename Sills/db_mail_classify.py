@@ -8,24 +8,21 @@ from Sills.base import get_db_connection
 
 
 MAIL_TYPE_KEYWORDS = {
-    # 已读回执 (mail_type = 1) - 注意：Gelesen 需要精确匹配，避免匹配到 "Nicht gelesen"
+    # 已读回执 (mail_type = 1)
     'read': [
-        'Read:', '已读', 'Gelesen:', 'Letto', '읽음', '開封', 'Lesebest',
-        '讀取', 'Lu :', '已x读取', 'Empfangsstatus', '_封', '已x取'
+        'Read', '읽음', '已读', '開封', '讀取', 'Lesebestätigung',
+        'Gelesen', 'Lu :', 'Letto', 'Lu', '已 x取', '_封'
     ],
     # 未读回执 (mail_type = 2)
     'unread': [
-        'Not read', 'Nicht gelesen', 'Non letto', '未读', 'Non lu', '읽지 않음', '未開封',
-        'Automatic reply', '自動', '自動返信', '未_封',
-        'Auto', 'Automatische Antwort', 'Autoresponder'
+        '읽지 않음', 'Not read', '未開封', 'Nicht gelesen', 'Non letto',
+        '未讀取', 'Automatic', 'Automatische', '未读', '自動', '未 _封', 'Non lu'
     ],
     # 系统退信 (mail_type = 3)
     'bounced': [
-        '系统退信', 'Undeliverable', 'Delivery failure', 'Delivery Status',
-        'Return Notice', 'Fehlgeschlagen', 'SPAM', 'Returned mail',
-        '配信不能', 'Returne', 'failure notice', 'FAILURE NOTICE',
-        'NDR', 'Delivery Failure', '배달되지 않음', 'failed', 'ERREUR',
-        'Unzustellbar'
+        '系统退信', 'Undeliverable', 'Returne', '배달되지 않음',
+        'Delivery', 'failure', 'Return', 'Notice', 'Unzustellbar',
+        'Benachrichtigung', 'Fehlgeschlagen', 'SPAM', '配信不能'
     ]
 }
 

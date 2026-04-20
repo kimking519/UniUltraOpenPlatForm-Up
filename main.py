@@ -3093,7 +3093,7 @@ async def api_mail_list(
     is_sent = 1 if folder == "sent" else 0
     # 获取当前邮件账户ID
     config = get_mail_config()
-    account_id = config.get('id') if config else None
+    account_id = config.get('account_id') if config else None
     result = get_mail_list(page=page, limit=page_size, is_sent=is_sent, search=search, account_id=account_id)
     return result
 
@@ -3374,7 +3374,7 @@ async def api_mail_config_batch(
         if not config:
             return {"success": False, "message": "未找到邮件账户"}
 
-        account_id = config.get('id')
+        account_id = config.get('account_id')
 
         # 更新配置
         update_mail_account(account_id, {
@@ -5337,6 +5337,21 @@ async def api_task_delete(request: Request, current_user: dict = Depends(login_r
         return {"success": False, "message": "任务ID不能为空"}
 
     success, message = delete_task(task_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/task/update-account")
+async def api_task_update_account(request: Request, current_user: dict = Depends(login_required)):
+    """更新任务发件人账号（仅非执行状态可用）"""
+    from Sills.db_email_task import update_task_account
+    data = await request.json()
+    task_id = data.get('task_id', '')
+    new_account_id = data.get('account_id', '')
+
+    if not task_id or not new_account_id:
+        return {"success": False, "message": "任务ID和账号ID不能为空"}
+
+    success, message = update_task_account(task_id, new_account_id)
     return {"success": success, "message": message}
 
 
