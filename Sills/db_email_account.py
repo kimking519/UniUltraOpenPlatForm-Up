@@ -245,7 +245,10 @@ def can_send_today(account_id):
         if not row:
             return False, 0
 
-        daily_limit, sent_today, last_reset = row
+        # 确保类型正确
+        daily_limit = int(row.get('daily_limit') if isinstance(row, dict) else row[0] or 1800)
+        sent_today = int(row.get('sent_today') if isinstance(row, dict) else row[1] or 0)
+        last_reset = row.get('last_reset_date') if isinstance(row, dict) else row[2]
 
         # 如果是新的一天,自动重置
         if last_reset != today:

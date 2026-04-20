@@ -1,11 +1,13 @@
 """
 联系人组管理数据库操作模块
 用于邮件任务管理中的联系人分组
+支持动态组(筛选条件)和静态组(手动邮件列表)
 """
 import sqlite3
 import json
 from datetime import datetime
 from Sills.base import get_db_connection
+from Sills.db_contact import get_contact_by_email
 
 
 def get_next_group_id():
@@ -57,12 +59,13 @@ def get_group_by_id(group_id):
         return None
 
 
-def add_group(group_name, filter_criteria=None):
+def add_group(group_name, filter_criteria=None, manual_emails=None):
     """添加联系人组
 
     Args:
         group_name: 组名称
         filter_criteria: dict 筛选条件 {country, domain, is_bounced, has_cli}
+        manual_emails: list 手动添加的邮件 [{"email": "x@x.com", "company": "公司名"}, ...]
 
     Returns:
         (success, message) tuple
@@ -74,23 +77,43 @@ def add_group(group_name, filter_criteria=None):
         group_id = get_next_group_id()
         criteria_json = json.dumps(filter_criteria) if filter_criteria else ""
 
-        # 计算符合条件的联系人数量
-        contact_count = count_contacts_by_criteria(filter_criteria)
+        # 处理手动邮件
+        manual_emails_json = ""
+        manual_count = 0
+        if manual_emails:
+            # 验证并去重
+            unique_emails = {}
+            for item in manual_emails:
+                email = item.get('email', '').strip().lower()
+                if email and '@' in email:
+                    unique_emails[email] = {
+                        'email': email,
+                        'company': item.get('company', ''),
+                        'contact_name': item.get('contact_name', '')
+                    }
+            manual_emails_json = json.dumps(list(unique_emails.values()))
+            manual_count = len(unique_emails)
+
+        # 计算筛选条件匹配的联系人数量
+        filter_count = count_contacts_by_criteria(filter_criteria)
+
+        # 总数 = 筛选条件数 + 手动邮件数（可能有重叠，后续获取时会去重）
+        total_count = filter_count + manual_count
 
         with get_db_connection() as conn:
             conn.execute("""
-                INSERT INTO uni_contact_group (group_id, group_name, filter_criteria, contact_count)
-                VALUES (?, ?, ?, ?)
-            """, (group_id, group_name.strip(), criteria_json, contact_count))
+                INSERT INTO uni_contact_group (group_id, group_name, filter_criteria, manual_emails, contact_count)
+                VALUES (?, ?, ?, ?, ?)
+            """, (group_id, group_name.strip(), criteria_json, manual_emails_json, total_count))
             conn.commit()
 
-        return True, f"联系人组 {group_id} 创建成功，包含 {contact_count} 个联系人"
+        return True, f"联系人组 {group_id} 创建成功，筛选 {filter_count} 个联系人 + 手动添加 {manual_count} 个邮件"
     except Exception as e:
         return False, str(e)
 
 
-def update_group(group_id, group_name=None, filter_criteria=None):
-    """更新联系人组"""
+def update_group(group_id, group_name=None, filter_criteria=None, manual_emails=None):
+    """更新联系人组（支持筛选条件和手动邮件）"""
     try:
         updates = []
         params = []
@@ -101,14 +124,32 @@ def update_group(group_id, group_name=None, filter_criteria=None):
 
         if filter_criteria is not None:
             updates.append("filter_criteria = ?")
-            params.append(json.dumps(filter_criteria))
-            # 重新计算联系人数量
-            contact_count = count_contacts_by_criteria(filter_criteria)
-            updates.append("contact_count = ?")
-            params.append(contact_count)
+            params.append(json.dumps(filter_criteria) if filter_criteria else "")
+
+        if manual_emails is not None:
+            # 验证并去重
+            unique_emails = {}
+            for item in manual_emails:
+                email = item.get('email', '').strip().lower()
+                if email and '@' in email:
+                    unique_emails[email] = {
+                        'email': email,
+                        'company': item.get('company', ''),
+                        'contact_name': item.get('contact_name', '')
+                    }
+            updates.append("manual_emails = ?")
+            params.append(json.dumps(list(unique_emails.values())) if unique_emails else "")
 
         if not updates:
             return True, "无需更新"
+
+        # 重新计算总数
+        group = get_group_by_id(group_id)
+        if group:
+            filter_count = count_contacts_by_criteria(filter_criteria) if filter_criteria else 0
+            manual_count = len(unique_emails) if manual_emails else 0
+            updates.append("contact_count = ?")
+            params.append(filter_count + manual_count)
 
         updates.append("updated_at = NOW()")
         params.append(group_id)
@@ -369,9 +410,371 @@ def get_all_groups_contacts(group_ids):
     all_contacts = {}
 
     for group_id in group_ids:
-        contacts, _ = get_group_contacts(group_id, page_size=1000)  # 获取全部
+        # 先获取总数，然后获取全部联系人
+        contacts, total = get_group_contacts(group_id, page_size=10000)
+        # 如果总数超过10000，继续获取剩余的
+        if total > 10000:
+            contacts, _ = get_group_contacts(group_id, page_size=total)
         for c in contacts:
             # 以email为key去重
+            email = c.get('email', '').lower()
+            if email and email not in all_contacts:
+                all_contacts[email] = c
+
+    return list(all_contacts.values())
+
+
+# ==================== 静态邮件组功能 ====================
+
+def add_static_group(group_name, email_list, description=""):
+    """添加静态邮件组（手动邮件列表）
+
+    Args:
+        group_name: 组名称
+        email_list: list 邮件列表 [{"email": "x@x.com", "company": "公司名", "contact_name": "姓名"}, ...]
+        description: 组描述
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        if not group_name or not group_name.strip():
+            return False, "组名称不能为空"
+        if not email_list or len(email_list) == 0:
+            return False, "邮件列表不能为空"
+
+        # 验证邮件格式并去重
+        unique_emails = {}
+        for item in email_list:
+            email = item.get('email', '').strip().lower()
+            if email and '@' in email:
+                unique_emails[email] = {
+                    'email': email,
+                    'company': item.get('company', ''),
+                    'contact_name': item.get('contact_name', '')
+                }
+
+        if not unique_emails:
+            return False, "没有有效的邮箱地址"
+
+        group_id = get_next_group_id()
+        email_list_json = json.dumps(list(unique_emails.values()))
+
+        with get_db_connection() as conn:
+            conn.execute("""
+                INSERT INTO uni_contact_group (group_id, group_name, description, group_type, email_list, contact_count)
+                VALUES (?, ?, ?, 'static', ?, ?)
+            """, (group_id, group_name.strip(), description, email_list_json, len(unique_emails)))
+            conn.commit()
+
+        return True, f"静态邮件组 {group_id} 创建成功，包含 {len(unique_emails)} 个邮箱"
+    except Exception as e:
+        return False, str(e)
+
+
+def update_static_group(group_id, group_name=None, email_list=None, description=None):
+    """更新静态邮件组"""
+    try:
+        updates = []
+        params = []
+
+        if group_name:
+            updates.append("group_name = ?")
+            params.append(group_name.strip())
+
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+
+        if email_list is not None:
+            # 验证并去重
+            unique_emails = {}
+            for item in email_list:
+                email = item.get('email', '').strip().lower()
+                if email and '@' in email:
+                    unique_emails[email] = {
+                        'email': email,
+                        'company': item.get('company', ''),
+                        'contact_name': item.get('contact_name', '')
+                    }
+            updates.append("email_list = ?")
+            params.append(json.dumps(list(unique_emails.values())))
+            updates.append("contact_count = ?")
+            params.append(len(unique_emails))
+
+        if not updates:
+            return True, "无需更新"
+
+        updates.append("updated_at = NOW()")
+        params.append(group_id)
+
+        sql = f"UPDATE uni_contact_group SET {', '.join(updates)} WHERE group_id = ? AND group_type = 'static'"
+
+        with get_db_connection() as conn:
+            result = conn.execute(sql, params)
+            conn.commit()
+            if result.rowcount == 0:
+                return False, "静态邮件组不存在"
+
+        return True, "更新成功"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_static_group_contacts(group_id):
+    """获取静态邮件组的联系人列表
+
+    Returns:
+        list 联系人列表（包含email, company, contact_name字段）
+    """
+    group = get_group_by_id(group_id)
+    if not group or group.get('group_type') != 'static':
+        return []
+
+    email_list = json.loads(group.get('email_list', '[]') or '[]')
+
+    # 尝试从uni_contact获取更多信息
+    results = []
+    for item in email_list:
+        email = item.get('email', '')
+        contact = get_contact_by_email(email)
+        if contact:
+            # 合并contact表的信息
+            results.append({
+                'contact_id': contact.get('contact_id', ''),
+                'email': email,
+                'company': item.get('company') or contact.get('company', ''),
+                'contact_name': item.get('contact_name') or contact.get('contact_name', ''),
+                'country': contact.get('country', ''),
+                'domain': contact.get('domain', ''),
+                'position': contact.get('position', ''),
+                'phone': contact.get('phone', ''),
+                'is_bounced': contact.get('is_bounced', 0),
+                'send_count': contact.get('send_count', 0)
+            })
+        else:
+            # 仅使用提供的信息
+            results.append({
+                'contact_id': '',
+                'email': email,
+                'company': item.get('company', ''),
+                'contact_name': item.get('contact_name', ''),
+                'country': '',
+                'domain': '',
+                'position': '',
+                'phone': '',
+                'is_bounced': 0,
+                'send_count': 0
+            })
+
+    return results
+
+
+def get_group_contacts_all_types(group_id, page=1, page_size=100):
+    """获取联系人组内的联系人列表（支持动态组+手动邮件合并）
+
+    Args:
+        group_id: 组ID
+        page: 页码
+        page_size: 每页数量
+
+    Returns:
+        (contacts_list, total) tuple
+    """
+    group = get_group_by_id(group_id)
+    if not group:
+        return [], 0
+
+    group_type = group.get('group_type', 'dynamic')
+
+    if group_type == 'static':
+        # 静态组：从email_list获取
+        contacts = get_static_group_contacts(group_id)
+        return contacts, len(contacts)
+    else:
+        # 动态组：筛选条件 + 手动邮件合并
+        # 1. 从筛选条件获取联系人
+        filter_contacts, _ = get_group_contacts(group_id, page_size=1000)
+
+        # 2. 从手动邮件列表获取
+        manual_emails = json.loads(group.get('manual_emails', '[]') or '[]')
+        manual_contacts = []
+        for item in manual_emails:
+            email = item.get('email', '').strip().lower()
+            if email:
+                # 尝试从contact表获取更多信息
+                contact = get_contact_by_email(email)
+                if contact:
+                    manual_contacts.append({
+                        'contact_id': contact.get('contact_id', ''),
+                        'email': email,
+                        'company': item.get('company') or contact.get('company', ''),
+                        'contact_name': item.get('contact_name') or contact.get('contact_name', ''),
+                        'country': contact.get('country', ''),
+                        'domain': contact.get('domain', ''),
+                        'position': contact.get('position', ''),
+                        'phone': contact.get('phone', ''),
+                        'is_bounced': contact.get('is_bounced', 0),
+                        'send_count': contact.get('send_count', 0),
+                        'source': 'manual'  # 标记来源为手动添加
+                    })
+                else:
+                    manual_contacts.append({
+                        'contact_id': '',
+                        'email': email,
+                        'company': item.get('company', ''),
+                        'contact_name': item.get('contact_name', ''),
+                        'country': '',
+                        'domain': '',
+                        'position': '',
+                        'phone': '',
+                        'is_bounced': 0,
+                        'send_count': 0,
+                        'source': 'manual'
+                    })
+
+        # 3. 合并去重
+        all_contacts = {}
+        for c in filter_contacts:
+            email = c.get('email', '').lower()
+            if email:
+                c['source'] = 'filter'
+                all_contacts[email] = c
+
+        for c in manual_contacts:
+            email = c.get('email', '').lower()
+            if email and email not in all_contacts:
+                all_contacts[email] = c
+
+        total = len(all_contacts)
+        contacts_list = list(all_contacts.values())
+
+        # 分页处理
+        offset = (page - 1) * page_size
+        paginated = contacts_list[offset:offset + page_size]
+
+        return paginated, total
+
+
+def add_manual_emails_to_group(group_id, emails):
+    """向联系人组添加手动邮件
+
+    Args:
+        group_id: 组ID
+        emails: list 要添加的邮件 [{"email": "x@x.com", "company": "公司名"}, ...]
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        group = get_group_by_id(group_id)
+        if not group:
+            return False, "联系人组不存在"
+
+        # 获取现有手动邮件
+        existing_manual = json.loads(group.get('manual_emails', '[]') or '[]')
+        existing_emails = {item.get('email', '').lower() for item in existing_manual}
+
+        # 添加新邮件（去重）
+        added_count = 0
+        for item in emails:
+            email = item.get('email', '').strip().lower()
+            if email and '@' in email and email not in existing_emails:
+                existing_manual.append({
+                    'email': email,
+                    'company': item.get('company', ''),
+                    'contact_name': item.get('contact_name', '')
+                })
+                existing_emails.add(email)
+                added_count += 1
+
+        if added_count == 0:
+            return False, "没有新增邮件（可能都已存在或格式无效）"
+
+        # 更新数据库
+        manual_emails_json = json.dumps(existing_manual)
+
+        with get_db_connection() as conn:
+            conn.execute("""
+                UPDATE uni_contact_group
+                SET manual_emails = ?, updated_at = NOW()
+                WHERE group_id = ?
+            """, (manual_emails_json, group_id))
+            conn.commit()
+
+        return True, f"成功添加 {added_count} 个邮件"
+    except Exception as e:
+        return False, str(e)
+
+
+def remove_manual_email_from_group(group_id, email):
+    """从联系人组移除手动邮件
+
+    Args:
+        group_id: 组ID
+        email: 要移除的邮箱地址
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        group = get_group_by_id(group_id)
+        if not group:
+            return False, "联系人组不存在"
+
+        existing_manual = json.loads(group.get('manual_emails', '[]') or '[]')
+        email_lower = email.strip().lower()
+
+        # 过滤掉要移除的邮件
+        new_manual = [item for item in existing_manual if item.get('email', '').lower() != email_lower]
+
+        if len(new_manual) == len(existing_manual):
+            return False, "该邮件不在手动邮件列表中"
+
+        with get_db_connection() as conn:
+            conn.execute("""
+                UPDATE uni_contact_group
+                SET manual_emails = ?, updated_at = NOW()
+                WHERE group_id = ?
+            """, (json.dumps(new_manual), group_id))
+            conn.commit()
+
+        return True, "邮件已移除"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_group_manual_emails(group_id):
+    """获取联系人组的手动邮件列表
+
+    Returns:
+        list 手动邮件列表 [{"email", "company", "contact_name"}, ...]
+    """
+    group = get_group_by_id(group_id)
+    if not group:
+        return []
+
+    return json.loads(group.get('manual_emails', '[]') or '[]')
+
+
+def get_all_groups_contacts_all_types(group_ids):
+    """获取多个组的合并联系人列表(去重，支持动态和静态组)
+
+    Args:
+        group_ids: list 组ID列表
+
+    Returns:
+        list 合并去重后的联系人列表
+    """
+    all_contacts = {}
+
+    for group_id in group_ids:
+        # 先获取总数，然后获取全部联系人
+        contacts, total = get_group_contacts_all_types(group_id, page_size=10000)
+        # 如果总数超过10000，继续获取剩余的
+        if total > 10000:
+            contacts, _ = get_group_contacts_all_types(group_id, page_size=total)
+        for c in contacts:
             email = c.get('email', '').lower()
             if email and email not in all_contacts:
                 all_contacts[email] = c

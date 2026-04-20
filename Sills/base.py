@@ -149,7 +149,15 @@ class _DictCursorWrapper:
 
     def _get_columns(self):
         if self._columns is None and self._cursor.description:
-            self._columns = [desc[0] for desc in self._cursor.description]
+            # psycopg3: desc.name 属性; SQLite/psycopg2: desc[0] 索引
+            self._columns = []
+            for desc in self._cursor.description:
+                if hasattr(desc, 'name'):
+                    # psycopg3 Column 对象
+                    self._columns.append(desc.name)
+                else:
+                    # SQLite/psycopg2 元组
+                    self._columns.append(desc[0])
         return self._columns
 
     def _wrap_row(self, row):

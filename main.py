@@ -5048,7 +5048,8 @@ from Sills.db_email_account import (
 from Sills.db_email_task import (
     get_task_list, get_task_by_id, get_active_task, has_running_task,
     create_task, start_task, update_task_progress, cancel_task,
-    complete_task, get_task_progress, get_task_contacts
+    complete_task, get_task_progress, get_task_contacts,
+    delete_task, delete_tasks_batch
 )
 from Sills.db_email_log import (
     get_task_logs, get_failed_logs, get_task_stats
@@ -5276,30 +5277,85 @@ async def api_task_create(request: Request, current_user: dict = Depends(login_r
     placeholders = data.get('placeholders', None)
     schedule_start = data.get('schedule_start', None)
     schedule_end = data.get('schedule_end', None)
+    send_interval = data.get('send_interval', 2)  # 发送间隔（秒）
 
     success, result = create_task(
         task_name, account_id, group_ids, subject, body,
-        placeholders, schedule_start, schedule_end
+        placeholders, schedule_start, schedule_end, send_interval
     )
 
     if success:
-        # 自动启动任务
-        start_task(result)
-        # 启动后台Worker
-        start_email_worker(result)
+        # 创建成功，不自动启动，等待用户手动执行
         return {"success": True, "task_id": result}
     else:
         return {"success": False, "message": result}
 
 
+@app.post("/api/task/start")
+async def api_task_start(request: Request, current_user: dict = Depends(login_required)):
+    """手动启动任务执行"""
+    data = await request.json()
+    task_id = data.get('task_id', '')
+
+    if not task_id:
+        return {"success": False, "message": "任务ID不能为空"}
+
+    # 检查任务状态
+    task = get_task_by_id(task_id)
+    if not task:
+        return {"success": False, "message": "任务不存在"}
+
+    if task.get('status') == 'running':
+        return {"success": False, "message": "任务已在执行中"}
+
+    if task.get('status') == 'completed':
+        return {"success": False, "message": "任务已完成，无法重新执行"}
+
+    # 启动任务
+    start_task(task_id)
+    start_email_worker(task_id)
+    return {"success": True, "message": "任务已启动"}
+
+
 @app.post("/api/task/cancel")
 async def api_task_cancel(request: Request, current_user: dict = Depends(login_required)):
-    """取消任务"""
+    """取消任务（暂停执行）"""
     data = await request.json()
     task_id = data.get('task_id', '')
 
     success, message = cancel_task(task_id)
     return {"success": success, "message": message}
+
+
+@app.post("/api/task/delete")
+async def api_task_delete(request: Request, current_user: dict = Depends(login_required)):
+    """删除单个任务"""
+    data = await request.json()
+    task_id = data.get('task_id', '')
+
+    if not task_id:
+        return {"success": False, "message": "任务ID不能为空"}
+
+    success, message = delete_task(task_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/task/batch-delete")
+async def api_task_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    """批量删除任务"""
+    data = await request.json()
+    task_ids = data.get('task_ids', [])
+
+    if not task_ids or len(task_ids) == 0:
+        return {"success": False, "message": "请选择要删除的任务"}
+
+    success_count, failed_list = delete_tasks_batch(task_ids)
+    return {
+        "success": True,
+        "message": f"成功删除 {success_count} 个任务",
+        "success_count": success_count,
+        "failed_list": failed_list
+    }
 
 
 @app.get("/api/task/{task_id}/progress")
@@ -5360,21 +5416,28 @@ async def api_task_stats(task_id: str, current_user: dict = Depends(login_requir
 
 @app.get("/api/task/{task_id}/export")
 async def api_task_export(task_id: str, current_user: dict = Depends(login_required)):
-    """导出任务联系人发送状态到Excel"""
+    """导出任务联系人发送状态到Excel（直接下载）"""
     from Sills.db_email_log import export_task_contacts_to_excel
+    from fastapi.responses import FileResponse
     import os
+    import tempfile
 
-    # 生成输出路径
-    output_dir = "exports"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
+    # 使用临时目录生成文件
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    output_path = os.path.join(output_dir, f"task_{task_id}_contacts_{timestamp}.xlsx")
+    filename = f"task_{task_id}_contacts_{timestamp}.xlsx"
+
+    # 保存到临时目录，浏览器会自动下载到用户指定目录
+    temp_dir = tempfile.gettempdir()
+    output_path = os.path.join(temp_dir, filename)
 
     success, result = export_task_contacts_to_excel(task_id, output_path)
     if success:
-        return {"success": True, "file_path": result, "download_url": f"/exports/{os.path.basename(result)}"}
+        # 直接返回文件供下载
+        return FileResponse(
+            path=output_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     return {"success": False, "message": result}
 
 

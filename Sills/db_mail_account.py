@@ -1,16 +1,24 @@
 """
 邮件数据库操作层 - 账户管理模块
 包含：邮件账户配置、添加、更新、删除、切换
+使用 uni_email_account 表（迁移自 mail_config）
 """
 from typing import Optional, Dict, List, Any
+from datetime import datetime
 from Sills.base import get_db_connection
 from Sills.crypto_utils import encrypt_password, decrypt_password
+
+
+def get_next_account_id():
+    """获取下一个邮件账号ID (EA+时间戳格式)"""
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    return f"EA{timestamp}"
 
 
 def get_mail_config() -> Optional[Dict[str, Any]]:
     """获取当前邮件账户配置（解密密码）"""
     with get_db_connection() as conn:
-        row = conn.execute("SELECT * FROM mail_config WHERE is_current = 1").fetchone()
+        row = conn.execute("SELECT * FROM uni_email_account WHERE is_current = 1").fetchone()
         if row:
             config = dict(row)
             # 解密密码
@@ -27,19 +35,19 @@ def get_all_mail_accounts() -> List[Dict[str, Any]]:
     """获取所有邮件账户列表（不含密码）"""
     with get_db_connection() as conn:
         rows = conn.execute("""
-            SELECT id, account_name, smtp_server, smtp_port,
-                   imap_server, imap_port, username, use_tls,
-                   is_current
-            FROM mail_config
-            ORDER BY is_current DESC, id DESC
+            SELECT account_id, account_name, smtp_server, smtp_port,
+                   imap_server, imap_port, email, username, use_tls,
+                   is_current, is_primary, daily_limit
+            FROM uni_email_account
+            ORDER BY is_current DESC, created_at DESC
         """).fetchall()
         return [dict(row) for row in rows]
 
 
-def get_mail_account_by_id(account_id: int) -> Optional[Dict[str, Any]]:
+def get_mail_account_by_id(account_id: str) -> Optional[Dict[str, Any]]:
     """获取指定邮件账户（解密密码）"""
     with get_db_connection() as conn:
-        row = conn.execute("SELECT * FROM mail_config WHERE id = ?", (account_id,)).fetchone()
+        row = conn.execute("SELECT * FROM uni_email_account WHERE account_id = ?", (account_id,)).fetchone()
         if row:
             config = dict(row)
             if config.get('password'):
@@ -51,15 +59,13 @@ def get_mail_account_by_id(account_id: int) -> Optional[Dict[str, Any]]:
     return None
 
 
-def add_mail_account(config: Dict[str, Any]) -> int:
-    """添加新邮件账户"""
-    from Sills.db_config import is_postgresql
-
-    # 检查重复账号（用户名或账户名称）
+def add_mail_account(config: Dict[str, Any]) -> str:
+    """添加新邮件账户，返回 account_id"""
+    # 检查重复账号（邮箱或账户名称）
     with get_db_connection() as conn:
         existing = conn.execute(
-            "SELECT id FROM mail_config WHERE username = ? OR account_name = ?",
-            (config.get('username'), config.get('account_name'))
+            "SELECT account_id FROM uni_email_account WHERE email = ? OR account_name = ?",
+            (config.get('email'), config.get('account_name'))
         ).fetchone()
         if existing:
             raise ValueError("该邮箱账号已存在，不能重复添加")
@@ -71,53 +77,38 @@ def add_mail_account(config: Dict[str, Any]) -> int:
         except Exception:
             pass
 
+    account_id = get_next_account_id()
+
     with get_db_connection() as conn:
         # 如果是第一个账户，自动设为当前账户
-        count = conn.execute("SELECT COUNT(*) FROM mail_config").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM uni_email_account").fetchone()[0]
         is_current = 1 if count == 0 else 0
 
-        if is_postgresql():
-            # PostgreSQL 使用 RETURNING id
-            row = conn.execute("""
-                INSERT INTO mail_config (account_name, smtp_server, smtp_port, imap_server,
-                                         imap_port, username, password, use_tls, is_current)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING id
-            """, (
-                config.get('account_name', '新账户'),
-                config.get('smtp_server'),
-                config.get('smtp_port', 587),
-                config.get('imap_server'),
-                config.get('imap_port', 993),
-                config.get('username'),
-                password,
-                config.get('use_tls', 1),
-                is_current
-            )).fetchone()
-            conn.commit()
-            return row['id'] if isinstance(row, dict) else row[0]
-        else:
-            # SQLite 使用 lastrowid
-            cursor = conn.execute("""
-                INSERT INTO mail_config (account_name, smtp_server, smtp_port, imap_server,
-                                         imap_port, username, password, use_tls, is_current)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                config.get('account_name', '新账户'),
-                config.get('smtp_server'),
-                config.get('smtp_port', 587),
-                config.get('imap_server'),
-                config.get('imap_port', 993),
-                config.get('username'),
-                password,
-                config.get('use_tls', 1),
-                is_current
-            ))
-            conn.commit()
-            return cursor.lastrowid
+        conn.execute("""
+            INSERT INTO uni_email_account (
+                account_id, account_name, email, username, password,
+                smtp_server, smtp_port, imap_server, imap_port,
+                use_tls, is_current, is_primary, daily_limit
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1800)
+        """, (
+            account_id,
+            config.get('account_name', '新账户'),
+            config.get('email'),
+            config.get('username') or config.get('email'),
+            password,
+            config.get('smtp_server'),
+            config.get('smtp_port', 465),
+            config.get('imap_server'),
+            config.get('imap_port', 993),
+            config.get('use_tls', 1),
+            is_current,
+            is_current,
+        ))
+        conn.commit()
+        return account_id
 
 
-def update_mail_account(account_id: int, config: Dict[str, Any]) -> bool:
+def update_mail_account(account_id: str, config: Dict[str, Any]) -> bool:
     """更新邮件账户配置（加密密码）"""
     password = config.get('password', '')
     if password:
@@ -133,14 +124,16 @@ def update_mail_account(account_id: int, config: Dict[str, Any]) -> bool:
 
         field_mapping = {
             'account_name': config.get('account_name'),
+            'email': config.get('email'),
+            'username': config.get('username'),
             'smtp_server': config.get('smtp_server'),
             'smtp_port': config.get('smtp_port'),
             'imap_server': config.get('imap_server'),
             'imap_port': config.get('imap_port'),
-            'username': config.get('username'),
             'use_tls': config.get('use_tls'),
             'sync_batch_size': config.get('sync_batch_size'),
             'sync_pause_seconds': config.get('sync_pause_seconds'),
+            'daily_limit': config.get('daily_limit'),
         }
 
         for field, value in field_mapping.items():
@@ -156,43 +149,44 @@ def update_mail_account(account_id: int, config: Dict[str, Any]) -> bool:
         if not update_fields:
             return False
 
+        update_fields.append("updated_at = NOW()")
         params.append(account_id)
-        sql = f"UPDATE mail_config SET {', '.join(update_fields)} WHERE id = ?"
+        sql = f"UPDATE uni_email_account SET {', '.join(update_fields)} WHERE account_id = ?"
 
         conn.execute(sql, params)
         conn.commit()
         return True
 
 
-def switch_current_account(account_id: int) -> bool:
+def switch_current_account(account_id: str) -> bool:
     """切换当前邮件账户"""
     with get_db_connection() as conn:
         # 先取消所有账户的当前状态
-        conn.execute("UPDATE mail_config SET is_current = 0")
+        conn.execute("UPDATE uni_email_account SET is_current = 0")
         # 设置指定账户为当前账户
-        result = conn.execute("UPDATE mail_config SET is_current = 1 WHERE id = ?", (account_id,))
+        result = conn.execute("UPDATE uni_email_account SET is_current = 1 WHERE account_id = ?", (account_id,))
         conn.commit()
         return result.rowcount > 0
 
 
-def delete_mail_account(account_id: int) -> Dict[str, Any]:
+def delete_mail_account(account_id: str) -> Dict[str, Any]:
     """删除邮件账户"""
     with get_db_connection() as conn:
         # 检查是否是当前账户
-        row = conn.execute("SELECT is_current FROM mail_config WHERE id = ?", (account_id,)).fetchone()
+        row = conn.execute("SELECT is_current FROM uni_email_account WHERE account_id = ?", (account_id,)).fetchone()
         if not row:
             return {"success": False, "message": "账户不存在"}
 
-        was_current = row[0] == 1
+        was_current = row.get('is_current') == 1
 
         # 删除账户
-        conn.execute("DELETE FROM mail_config WHERE id = ?", (account_id,))
+        conn.execute("DELETE FROM uni_email_account WHERE account_id = ?", (account_id,))
 
         # 如果删除的是当前账户，自动选择下一个账户
         if was_current:
-            next_row = conn.execute("SELECT id FROM mail_config ORDER BY created_at DESC LIMIT 1").fetchone()
+            next_row = conn.execute("SELECT account_id FROM uni_email_account ORDER BY created_at DESC LIMIT 1").fetchone()
             if next_row:
-                conn.execute("UPDATE mail_config SET is_current = 1 WHERE id = ?", (next_row[0],))
+                conn.execute("UPDATE uni_email_account SET is_current = 1 WHERE account_id = ?", (next_row.get('account_id'),))
 
         conn.commit()
         return {"success": True, "message": "删除成功"}

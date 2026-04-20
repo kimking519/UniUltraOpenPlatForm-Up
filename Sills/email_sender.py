@@ -143,6 +143,16 @@ class EmailSenderWorker:
             total = len(self.contacts)
             mode_str = "[重试模式]" if self.retry_mode else ""
 
+            # 获取已发送成功的联系人列表（用于跳过）
+            from Sills.db_email_log import get_sent_emails_for_task
+            sent_emails = get_sent_emails_for_task(self.task_id)
+            sent_email_set = set(e.lower() for e in sent_emails)
+
+            # 获取任务当前的进度计数
+            task = get_task_by_id(self.task_id)
+            base_sent = task.get('sent_count', 0) or 0
+            base_failed = task.get('failed_count', 0) or 0
+
             for idx, contact in enumerate(self.contacts):
                 # 检查取消请求
                 if is_cancel_requested(self.task_id):
@@ -165,8 +175,7 @@ class EmailSenderWorker:
                     # 达到日限,等待到第二天
                     print(f"[Worker] 达到日限,等待到第二天继续")
                     # 保存当前进度并暂停
-                    update_task_progress(self.task_id, sent_count, failed_count)
-                    # 这里需要更复杂的跨日逻辑,简化处理:标记为paused
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count)
                     error_task(self.task_id, "达到日发送限制,等待第二天继续")
                     server.quit()
                     return
@@ -176,6 +185,11 @@ class EmailSenderWorker:
                 company_name = contact.get('company', '')
 
                 if not email:
+                    continue
+
+                # 跳过已发送成功的联系人
+                if email.lower() in sent_email_set:
+                    print(f"[Worker] {mode_str} 跳过已发送: {email}")
                     continue
 
                 try:
@@ -189,13 +203,14 @@ class EmailSenderWorker:
                     sent_count += 1
                     increment_sent_count(self.task['account_id'])
 
-                    # 更新进度
-                    update_task_progress(self.task_id, sent_count, failed_count)
+                    # 更新进度（累加原有进度）
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count)
 
-                    print(f"[Worker] {mode_str} 已发送 {sent_count}/{total} 到 {email}")
+                    print(f"[Worker] {mode_str} 已发送 {base_sent + sent_count}/{total} 到 {email}")
 
-                    # 发送间隔(避免过快)
-                    time.sleep(2)
+                    # 发送间隔(使用任务配置的间隔，避免过快)
+                    send_interval = self.task.get('send_interval', 2) or 2
+                    time.sleep(send_interval)
 
                 except Exception as e:
                     error_msg = str(e)
@@ -206,7 +221,7 @@ class EmailSenderWorker:
                     else:
                         add_log(self.task_id, contact_id, email, company_name, 'failed', error_msg)
                     failed_count += 1
-                    update_task_progress(self.task_id, sent_count, failed_count)
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count)
                     print(f"[Worker] {mode_str} 发送失败 {email}: {error_msg}")
                     # 继续发送下一个
 
@@ -215,7 +230,7 @@ class EmailSenderWorker:
 
             # 完成任务
             if not self.stop_flag:
-                complete_task(self.task_id, failed_count)
+                complete_task(self.task_id, base_failed + failed_count)
 
             # 发送报告邮件
             self.send_report_email(sent_count, failed_count)

@@ -6,7 +6,7 @@ import sqlite3
 import json
 from datetime import datetime
 from Sills.base import get_db_connection
-from Sills.db_contact_group import get_all_groups_contacts
+from Sills.db_contact_group import get_all_groups_contacts, get_all_groups_contacts_all_types
 from Sills.db_config import get_datetime_now
 
 
@@ -35,7 +35,7 @@ def get_task_list(page=1, page_size=20, status_filter="", search_kw=""):
     where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
     query = f"""
-    SELECT t.*, a.email as account_email
+    SELECT t.*, a.email as account_email, a.account_name as account_name
     FROM uni_email_task t
     LEFT JOIN uni_email_account a ON t.account_id = a.account_id
     {where_sql}
@@ -93,7 +93,7 @@ def has_running_task():
 
 
 def create_task(task_name, account_id, group_ids, subject, body,
-                placeholders=None, schedule_start=None, schedule_end=None):
+                placeholders=None, schedule_start=None, schedule_end=None, send_interval=2):
     """创建邮件任务
 
     Args:
@@ -105,6 +105,7 @@ def create_task(task_name, account_id, group_ids, subject, body,
         placeholders: dict 占位符配置
         schedule_start: 发送开始时间 HH:MM
         schedule_end: 发送结束时间 HH:MM
+        send_interval: 发送间隔（秒），默认2秒
 
     Returns:
         (success, message_or_task_id) tuple
@@ -125,8 +126,8 @@ def create_task(task_name, account_id, group_ids, subject, body,
         if not body or not body.strip():
             return False, "邮件内容不能为空"
 
-        # 合并组联系人并去重
-        contacts = get_all_groups_contacts(group_ids)
+        # 合并组联系人并去重（支持动态组和静态组）
+        contacts = get_all_groups_contacts_all_types(group_ids)
         if not contacts:
             return False, "所选组中没有联系人"
 
@@ -139,13 +140,13 @@ def create_task(task_name, account_id, group_ids, subject, body,
                 INSERT INTO uni_email_task (
                     task_id, task_name, account_id, group_ids,
                     subject, body, placeholders,
-                    schedule_start, schedule_end,
+                    schedule_start, schedule_end, send_interval,
                     status, total_count, sent_count, failed_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0)
             """, (
                 task_id, task_name.strip(), account_id, group_ids_json,
                 subject.strip(), body.strip(), placeholders_json,
-                schedule_start, schedule_end,
+                schedule_start, schedule_end, send_interval,
                 len(contacts)
             ))
             conn.commit()
@@ -156,14 +157,15 @@ def create_task(task_name, account_id, group_ids, subject, body,
 
 
 def start_task(task_id):
-    """启动任务(状态改为running)"""
+    """启动任务(状态改为running，支持pending/paused/error状态)"""
     try:
         dt_now = get_datetime_now()
         with get_db_connection() as conn:
+            # 支持从待执行、已暂停、执行错误状态继续执行
             conn.execute(f"""
                 UPDATE uni_email_task
-                SET status = 'running', started_at = {dt_now}
-                WHERE task_id = ? AND status = 'pending'
+                SET status = 'running', started_at = {dt_now}, cancel_requested = 0, error_message = ''
+                WHERE task_id = ? AND status IN ('pending', 'paused', 'error')
             """, (task_id,))
             conn.commit()
             return True, "任务已启动"
@@ -201,16 +203,17 @@ def update_task_progress(task_id, sent_count=None, failed_count=None):
 
 
 def cancel_task(task_id):
-    """请求取消任务"""
+    """请求取消任务并设置为暂停状态"""
     try:
         with get_db_connection() as conn:
+            # 设置取消请求标志，同时将状态改为 paused
             conn.execute("""
                 UPDATE uni_email_task
-                SET cancel_requested = 1
+                SET cancel_requested = 1, status = 'paused'
                 WHERE task_id = ? AND status = 'running'
             """, (task_id,))
             conn.commit()
-            return True, "取消请求已发送"
+            return True, "任务已暂停"
     except Exception as e:
         return False, str(e)
 
@@ -279,4 +282,187 @@ def get_task_contacts(task_id):
         return []
 
     group_ids = json.loads(task.get('group_ids', '[]') or '[]')
-    return get_all_groups_contacts(group_ids)
+    return get_all_groups_contacts_all_types(group_ids)
+
+
+def get_task_failed_contacts(task_id):
+    """获取任务发送失败的联系人列表（用于重试）
+
+    Returns:
+        list 失败联系人列表 [{"contact_id", "email", "company", ...}, ...]
+    """
+    from Sills.db_email_log import get_failed_logs
+
+    failed_logs = get_failed_logs(task_id)
+    if not failed_logs:
+        return []
+
+    results = []
+    for log in failed_logs:
+        contact_id = log.get('contact_id', '')
+        email = log.get('email', '')
+        company = log.get('company_name', '')
+
+        # 尝试从contact表获取更多信息
+        from Sills.db_contact import get_contact_by_id
+        contact = get_contact_by_id(contact_id) if contact_id else None
+
+        results.append({
+            'contact_id': contact_id,
+            'email': email,
+            'company': company or (contact.get('company', '') if contact else ''),
+            'contact_name': contact.get('contact_name', '') if contact else '',
+            'country': contact.get('country', '') if contact else '',
+            'domain': contact.get('domain', '') if contact else '',
+            'position': contact.get('position', '') if contact else '',
+            'phone': contact.get('phone', '') if contact else '',
+            'is_bounced': contact.get('is_bounced', 0) if contact else 0,
+            'send_count': contact.get('send_count', 0) if contact else 0,
+            'error_message': log.get('error_message', '')
+        })
+
+    return results
+
+
+def retry_failed_task(task_id):
+    """重试任务中发送失败的联系人
+
+    Args:
+        task_id: 任务ID
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        task = get_task_by_id(task_id)
+        if not task:
+            return False, "任务不存在"
+
+        status = task.get('status', '')
+        if status not in ['completed', 'error']:
+            return False, "只有已完成或出错的任务可以重试"
+
+        failed_contacts = get_task_failed_contacts(task_id)
+        if not failed_contacts:
+            return False, "没有发送失败的联系人"
+
+        # 更新任务状态为 retrying
+        with get_db_connection() as conn:
+            conn.execute("""
+                UPDATE uni_email_task
+                SET status = 'retrying', error_message = ''
+                WHERE task_id = ?
+            """, (task_id,))
+            conn.commit()
+
+        return True, f"任务已设置为重试模式，将重新发送 {len(failed_contacts)} 个失败邮件"
+    except Exception as e:
+        return False, str(e)
+
+
+def get_task_full_stats(task_id):
+    """获取任务完整统计信息
+
+    Returns:
+        dict {
+            total_count: 总联系人数,
+            sent_count: 已发送数,
+            success_count: 成功数,
+            failed_count: 失败数,
+            pending_count: 待发送数,
+            retry_count: 重试次数
+        }
+    """
+    from Sills.db_email_log import get_sent_count, get_failed_count, get_task_stats
+
+    task = get_task_by_id(task_id)
+    if not task:
+        return None
+
+    total_count = task.get('total_count', 0) or 0
+    sent_count = task.get('sent_count', 0) or 0
+    failed_count = task.get('failed_count', 0) or 0
+
+    # 从日志表获取准确的成功/失败数
+    log_stats = get_task_stats(task_id)
+    success_count = log_stats.get('sent', 0)
+    actual_failed_count = log_stats.get('failed', 0)
+
+    # 计算待发送数
+    pending_count = total_count - sent_count - failed_count
+
+    # 获取重试次数（任务状态变为retrying的次数）
+    with get_db_connection() as conn:
+        # 通过日志表查询重试记录
+        retry_count = conn.execute("""
+            SELECT COUNT(*) FROM uni_email_log
+            WHERE task_id = ? AND status = 'failed'
+        """, (task_id,)).fetchone()[0]
+
+    return {
+        'total_count': total_count,
+        'sent_count': sent_count,
+        'success_count': success_count,
+        'failed_count': actual_failed_count,
+        'pending_count': max(0, pending_count),
+        'retry_count': retry_count
+    }
+
+
+def delete_task(task_id):
+    """删除单个任务及其相关日志
+
+    Args:
+        task_id: 任务ID
+
+    Returns:
+        (success, message) tuple
+    """
+    with get_db_connection() as conn:
+        # 检查任务是否存在
+        task = conn.execute(
+            "SELECT task_id, status FROM uni_email_task WHERE task_id = ?",
+            (task_id,)
+        ).fetchone()
+
+        if not task:
+            return False, "任务不存在"
+
+        status = task.get('status') if isinstance(task, dict) else task[1]
+
+        # 正在运行的任务不能删除
+        if status == 'running':
+            return False, "正在执行的任务不能删除，请先停止任务"
+
+        # 删除相关日志
+        conn.execute("DELETE FROM uni_email_log WHERE task_id = ?", (task_id,))
+
+        # 删除任务
+        conn.execute("DELETE FROM uni_email_task WHERE task_id = ?", (task_id,))
+
+        conn.commit()
+        return True, "删除成功"
+
+
+def delete_tasks_batch(task_ids):
+    """批量删除任务
+
+    Args:
+        task_ids: list 任务ID列表
+
+    Returns:
+        (success_count, failed_list) tuple
+            success_count: 成功删除数量
+            failed_list: [{"task_id": xxx, "reason": xxx}, ...] 失败列表
+    """
+    success_count = 0
+    failed_list = []
+
+    for task_id in task_ids:
+        success, message = delete_task(task_id)
+        if success:
+            success_count += 1
+        else:
+            failed_list.append({"task_id": task_id, "reason": message})
+
+    return success_count, failed_list
