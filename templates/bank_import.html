@@ -1,0 +1,361 @@
+{% extends "layout.html" %}
+
+{% block title %}银行流水导入 - UniUltra 开放平台{% endblock %}
+
+{% block content %}
+<style>
+    .import-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        gap: 1rem;
+    }
+    .import-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+    .import-header .back-link {
+        color: var(--primary);
+        text-decoration: none;
+    }
+    .import-header .back-link:hover { text-decoration: underline; }
+
+    .upload-section {
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        padding: 2rem;
+        margin-bottom: 1rem;
+        border: var(--glass-border);
+    }
+    .upload-area {
+        border: 2px dashed var(--border);
+        border-radius: var(--radius);
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    .upload-area:hover { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
+    .upload-area.dragover { border-color: var(--primary); background: rgba(99, 102, 241, 0.1); }
+    .upload-icon {
+        width: 48px;
+        height: 48px;
+        color: var(--primary);
+        margin-bottom: 1rem;
+    }
+    .upload-text {
+        color: var(--text-main);
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    .upload-hint {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    .upload-input { display: none; }
+
+    .preview-section {
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        padding: 1rem;
+        border: var(--glass-border);
+        display: none;
+    }
+    .preview-section.show { display: block; }
+    .preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+    }
+    .preview-header h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-main);
+    }
+    .preview-stats {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    .preview-stats span { color: var(--primary); font-weight: 600; }
+
+    .preview-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+    .preview-table th {
+        background: var(--bg-glass);
+        color: var(--text-muted);
+        padding: 0.5rem;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+    }
+    .preview-table td {
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-main);
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .preview-table tr:hover td { background: rgba(99, 102, 241, 0.05); }
+    .preview-table .duplicate {
+        background: rgba(239, 68, 68, 0.1);
+        color: #EF4444;
+    }
+
+    .import-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        margin-top: 1rem;
+    }
+    .btn-cancel {
+        padding: 0.5rem 1.5rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-glass);
+        color: var(--text-main);
+        cursor: pointer;
+    }
+    .btn-import {
+        padding: 0.5rem 1.5rem;
+        border: none;
+        border-radius: var(--radius);
+        background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+        color: white;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    .btn-import:hover { transform: scale(1.02); }
+    .btn-import:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .result-section {
+        background: var(--card-bg);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        border: var(--glass-border);
+        display: none;
+    }
+    .result-section.show { display: block; }
+    .result-success {
+        color: #10B981;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    .result-success svg { width: 24px; height: 24px; }
+    .result-message { color: var(--text-muted); margin-top: 0.5rem; }
+    .result-errors {
+        margin-top: 1rem;
+        padding: 0.5rem;
+        background: rgba(239, 68, 68, 0.1);
+        border-radius: var(--radius);
+        color: #EF4444;
+    }
+    .result-errors li { margin: 0.3rem 0; }
+</style>
+
+<div class="import-header">
+    <a href="/bank" class="back-link">
+        <svg viewBox="0 0 20 20" fill="currentColor" style="width: 20px; height: 20px;"><path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
+        返回流水列表
+    </a>
+    <h1>银行流水导入</h1>
+</div>
+
+<!-- 上传区域 -->
+<div class="upload-section" id="uploadSection">
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <svg class="upload-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14a6 6 0 006 6h13a5 5 0 005-5c0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+        </svg>
+        <p class="upload-text">点击或拖拽 Excel 文件到此处</p>
+        <p class="upload-hint">支持 .xlsx, .xls 格式（银行流水单标准模板）</p>
+        <input type="file" id="fileInput" class="upload-input" accept=".xlsx,.xls" onchange="handleFileUpload(event)">
+    </div>
+    <div style="margin-top: 1rem; text-align: center;">
+        <a href="/api/bank/template" class="btn-import" style="display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.5rem 1rem;">
+            <svg viewBox="0 0 20 20" fill="currentColor" style="width: 18px; height: 18px;"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 11.586V3a1 1 0 012 0v8.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            下载导入模板
+        </a>
+        <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.5rem;">模板包含17个标准字段，请按模板格式填写数据</p>
+    </div>
+</div>
+
+<!-- 数据预览 -->
+<div class="preview-section" id="previewSection">
+    <div class="preview-header">
+        <h3>数据预览</h3>
+        <span class="preview-stats">共 <span id="totalCount">0</span> 条，重复 <span id="dupCount">0</span> 条</span>
+    </div>
+    <div style="max-height: 400px; overflow-y: auto;">
+        <table class="preview-table">
+            <thead>
+                <tr>
+                    <th>序号</th>
+                    <th>交易时间</th>
+                    <th>交易编号</th>
+                    <th>交易类型</th>
+                    <th>交易金额</th>
+                    <th>付款方</th>
+                    <th>收款方</th>
+                    <th>备注</th>
+                    <th>状态</th>
+                </tr>
+            </thead>
+            <tbody id="previewBody"></tbody>
+        </table>
+    </div>
+    <div class="import-actions">
+        <button class="btn-cancel" onclick="clearPreview()">取消</button>
+        <button class="btn-import" id="importBtn" onclick="doImport()">确认导入</button>
+    </div>
+</div>
+
+<!-- 导入结果 -->
+<div class="result-section" id="resultSection">
+    <div class="result-success">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        导入完成！
+    </div>
+    <p class="result-message" id="resultMessage"></p>
+    <ul class="result-errors" id="resultErrors" style="display: none;"></ul>
+    <div style="margin-top: 1rem;">
+        <a href="/bank" class="btn-import">返回流水列表</a>
+    </div>
+</div>
+
+<script>
+let parsedRows = [];
+let sourceFile = '';
+
+// 拖拽上传
+const uploadArea = document.getElementById('uploadArea');
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+});
+uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+});
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFile(files[0]);
+    }
+});
+
+function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (file) {
+        handleFile(file);
+    }
+}
+
+function handleFile(file) {
+    sourceFile = file.name;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/bank/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            parsedRows = data.rows;
+            showPreview(data.rows, data.count);
+        } else {
+            alert(data.message);
+        }
+    })
+    .catch(err => {
+        alert('文件解析失败: ' + err.message);
+    });
+}
+
+function showPreview(rows, count) {
+    document.getElementById('totalCount').textContent = count;
+
+    let html = '';
+    let dupCount = 0;
+
+    rows.forEach((row, idx) => {
+        const isDup = row.duplicate_flag === '是' || row.duplicate_flag === '重复';
+        if (isDup) dupCount++;
+
+        html += `<tr ${isDup ? 'class="duplicate"' : ''}>
+            <td>${idx + 1}</td>
+            <td>${row.transaction_time || '--'}</td>
+            <td>${row.transaction_no || '--'}</td>
+            <td>${row.transaction_type || '--'}</td>
+            <td>${row.transaction_amount ? row.transaction_amount.toFixed(2) : '--'}</td>
+            <td>${row.payer_name || '--'}</td>
+            <td>${row.payee_name || '--'}</td>
+            <td>${row.remark_text || '--'}</td>
+            <td>${isDup ? '重复' : '正常'}</td>
+        </tr>`;
+    });
+
+    document.getElementById('dupCount').textContent = dupCount;
+    document.getElementById('previewBody').innerHTML = html;
+    document.getElementById('previewSection').classList.add('show');
+    document.getElementById('uploadSection').style.display = 'none';
+
+    // 禁用导入按钮如果没有数据
+    document.getElementById('importBtn').disabled = count === 0;
+}
+
+function clearPreview() {
+    parsedRows = [];
+    document.getElementById('previewSection').classList.remove('show');
+    document.getElementById('uploadSection').style.display = 'block';
+    document.getElementById('fileInput').value = '';
+}
+
+function doImport() {
+    if (parsedRows.length === 0) return;
+
+    document.getElementById('importBtn').disabled = true;
+    document.getElementById('importBtn').textContent = '导入中...';
+
+    fetch('/api/bank/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            rows: parsedRows.filter(r => r.duplicate_flag !== '是' && r.duplicate_flag !== '重复'),
+            source_file: sourceFile
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('previewSection').classList.remove('show');
+        document.getElementById('resultSection').classList.add('show');
+
+        document.getElementById('resultMessage').textContent =
+            `批次号: ${data.batch_id || '--'}，成功导入 ${data.success ? '成功' : '失败'} ${data.message}`;
+
+        if (data.errors && data.errors.length > 0) {
+            document.getElementById('resultErrors').style.display = 'block';
+            document.getElementById('resultErrors').innerHTML = data.errors.map(e => `<li>${e}</li>`).join('');
+        }
+    })
+    .catch(err => {
+        alert('导入失败: ' + err.message);
+        document.getElementById('importBtn').disabled = false;
+        document.getElementById('importBtn').textContent = '确认导入';
+    });
+}
+</script>
+{% endblock %}

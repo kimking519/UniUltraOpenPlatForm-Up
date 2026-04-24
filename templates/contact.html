@@ -448,6 +448,9 @@
                         <th>公司网站</th>
                         <th>域名</th>
                         <th>国家</th>
+                        <th>主要业务</th>
+                        <th>业务明细</th>
+                        <th>价值分级</th>
                         <th>关联联系人</th>
                         <th>状态</th>
                         <th style="width: 120px;">操作</th>
@@ -660,8 +663,8 @@
             <div style="padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius);">
                 <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式二：粘贴文本导入</p>
                 <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
-                    格式要求与模板一致：<br>客户名称,公司网站,域名,国家,备注<br>
-                    (注: 域名必填，域名相同的记录会被跳过)
+                    格式要求与模板一致：<br>客户名称,公司网站,域名,国家,主要业务,业务明细,价值分级,备注<br>
+                    (注: 客户名称和域名必填，域名相同的记录会被跳过)
                 </p>
                 <textarea id="prospectImportText" rows="8" placeholder="粘贴数据到此处..." style="width: 100%; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem; margin-bottom: 1rem; font-family: monospace; background: var(--bg-main); color: var(--text-main);"></textarea>
                 <div style="display: flex; justify-content: flex-end; gap: 1rem;">
@@ -704,16 +707,35 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
+                        <label>主要业务</label>
+                        <input type="text" id="edit_prospect_business_type">
+                    </div>
+                    <div class="form-group">
+                        <label>业务明细</label>
+                        <input type="text" id="edit_prospect_business_detail">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>价值分级</label>
+                        <select id="edit_prospect_value_level">
+                            <option value="0">未分级</option>
+                            <option value="1">1级（最高）</option>
+                            <option value="2">2级</option>
+                            <option value="3">3级</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>状态</label>
                         <select id="edit_prospect_status">
                             <option value="pending">待转化</option>
                             <option value="converted">已转化</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>备注</label>
-                        <input type="text" id="edit_prospect_remark">
-                    </div>
+                </div>
+                <div class="form-group">
+                    <label>备注</label>
+                    <input type="text" id="edit_prospect_remark">
                 </div>
             </form>
         </div>
@@ -1340,6 +1362,42 @@
         tdCountry.ondblclick = () => ProspectManager.inlineEdit(item.prospect_id, 'country', item.country);
         tr.appendChild(tdCountry);
 
+        // 主要业务 - 支持双击编辑
+        const tdBusinessType = document.createElement('td');
+        tdBusinessType.textContent = item.business_type || '-';
+        tdBusinessType.style.cursor = 'pointer';
+        tdBusinessType.title = '双击编辑';
+        tdBusinessType.ondblclick = () => ProspectManager.inlineEdit(item.prospect_id, 'business_type', item.business_type);
+        tr.appendChild(tdBusinessType);
+
+        // 业务明细 - 支持双击编辑
+        const tdBusinessDetail = document.createElement('td');
+        tdBusinessDetail.textContent = item.business_detail || '-';
+        tdBusinessDetail.style.cursor = 'pointer';
+        tdBusinessDetail.title = '双击编辑';
+        tdBusinessDetail.ondblclick = () => ProspectManager.inlineEdit(item.prospect_id, 'business_detail', item.business_detail);
+        tr.appendChild(tdBusinessDetail);
+
+        // 价值分级
+        const tdValueLevel = document.createElement('td');
+        const valueLevel = item.value_level || 0;
+        if (valueLevel > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'status-badge';
+            if (valueLevel === 1) {
+                badge.style.cssText = 'background: rgba(239, 68, 68, 0.1); color: #EF4444;';
+            } else if (valueLevel === 2) {
+                badge.style.cssText = 'background: rgba(245, 158, 11, 0.1); color: #F59E0B;';
+            } else {
+                badge.style.cssText = 'background: rgba(99, 102, 241, 0.1); color: #6366F1;';
+            }
+            badge.textContent = valueLevel + '级';
+            tdValueLevel.appendChild(badge);
+        } else {
+            tdValueLevel.textContent = '-';
+        }
+        tr.appendChild(tdValueLevel);
+
         const tdContactCount = document.createElement('td');
         tdContactCount.textContent = item.contact_count || 0;
         tr.appendChild(tdContactCount);
@@ -1623,6 +1681,9 @@
                 document.getElementById('edit_prospect_domain').value = data.domain || '';
                 document.getElementById('edit_prospect_website').value = data.company_website || '';
                 document.getElementById('edit_prospect_country').value = data.country || '';
+                document.getElementById('edit_prospect_business_type').value = data.business_type || '';
+                document.getElementById('edit_prospect_business_detail').value = data.business_detail || '';
+                document.getElementById('edit_prospect_value_level').value = data.value_level || 0;
                 document.getElementById('edit_prospect_status').value = data.status || 'pending';
                 document.getElementById('edit_prospect_remark').value = data.remark || '';
                 toggleModal('prospectEditModal');
@@ -1650,6 +1711,9 @@
                         domain: domain,
                         company_website: document.getElementById('edit_prospect_website').value.trim(),
                         country: document.getElementById('edit_prospect_country').value.trim(),
+                        business_type: document.getElementById('edit_prospect_business_type').value.trim(),
+                        business_detail: document.getElementById('edit_prospect_business_detail').value.trim(),
+                        value_level: parseInt(document.getElementById('edit_prospect_value_level').value) || 0,
                         status: document.getElementById('edit_prospect_status').value,
                         remark: document.getElementById('edit_prospect_remark').value.trim()
                     })
@@ -1834,7 +1898,10 @@
                     company_website: parts[1] || '',
                     domain: parts[2] || '',
                     country: parts[3] || '',
-                    remark: parts[4] || ''
+                    business_type: parts[4] || '',
+                    business_detail: parts[5] || '',
+                    value_level: parts[6] || 0,
+                    remark: parts[7] || ''
                 };
             });
 

@@ -169,6 +169,7 @@ def add_contact(data):
 
         # 尝试通过域名匹配客户
         cli_id = data.get('cli_id')
+        company = data.get('company', '')
         if not cli_id and domain:
             with get_db_connection() as conn:
                 matched_cli = conn.execute(
@@ -177,6 +178,15 @@ def add_contact(data):
                 ).fetchone()
                 if matched_cli:
                     cli_id = matched_cli[0]
+
+                # 如果公司为空，尝试从 prospect 获取
+                if not company and domain:
+                    matched_prospect = conn.execute(
+                        "SELECT prospect_name FROM uni_prospect WHERE domain = ? AND status = 'pending'",
+                        (domain,)
+                    ).fetchone()
+                    if matched_prospect:
+                        company = matched_prospect[0]
 
         with get_db_connection() as conn:
             conn.execute("""
@@ -191,7 +201,7 @@ def add_contact(data):
                 data.get('country', ''),
                 data.get('position', ''),
                 data.get('phone', ''),
-                data.get('company', ''),
+                company,  # 使用处理后的 company（可能从 prospect 填充）
                 0, 0, 0,  # is_bounced, is_read, is_deleted
                 0, 0, 0,  # send_count, bounce_count, read_count
                 data.get('remark', '')
@@ -297,6 +307,7 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
 
                 # 尝试匹配客户
                 cli_id = None
+                company = contact.get('company', '')
                 if domain:
                     matched_cli = conn.execute(
                         "SELECT cli_id, cli_name FROM uni_cli WHERE domain = ?",
@@ -323,6 +334,15 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
                         else:
                             errors.append(f"{domain}: 创建客户失败 - {msg}")
 
+                    # 如果公司为空，尝试从 prospect 获取
+                    if not company and domain:
+                        matched_prospect = conn.execute(
+                            "SELECT prospect_name FROM uni_prospect WHERE domain = ? AND status = 'pending'",
+                            (domain,)
+                        ).fetchone()
+                        if matched_prospect:
+                            company = matched_prospect[0]
+
                 conn.execute("""
                     INSERT INTO uni_contact (
                         contact_id, cli_id, email, domain, contact_name, country,
@@ -334,7 +354,7 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
                     contact.get('country', ''),
                     contact.get('position', ''),
                     contact.get('phone', ''),
-                    contact.get('company', ''),
+                    company,  # 使用处理后的 company（可能从 prospect 填充）
                     contact.get('remark', '')
                 ))
                 # with语句结束时自动commit

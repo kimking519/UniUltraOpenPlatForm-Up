@@ -76,9 +76,23 @@
         <h3>创建邮件任务</h3>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <input type="text" id="taskName" placeholder="任务名称" style="width: 180px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <select id="taskAccount" style="width: 200px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <option value="">选择发件人账号</option>
-            </select>
+        </div>
+        <!-- 发件人账号多选（支持轮换） -->
+        <div style="margin-top: 10px;">
+            <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">选择发件人账号（可多选，按顺序轮换）：</span>
+            <div style="display: flex; gap: 15px; margin-top: 8px;">
+                <!-- 可选账号列表 -->
+                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">可选账号（点击添加）</div>
+                    <div id="availableAccountsList"></div>
+                </div>
+                <!-- 已选账号列表（按优先顺序） -->
+                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">已选账号（点击移除）<br><span style="color: #F59E0B;">※ 按顺序轮换，满限制自动切换</span></div>
+                    <div id="selectedAccountsList"></div>
+                </div>
+            </div>
+            <div id="selectedAccountsStats" style="font-size: 13px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何发件账号</div>
         </div>
         <!-- 联系人组选择器（点击添加/删除） -->
         <div style="margin-top: 10px;">
@@ -97,6 +111,16 @@
             </div>
             <div id="selectedGroupsStats" style="font-size: 13px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何组</div>
         </div>
+        <!-- 邮件模板选择 -->
+        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+            <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">邮件模板：</span>
+            <select id="templateSelect" style="width: 200px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <option value="">选择模板...</option>
+            </select>
+            <button class="btn btn-sm" onclick="loadTemplate()">使用模板</button>
+            <button class="btn btn-sm" onclick="showSaveTemplateModal()">保存为模板</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadTemplates()">刷新模板</button>
+        </div>
         <div style="margin-top: 10px;">
             <input type="text" id="taskSubject" placeholder="邮件主题（支持{公司名}占位符）" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
         </div>
@@ -108,6 +132,19 @@
             <span style="font-size: 12px; color: var(--text-muted);">发送间隔:</span>
             <input type="number" id="taskSendInterval" value="2" min="1" max="60" style="width: 60px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
             <span style="font-size: 12px; color: var(--text-muted);">秒</span>
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-main);">
+                <input type="checkbox" id="taskSkipEnabled" checked style="width: 16px; height: 16px;">
+                <span style="font-size: 12px; color: var(--text-muted);">跳过规则：</span>
+            </label>
+            <input type="number" id="taskSkipDays" value="7" min="1" max="365" style="width: 60px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+            <span style="font-size: 12px; color: var(--text-muted);">天内已发送的邮箱自动跳过</span>
+        </div>
+        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+            <span style="font-size: 12px; color: var(--text-muted);">单账号日上限:</span>
+            <input type="number" id="taskDailyLimit" value="1800" min="100" max="5000" style="width: 80px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+            <span style="font-size: 12px; color: var(--text-muted);">封（满限制自动切换下一账号）</span>
         </div>
         <div id="taskEditorContainer" style="border: 1px solid var(--border); border-radius: var(--radius); background: var(--card-bg); overflow: hidden; margin-top: 10px;">
             <div id="taskEditorToolbar" style="display: flex; gap: 5px; padding: 5px; background: var(--bg-main); border-bottom: 1px solid var(--border); flex-wrap: wrap;">
@@ -321,6 +358,22 @@
     </div>
 </div>
 
+<!-- 保存模板弹窗 -->
+<div id="saveTemplateModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 400px;">
+        <h3 style="margin: 0 0 15px 0;">保存为邮件模板</h3>
+        <div style="margin-bottom: 15px;">
+            <label style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">模板名称：</label>
+            <input type="text" id="templateName" placeholder="输入模板名称" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">将保存当前邮件主题和内容为模板</div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button class="btn" onclick="closeSaveTemplateModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveAsTemplate()">保存模板</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // Tab切换
     function switchTab(tab) {
@@ -346,23 +399,76 @@
 
     // 已选联系人组（用于任务创建）
     let selectedGroups = [];
+    // 已选发件账号（用于任务创建，支持多选轮换）
+    let selectedAccounts = [];
+    // 所有账号列表缓存
+    let allAccounts = [];
 
-    // 加载账户列表
+    // 加载账户列表（多选模式）
     async function loadAccounts() {
         try {
             const res = await fetch('/api/mail/accounts');
             const result = await res.json();
-            const data = result.accounts || [];
-            const select = document.getElementById('taskAccount');
-            select.innerHTML = '<option value="">选择发件人账号</option>';
-            data.forEach(acc => {
-                const displayName = acc.account_name || acc.email;
-                const accountId = acc.account_id;  // 使用 account_id 字段
-                select.innerHTML += '<option value="' + accountId + '">' + displayName + ' (' + acc.email + ')</option>';
-            });
+            allAccounts = result.accounts || [];
+            renderAccountSelector(allAccounts);
         } catch (e) {
             console.error('加载账户失败', e);
         }
+    }
+
+    // 渲染账号选择器（多选模式）
+    function renderAccountSelector(accounts) {
+        const availableContainer = document.getElementById('availableAccountsList');
+        const selectedContainer = document.getElementById('selectedAccountsList');
+
+        // 可选账号列表
+        availableContainer.innerHTML = '';
+        accounts.forEach(acc => {
+            if (!selectedAccounts.find(s => s.account_id === acc.account_id)) {
+                const displayName = acc.account_name || acc.email;
+                const div = document.createElement('div');
+                div.className = 'account-item';
+                div.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin: 3px 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;';
+                div.innerHTML = '<span style="font-size: 13px; color: var(--text-main);">' + displayName + '</span><span style="font-size: 11px; color: var(--text-muted);">' + acc.email + '</span>';
+                div.onclick = function() { addAccountToSelection(acc.account_id, displayName, acc.email); };
+                availableContainer.appendChild(div);
+            }
+        });
+
+        // 已选账号列表（按优先顺序）
+        selectedContainer.innerHTML = '';
+        if (selectedAccounts.length === 0) {
+            selectedContainer.innerHTML = '<div style="font-size: 12px; color: var(--text-muted); padding: 10px;">尚未选择任何账号</div>';
+        } else {
+            selectedAccounts.forEach((acc, idx) => {
+                const div = document.createElement('div');
+                div.className = 'account-item';
+                div.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; margin: 3px 0; background: #3B82F6; border: 1px solid #2563EB; border-radius: var(--radius); cursor: pointer;';
+                div.innerHTML = '<span style="font-size: 13px; color: white; font-weight: 500;">#' + (idx + 1) + ' ' + acc.display_name + '</span><span style="font-size: 11px; color: #93C5FD;">' + acc.email + ' ✕</span>';
+                div.onclick = function() { removeAccountFromSelection(acc.account_id); };
+                selectedContainer.appendChild(div);
+            });
+        }
+
+        // 更新统计
+        const statsEl = document.getElementById('selectedAccountsStats');
+        if (statsEl) {
+            statsEl.textContent = '已选 ' + selectedAccounts.length + ' 个账号（按顺序轮换发送）';
+        }
+    }
+
+    // 添加账号到已选列表
+    function addAccountToSelection(account_id, display_name, email) {
+        if (!selectedAccounts.find(s => s.account_id === account_id)) {
+            selectedAccounts.push({ account_id, display_name, email });
+            renderAccountSelector(allAccounts);
+        }
+    }
+
+    // 从已选列表移除账号
+    function removeAccountFromSelection(account_id) {
+        selectedAccounts = selectedAccounts.filter(s => s.account_id !== account_id);
+        renderAccountSelector(allAccounts);
     }
 
     // 加载联系人组（用于任务创建的选择器）
@@ -493,7 +599,9 @@
                 const statusColor = t.status === 'completed' ? '#22C55E' : t.status === 'running' ? '#3B82F6' : t.status === 'paused' ? '#EF4444' : t.status === 'error' ? '#DC2626' : '#F59E0B';
                 const sentCount = t.sent_count || 0;
                 const totalCount = t.total_count || 0;
-                const progressPercent = totalCount > 0 ? Math.round(sentCount / totalCount * 100) : 0;
+                const skippedCount = t.skipped_count || 0;
+                const processedCount = sentCount + skippedCount;  // 已处理数 = 发送成功 + 跳过
+                const progressPercent = totalCount > 0 ? Math.round(processedCount / totalCount * 100) : 0;
 
                 // 根据状态显示不同操作按钮
                 let actionButtons = '';
@@ -516,7 +624,8 @@
                         <div style="width: 80px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
                             <div style="width: ${progressPercent}%; height: 100%; background: ${statusColor}; border-radius: 4px;"></div>
                         </div>
-                        <span style="font-size: 12px; color: var(--text-muted);">${sentCount}/${totalCount} (${progressPercent}%)</span>
+                        <span style="font-size: 12px; color: var(--text-muted);">${processedCount}/${totalCount} (${progressPercent}%)</span>
+                        ${skippedCount > 0 ? `<span style="font-size: 12px; color: orange;">(跳过${skippedCount})</span>` : ''}
                     </div>`;
                 } else {
                     progressBar = `<span style="font-size: 12px; color: var(--text-muted);">${sentCount}/${totalCount}</span>`;
@@ -526,7 +635,7 @@
                     <td><input type="checkbox" class="task-checkbox" value="${t.task_id}" onchange="updateBatchDeleteBtn()"></td>
                     <td style="font-size: 12px; color: var(--text-muted);">${t.task_id}</td>
                     <td>${t.task_name}</td>
-                    <td>${t.account_name || t.account_id || '-'}</td>
+                    <td>${t.account_names || '-'}</td>
                     <td style="color: ${statusColor};">${statusText}</td>
                     <td>${progressBar}</td>
                     <td>${t.created_at || '-'}</td>
@@ -541,16 +650,19 @@
     // 创建任务
     async function createTask() {
         const name = document.getElementById('taskName').value;
-        const account = document.getElementById('taskAccount').value;
+        const account_ids = selectedAccounts.map(a => a.account_id);  // 从selectedAccounts获取（多账号）
         const group_ids = selectedGroups.map(g => g.group_id);  // 从selectedGroups获取
         const subject = document.getElementById('taskSubject').value;
         const body = document.getElementById('taskBody').innerHTML;
         const scheduleStart = document.getElementById('taskScheduleStart').value;
         const scheduleEnd = document.getElementById('taskScheduleEnd').value;
         const sendInterval = parseInt(document.getElementById('taskSendInterval').value) || 2;
+        const skipEnabled = document.getElementById('taskSkipEnabled').checked ? 1 : 0;
+        const skipDays = parseInt(document.getElementById('taskSkipDays').value) || 7;
+        const dailyLimitPerAccount = parseInt(document.getElementById('taskDailyLimit').value) || 1800;
 
-        if (!name || !account || group_ids.length === 0 || !subject || !body) {
-            alert('请填写完整任务信息并选择至少一个联系人组');
+        if (!name || account_ids.length === 0 || group_ids.length === 0 || !subject || !body) {
+            alert('请填写完整任务信息并选择至少一个发件账号和联系人组');
             return;
         }
 
@@ -560,20 +672,25 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     task_name: name,
-                    account_id: account,
+                    account_ids: account_ids,
                     group_ids: group_ids,
                     subject: subject,
                     body: body,
                     schedule_start: scheduleStart,
                     schedule_end: scheduleEnd,
-                    send_interval: sendInterval
+                    send_interval: sendInterval,
+                    skip_enabled: skipEnabled,
+                    skip_days: skipDays,
+                    daily_limit_per_account: dailyLimitPerAccount
                 })
             });
             const data = await res.json();
             if (data.success) {
                 alert('任务创建成功');
-                selectedGroups = [];  // 清空已选
+                selectedGroups = [];  // 清空已选组
+                selectedAccounts = [];  // 清空已选账号
                 loadGroupsForTask();
+                loadAccounts();
                 loadTaskHistory();
             } else {
                 alert('创建失败: ' + (data.message || '未知错误'));
@@ -755,24 +872,27 @@
 
         const sentCount = progress.sent_count || 0;
         const totalCount = progress.total_count || 0;
-        const progressPercent = totalCount > 0 ? Math.round(sentCount / totalCount * 100) : 0;
+        const skippedCount = progress.skipped_count || 0;
+        const processedCount = sentCount + skippedCount;  // 已处理数 = 发送成功 + 跳过
+        const progressPercent = totalCount > 0 ? Math.round(processedCount / totalCount * 100) : 0;
 
-        // 更新状态列
-        const statusCell = row.querySelector('td:nth-child(4)');
+        // 更新状态列（第5列：checkbox、任务ID、任务名称、发件人、状态）
+        const statusCell = row.querySelector('td:nth-child(5)');
         if (statusCell) {
             statusCell.style.color = statusColor;
             statusCell.textContent = statusText;
         }
 
-        // 更新进度列
-        const progressCell = row.querySelector('td:nth-child(5)');
+        // 更新进度列（第6列）
+        const progressCell = row.querySelector('td:nth-child(6)');
         if (progressCell) {
             if (progress.status === 'running' || progress.status === 'completed') {
                 progressCell.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;">
                     <div style="width: 80px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
                         <div style="width: ${progressPercent}%; height: 100%; background: ${statusColor}; border-radius: 4px;"></div>
                     </div>
-                    <span style="font-size: 12px; color: var(--text-muted);">${sentCount}/${totalCount} (${progressPercent}%)</span>
+                    <span style="font-size: 12px; color: var(--text-muted);">${processedCount}/${totalCount} (${progressPercent}%)</span>
+                    ${skippedCount > 0 ? `<span style="font-size: 12px; color: orange;">(跳过${skippedCount})</span>` : ''}
                 </div>`;
             } else {
                 progressCell.innerHTML = `<span style="font-size: 12px; color: var(--text-muted);">${sentCount}/${totalCount}</span>`;
@@ -1027,6 +1147,7 @@
         await loadAccounts();
         await loadGroupsForTask();
         await loadGroups();
+        await loadTemplates();
 
         // 检查是否有运行中的任务并启动轮询
         try {
@@ -1235,6 +1356,100 @@
             }
         } catch (e) {
             alert('重试失败: ' + e.message);
+        }
+    }
+
+    // ==================== 邮件模板功能 ====================
+
+    // 加载模板列表
+    async function loadTemplates() {
+        try {
+            const res = await fetch('/api/template/list');
+            const data = await res.json();
+            const templates = data.templates || [];
+            const select = document.getElementById('templateSelect');
+            select.innerHTML = '<option value="">选择模板...</option>';
+            templates.forEach(t => {
+                select.innerHTML += `<option value="${t.template_id}">${t.template_name}</option>`;
+            });
+        } catch (e) {
+            console.error('加载模板失败', e);
+        }
+    }
+
+    // 使用选中的模板
+    async function loadTemplate() {
+        const templateId = document.getElementById('templateSelect').value;
+        if (!templateId) {
+            alert('请先选择一个模板');
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/template/${templateId}`);
+            const data = await res.json();
+            if (data.success && data.template) {
+                document.getElementById('taskSubject').value = data.template.subject || '';
+                document.getElementById('taskBody').innerHTML = data.template.body || '';
+                alert('模板已加载');
+            } else {
+                alert('加载失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('加载失败: ' + e.message);
+        }
+    }
+
+    // 显示保存模板弹窗
+    function showSaveTemplateModal() {
+        const subject = document.getElementById('taskSubject').value;
+        const body = document.getElementById('taskBody').innerHTML;
+
+        if (!subject && !body) {
+            alert('请先填写邮件主题和内容');
+            return;
+        }
+
+        document.getElementById('templateName').value = '';
+        document.getElementById('saveTemplateModal').style.display = 'flex';
+    }
+
+    // 关闭保存模板弹窗
+    function closeSaveTemplateModal() {
+        document.getElementById('saveTemplateModal').style.display = 'none';
+    }
+
+    // 保存为模板
+    async function saveAsTemplate() {
+        const templateName = document.getElementById('templateName').value;
+        const subject = document.getElementById('taskSubject').value;
+        const body = document.getElementById('taskBody').innerHTML;
+
+        if (!templateName) {
+            alert('请输入模板名称');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/template/add', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    template_name: templateName,
+                    subject: subject,
+                    body: body
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('模板保存成功');
+                closeSaveTemplateModal();
+                loadTemplates();
+            } else {
+                alert('保存失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('保存失败: ' + e.message);
         }
     }
 

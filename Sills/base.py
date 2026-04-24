@@ -383,11 +383,11 @@ def get_cached_rate(currency_code):
 
 
 def get_exchange_rates():
-    """获取最新汇率，使用缓存"""
+    """获取最新汇率，使用缓存（返回KRW, USD, JPY）"""
     try:
-        return get_cached_rate(2), get_cached_rate(1)
+        return get_cached_rate(2), get_cached_rate(1), get_cached_rate(3)
     except:
-        return 180.0, 7.0
+        return 180.0, 7.0, 20.0  # 默认值：KRW=180, USD=7, JPY=20
 
 
 def clear_cache():
@@ -647,6 +647,7 @@ def _init_db_sqlite():
         offer_price_rmb REAL,
         price_kwr REAL,
         price_usd REAL,
+        price_jpy REAL,                          -- 日元报价
         platform TEXT,
         vendor_id TEXT,
         date_code TEXT,
@@ -715,6 +716,7 @@ def _init_db_sqlite():
         customer_order_no TEXT UNIQUE NOT NULL,
         order_date TEXT NOT NULL,
         cli_id TEXT NOT NULL,
+        transaction_code TEXT,                     -- 交易编码（用于关联银行流水）
         total_cost_rmb REAL DEFAULT 0,
         total_price_rmb REAL DEFAULT 0,
         total_price_kwr REAL DEFAULT 0,
@@ -988,23 +990,29 @@ def _init_db_sqlite():
     CREATE TABLE IF NOT EXISTS uni_email_task (
         task_id TEXT PRIMARY KEY,            -- ET+时间戳格式
         task_name TEXT NOT NULL,             -- 任务名称
-        account_id TEXT NOT NULL,            -- 关联发件人账号
+        account_ids TEXT NOT NULL,           -- JSON数组: 发件人账号IDs（支持多账号轮换）
         group_ids TEXT NOT NULL,             -- JSON数组: 关联的组IDs
         subject TEXT NOT NULL,               -- 邮件主题
         body TEXT NOT NULL,                  -- HTML邮件内容(含签名)
         placeholders TEXT,                   -- JSON: 占位符配置
         schedule_start TEXT,                 -- 发送开始时间 HH:MM
         schedule_end TEXT,                   -- 发送结束时间 HH:MM
+        send_interval INTEGER DEFAULT 2,     -- 发送间隔(秒)
+        daily_limit_per_account INTEGER DEFAULT 1800, -- 单账号日发送上限
+        skip_enabled INTEGER DEFAULT 1,      -- 是否启用跳过规则(默认开启)
+        skip_days INTEGER DEFAULT 7,         -- 成功发送后跳过天数
+        current_account_index INTEGER DEFAULT 0, -- 当前使用的账号索引
         status TEXT DEFAULT 'pending',       -- pending, running, paused, completed, cancelled, error
         total_count INTEGER DEFAULT 0,       -- 总收件人数
         sent_count INTEGER DEFAULT 0,        -- 已发送数
         failed_count INTEGER DEFAULT 0,      -- 失败数
+        skipped_count INTEGER DEFAULT 0,     -- 因时间限制跳过数
         started_at DATETIME,                 -- 开始时间
         completed_at DATETIME,               -- 完成时间
         cancel_requested INTEGER DEFAULT 0,  -- 取消请求标志
         error_message TEXT,                  -- 错误信息
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
-        FOREIGN KEY (account_id) REFERENCES uni_email_account(account_id) ON DELETE CASCADE
+        CHECK(skip_enabled IN (0,1))
     );
 
     -- 邮件发送日志表
@@ -1043,6 +1051,9 @@ def _init_db_sqlite():
         company_website TEXT,              -- 公司网站
         domain TEXT NOT NULL UNIQUE,       -- 域名（关联键）
         country TEXT,                      -- 国家
+        business_type TEXT,                -- 主要业务
+        business_detail TEXT,              -- 业务明细
+        value_level INTEGER DEFAULT 0,     -- 价值分级(1-3, 1最高, 0未分级)
         cli_id TEXT,                       -- 转化后的客户ID（外键）
         status TEXT DEFAULT 'pending',     -- 状态：pending/converted/archived
         contact_count INTEGER DEFAULT 0,   -- 关联联系人数
@@ -1057,6 +1068,82 @@ def _init_db_sqlite():
     CREATE INDEX IF NOT EXISTS idx_prospect_cli ON uni_prospect(cli_id);
     CREATE INDEX IF NOT EXISTS idx_prospect_status ON uni_prospect(status);
     CREATE INDEX IF NOT EXISTS idx_prospect_public ON uni_prospect(is_public_domain);
+
+    -- ============ 银行流水管理表（财务管理模块） ============
+
+    -- 银行流水主表
+    CREATE TABLE IF NOT EXISTS uni_bank_transaction (
+        transaction_id TEXT PRIMARY KEY,
+        transaction_time TEXT NOT NULL,
+        transaction_no TEXT NOT NULL,
+        ledger_no TEXT,
+        transaction_type TEXT NOT NULL,
+        transaction_detail TEXT,
+        currency TEXT DEFAULT 'CNY',
+        transaction_amount REAL NOT NULL CHECK(transaction_amount > 0),
+        balance REAL,
+        payer_name TEXT,
+        payer_bank TEXT,
+        payer_account TEXT,
+        payee_name TEXT,
+        payee_bank TEXT,
+        payee_account TEXT,
+        payee_remark_name TEXT,
+        remark_text TEXT,
+        internal_remark TEXT,
+        source_file TEXT,
+        import_batch TEXT NOT NULL,
+        is_matched INTEGER DEFAULT 0 CHECK(is_matched IN (0,1,2)),
+        matched_amount REAL DEFAULT 0,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        UNIQUE(transaction_no, ledger_no)
+    );
+
+    -- 银行流水索引
+    CREATE INDEX IF NOT EXISTS idx_bt_time ON uni_bank_transaction(transaction_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_bt_no ON uni_bank_transaction(transaction_no);
+    CREATE INDEX IF NOT EXISTS idx_bt_matched ON uni_bank_transaction(is_matched);
+    CREATE INDEX IF NOT EXISTS idx_bt_payer ON uni_bank_transaction(payer_name);
+    CREATE INDEX IF NOT EXISTS idx_bt_payee ON uni_bank_transaction(payee_name);
+    CREATE INDEX IF NOT EXISTS idx_bt_batch ON uni_bank_transaction(import_batch);
+    CREATE INDEX IF NOT EXISTS idx_bt_amount ON uni_bank_transaction(transaction_amount);
+
+    -- 台账关联表（流水与订单关联）
+    CREATE TABLE IF NOT EXISTS uni_bank_ledger (
+        ledger_id TEXT PRIMARY KEY,
+        transaction_id TEXT NOT NULL,
+        manager_id TEXT NOT NULL,
+        allocation_amount REAL NOT NULL CHECK(allocation_amount > 0),
+        is_primary INTEGER DEFAULT 0 CHECK(is_primary IN (0,1)),
+        match_type TEXT DEFAULT 'manual' CHECK(match_type IN ('manual', 'auto', 'partial')),
+        remark TEXT,
+        created_by TEXT,
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (transaction_id) REFERENCES uni_bank_transaction(transaction_id) ON DELETE CASCADE,
+        FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES uni_emp(emp_id) ON DELETE SET NULL,
+        UNIQUE(transaction_id, manager_id)
+    );
+
+    -- 台账关联表索引
+    CREATE INDEX IF NOT EXISTS idx_bl_tx ON uni_bank_ledger(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_bl_manager ON uni_bank_ledger(manager_id);
+    CREATE INDEX IF NOT EXISTS idx_bl_date ON uni_bank_ledger(created_at DESC);
+
+    -- 邮件模板表 (开发信模板管理)
+    CREATE TABLE IF NOT EXISTS uni_email_template (
+        template_id TEXT PRIMARY KEY,         -- TPL+时间戳格式
+        template_name TEXT NOT NULL,          -- 模板名称
+        subject TEXT NOT NULL,                -- 邮件主题模板
+        body TEXT NOT NULL,                   -- HTML邮件内容模板
+        created_by TEXT NOT NULL,             -- 创建人(员工ID)
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        FOREIGN KEY (created_by) REFERENCES uni_emp(emp_id) ON DELETE CASCADE
+    );
+
+    -- 邮件模板索引
+    CREATE INDEX IF NOT EXISTS idx_template_created_by ON uni_email_template(created_by);
+    CREATE INDEX IF NOT EXISTS idx_template_name ON uni_email_template(template_name);
     """
 
     with get_db_connection() as conn:
@@ -1250,6 +1337,34 @@ def _init_db_sqlite():
         try:
             conn.execute("ALTER TABLE uni_offer ADD COLUMN cli_id TEXT REFERENCES uni_cli(cli_id)")
             print("[DB] 迁移完成：uni_offer 添加 cli_id 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_order_manager 添加 transaction_code 列（用于关联银行流水）
+        try:
+            conn.execute("ALTER TABLE uni_order_manager ADD COLUMN transaction_code TEXT")
+            print("[DB] 迁移完成：uni_order_manager 添加 transaction_code 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_email_task 添加跳过规则相关字段
+        try:
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN send_interval INTEGER DEFAULT 2")
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN skip_enabled INTEGER DEFAULT 1")
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN skip_days INTEGER DEFAULT 7")
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN skipped_count INTEGER DEFAULT 0")
+            print("[DB] 迁移完成：uni_email_task 添加 skip_enabled/skip_days/skipped_count 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_email_task 添加多账号轮换字段
+        try:
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN account_ids TEXT")
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN daily_limit_per_account INTEGER DEFAULT 1800")
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN current_account_index INTEGER DEFAULT 0")
+            # 数据迁移：将旧的account_id转为account_ids JSON数组
+            conn.execute("UPDATE uni_email_task SET account_ids = json_array(account_id) WHERE account_ids IS NULL AND account_id IS NOT NULL")
+            print("[DB] 迁移完成：uni_email_task 添加 account_ids/daily_limit_per_account 列")
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 

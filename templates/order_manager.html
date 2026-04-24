@@ -330,6 +330,13 @@
     </h1>
     <!-- 筛选项放到标题右边 -->
     <div class="header-filters">
+        <select id="pageSizeSelect" onchange="applyFilter()" style="width: 80px;">
+            <option value="20" {% if page_size == 20 %}selected{% endif %}>20条</option>
+            <option value="50" {% if page_size == 50 %}selected{% endif %}>50条</option>
+            <option value="100" {% if page_size == 100 %}selected{% endif %}>100条</option>
+            <option value="200" {% if page_size == 200 %}selected{% endif %}>200条</option>
+            <option value="500" {% if page_size == 500 %}selected{% endif %}>500条</option>
+        </select>
         <select id="filter_cli" onchange="applyFilter()">
             <option value="">全部客户</option>
             {% for c in cli_list %}
@@ -374,13 +381,25 @@
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zM3 7a1 1 0 000 2h7a1 1 0 100-2H3zM3 11a1 1 0 100 2h4a1 1 0 100-2H3zM15 8a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V8z"/></svg>
                 一键转采购
             </button>
-            <button class="dropdown-item" onclick="batchGeneratePiCi('KR')" style="color: #8B5CF6;">
+            <button class="dropdown-item" onclick="batchGeneratePI()" style="color: #3B82F6;">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                批量生成PI-CI-合同-KR
+                生成PI
             </button>
-            <button class="dropdown-item" onclick="batchGeneratePiCi('US')" style="color: #0EA5E9;">
+            <button class="dropdown-item" onclick="batchGenerateCI()" style="color: #8B5CF6;">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                批量生成PI-CI-合同-US
+                生成CI
+            </button>
+            <button class="dropdown-item" onclick="alert('合同生成功能暂未实现')" style="color: #F59E0B;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                生成合同
+            </button>
+            <button class="dropdown-item" onclick="alert('发票生成功能暂未实现')" style="color: #EF4444;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                生成发票
+            </button>
+            <button class="dropdown-item" onclick="batchLinkTransactions()" style="color: #2563EB;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                批量补关联流水
             </button>
             <div class="dropdown-divider"></div>
             <button class="dropdown-item danger" onclick="batchDelete()">
@@ -405,6 +424,7 @@
                     <th>总价(KRW)</th>
                     <th>总价(JPY)</th>
                     <th>总价(USD)</th>
+                    <th>币种</th>
                     <th>型号数</th>
                     <th>数量</th>
                     <th>采购进度</th>
@@ -427,6 +447,7 @@
                     <td class="num">{{ "%.0f"|format(item.total_price_kwr or 0) }}</td>
                     <td class="num">{{ "%.0f"|format(item.total_price_jpy or 0) }}</td>
                     <td class="num">{{ "%.2f"|format(item.total_price_usd or 0) }}</td>
+                    <td>{{ item.transaction_currency or '-' }}</td>
                     <td class="num">{{ item.model_count or 0 }}</td>
                     <td class="num">{{ item.total_qty or 0 }}</td>
                     <td class="num">
@@ -462,14 +483,6 @@
     <!-- 分页 -->
     <div class="pagination">
         <span>共 {{ total }} 条，第 {{ page }}/{{ total_pages }} 页</span>
-        <select id="pageSizeSelect" style="margin-left: 0.5rem;">
-            <option value="20" {% if page_size == 20 %}selected{% endif %}>20条/页</option>
-            <option value="50" {% if page_size == 50 %}selected{% endif %}>50条/页</option>
-            <option value="100" {% if page_size == 100 %}selected{% endif %}>100条/页</option>
-            <option value="200" {% if page_size == 200 %}selected{% endif %}>200条/页</option>
-            <option value="500" {% if page_size == 500 %}selected{% endif %}>500条/页</option>
-            <option value="1000" {% if page_size == 1000 %}selected{% endif %}>1000条/页</option>
-        </select>
         <div>
             {% if page > 1 %}
             <a href="?page=1&page_size={{ page_size }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">首页</a>
@@ -770,6 +783,130 @@ async function batchGeneratePiCi(type) {
             alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
         } else {
             alert('生成失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('请求失败，请稍后重试');
+    }
+}
+
+async function batchGeneratePI() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要生成PI的客户订单');
+        return;
+    }
+    if (!confirm(`确定要为选中的 ${checkboxes.length} 个客户订单生成PI吗？`)) return;
+
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    try {
+        const processingMsg = document.createElement('div');
+        processingMsg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px;border-radius:8px;z-index:9999;';
+        processingMsg.textContent = '正在生成PI，请稍候...';
+        document.body.appendChild(processingMsg);
+
+        const response = await fetch('/api/order_manager/generate_pi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manager_ids: ids })
+        });
+        const result = await response.json();
+
+        document.body.removeChild(processingMsg);
+
+        if (result.success) {
+            alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
+        } else {
+            alert('生成失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('请求失败，请稍后重试');
+    }
+}
+
+async function batchGenerateCI() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要生成CI的客户订单');
+        return;
+    }
+    if (!confirm(`确定要为选中的 ${checkboxes.length} 个客户订单生成CI吗？\n（将根据报价币种自动选择模板）`)) return;
+
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    const processingMsg = document.createElement('div');
+    processingMsg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px;border-radius:8px;z-index:9999;';
+    processingMsg.textContent = '正在生成CI，请稍候...';
+    document.body.appendChild(processingMsg);
+
+    try {
+        const response = await fetch('/api/order_manager/generate_ci', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manager_ids: ids })
+        });
+        const result = await response.json();
+
+        document.body.removeChild(processingMsg);
+
+        if (result.success) {
+            alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
+        } else {
+            alert('生成失败: ' + result.message + (result.errors ? '\n' + result.errors.join('\n') : ''));
+        }
+    } catch (error) {
+        document.body.removeChild(processingMsg);
+        console.error('Error:', error);
+        alert('请求失败: ' + error.message);
+    }
+}
+
+async function batchLinkTransactions() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要补关联银行流水的客户订单');
+        return;
+    }
+    if (!confirm(`确定要为选中的 ${checkboxes.length} 个客户订单补关联银行流水吗？\n（根据订单的交易编码匹配银行流水）`)) return;
+
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    try {
+        // 显示处理中提示
+        const processingMsg = document.createElement('div');
+        processingMsg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px;border-radius:8px;z-index:9999;';
+        processingMsg.textContent = '正在补关联银行流水，请稍候...';
+        document.body.appendChild(processingMsg);
+
+        const response = await fetch('/api/order_manager/batch_link_transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manager_ids: ids })
+        });
+        const result = await response.json();
+
+        document.body.removeChild(processingMsg);
+
+        if (result.success) {
+            let detailMsg = result.message;
+            if (result.details && result.details.length > 0) {
+                detailMsg += '\n\n详细信息：';
+                result.details.forEach(d => {
+                    if (d.status === 'linked') {
+                        detailMsg += `\n✅ ${d.order_no}: ${d.message}`;
+                    } else if (d.status === 'skipped') {
+                        detailMsg += `\n⏭️ ${d.order_no}: ${d.message}`;
+                    } else {
+                        detailMsg += `\n❌ ${d.order_no}: ${d.message}`;
+                    }
+                });
+            }
+            alert(detailMsg);
+            location.reload();
+        } else {
+            alert('补关联失败: ' + result.message);
         }
     } catch (error) {
         console.error('Error:', error);

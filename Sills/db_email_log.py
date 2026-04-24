@@ -92,6 +92,28 @@ def get_failed_logs(task_id):
         return results
 
 
+def get_recently_sent_emails(days=7):
+    """获取最近N天内成功发送的邮箱列表（不限任务）
+
+    Args:
+        days: 天数，默认7天
+
+    Returns:
+        set 最近N天内成功发送的邮箱集合（小写）
+    """
+    from datetime import datetime, timedelta
+    cutoff_date = datetime.now() - timedelta(days=days)
+    cutoff_str = cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
+
+    with get_db_connection() as conn:
+        items = conn.execute("""
+            SELECT DISTINCT email
+            FROM uni_email_log
+            WHERE status = 'sent' AND sent_at >= ?
+        """, (cutoff_str,)).fetchall()
+        return set(row.get('email', '').lower() if isinstance(row, dict) else row[0].lower() for row in items)
+
+
 def get_sent_count(task_id):
     """获取任务已发送数量"""
     with get_db_connection() as conn:

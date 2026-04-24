@@ -2051,6 +2051,37 @@ async def api_order_manager_batch_delete(request: Request, current_user: dict = 
     ok, msg = batch_delete_managers(ids)
     return {"success": ok, "message": msg}
 
+@app.post("/api/order_manager/batch_link_transactions")
+async def api_order_manager_batch_link_transactions(request: Request, current_user: dict = Depends(login_required)):
+    """批量补关联银行流水（根据交易编码）"""
+    if current_user['rule'] not in ('2', '3'):
+        return {"success": False, "message": "无权限执行此操作"}
+
+    data = await request.json()
+    manager_ids = data.get("manager_ids", [])
+
+    if not manager_ids:
+        return {"success": False, "message": "请先选择要补关联的订单"}
+
+    from Sills.db_order_manager import batch_link_transactions
+    result = batch_link_transactions(manager_ids, current_user.get('emp_id'))
+
+    # 构建返回消息
+    msg = f"成功关联 {result['linked_count']} 条"
+    if result['skipped_count'] > 0:
+        msg += f"，跳过 {result['skipped_count']} 条（无交易编码或已关联）"
+    if result['failed_count'] > 0:
+        msg += f"，失败 {result['failed_count']} 条"
+
+    return {
+        "success": result['linked_count'] > 0 or result['skipped_count'] > 0,
+        "message": msg,
+        "details": result['details'],
+        "linked_count": result['linked_count'],
+        "skipped_count": result['skipped_count'],
+        "failed_count": result['failed_count']
+    }
+
 @app.get("/api/order_manager/template")
 async def api_order_manager_template(current_user: dict = Depends(get_current_user)):
     """下载客户订单导入模板"""
@@ -2514,6 +2545,136 @@ async def api_order_manager_generate_pi_ci_us(request: Request, current_user: di
     return {
         "success": success_count > 0,
         "message": f"成功生成 {success_count} 个客户订单的PI-CI文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
+        "output_dir": output_dir,
+        "generated_files": generated_files,
+        "errors": errors
+    }
+
+
+@app.post("/api/order_manager/generate_pi")
+async def api_order_manager_generate_pi(request: Request, current_user: dict = Depends(login_required)):
+    """批量生成PI文件"""
+    from Sills.db_order_manager import get_manager_by_id, get_manager_offers
+    from Sills.document_generator import generate_pi_from_offers
+
+    data = await request.json()
+    manager_ids = data.get('manager_ids', [])
+
+    if not manager_ids:
+        return {"success": False, "message": "请选择客户订单"}
+
+    # 创建输出目录
+    from datetime import datetime
+    import os
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"PI-{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    success_count = 0
+    errors = []
+    generated_files = []
+
+    for manager_id in manager_ids:
+        try:
+            manager = get_manager_by_id(manager_id)
+            if not manager:
+                errors.append(f"{manager_id}: 客户订单不存在")
+                continue
+
+            customer_order_no = manager.get('customer_order_no', 'UNKNOWN')
+            cli_name = manager.get('cli_name', 'Unknown')
+
+            offers = get_manager_offers(manager_id)
+            if not offers:
+                errors.append(f"{customer_order_no}: 没有关联的报价订单")
+                continue
+
+            offer_ids = [o['offer_id'] for o in offers]
+
+            # 生成 PI
+            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir)
+            if pi_success:
+                old_path = pi_result.get('excel_path', '')
+                if old_path and os.path.exists(old_path):
+                    new_name = f"Proforma Invoice_{cli_name}_{customer_order_no}.xlsx"
+                    new_path = os.path.join(output_dir, new_name)
+                    os.rename(old_path, new_path)
+                    generated_files.append(new_name)
+                success_count += 1
+            else:
+                errors.append(f"{customer_order_no} PI生成失败: {pi_result}")
+
+        except Exception as e:
+            errors.append(f"{manager_id}: {str(e)}")
+
+    return {
+        "success": success_count > 0,
+        "message": f"成功生成 {success_count} 个PI文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
+        "output_dir": output_dir,
+        "generated_files": generated_files,
+        "errors": errors
+    }
+
+
+@app.post("/api/order_manager/generate_ci")
+async def api_order_manager_generate_ci(request: Request, current_user: dict = Depends(login_required)):
+    """批量生成CI文件（智能判断币种）"""
+    from Sills.db_order_manager import get_manager_by_id, get_manager_offers
+    from Sills.ci_generator import generate_ci_auto_from_offers
+
+    data = await request.json()
+    manager_ids = data.get('manager_ids', [])
+
+    if not manager_ids:
+        return {"success": False, "message": "请选择客户订单"}
+
+    # 创建输出目录
+    from datetime import datetime
+    import os
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"CI-{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    success_count = 0
+    errors = []
+    generated_files = []
+
+    for manager_id in manager_ids:
+        try:
+            manager = get_manager_by_id(manager_id)
+            if not manager:
+                errors.append(f"{manager_id}: 客户订单不存在")
+                continue
+
+            customer_order_no = manager.get('customer_order_no', 'UNKNOWN')
+            cli_name = manager.get('cli_name', 'Unknown')
+
+            offers = get_manager_offers(manager_id)
+            if not offers:
+                errors.append(f"{customer_order_no}: 没有关联的报价订单")
+                continue
+
+            offer_ids = [o['offer_id'] for o in offers]
+
+            # 生成 CI（智能判断币种）
+            ci_success, ci_result = generate_ci_auto_from_offers(offer_ids, output_base=output_dir)
+            if ci_success:
+                old_path = ci_result.get('excel_path', '')
+                if old_path and os.path.exists(old_path):
+                    new_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}.xlsx"
+                    new_path = os.path.join(output_dir, new_name)
+                    os.rename(old_path, new_path)
+                    generated_files.append(new_name)
+                success_count += 1
+            else:
+                errors.append(f"{customer_order_no} CI生成失败: {ci_result}")
+
+        except Exception as e:
+            errors.append(f"{manager_id}: {str(e)}")
+
+    return {
+        "success": success_count > 0,
+        "message": f"成功生成 {success_count} 个CI文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
         "output_dir": output_dir,
         "generated_files": generated_files,
         "errors": errors
@@ -5125,6 +5286,10 @@ from Sills.db_email_task import (
     complete_task, get_task_progress, get_task_contacts,
     delete_task, delete_tasks_batch
 )
+from Sills.db_email_template import (
+    get_template_list, get_template_by_id, create_template,
+    update_template, delete_template, delete_templates_batch
+)
 from Sills.db_email_log import (
     get_task_logs, get_failed_logs, get_task_stats
 )
@@ -5344,7 +5509,7 @@ async def api_task_create(request: Request, current_user: dict = Depends(login_r
     data = await request.json()
 
     task_name = data.get('task_name', '')
-    account_id = data.get('account_id', '')
+    account_ids = data.get('account_ids', [])    # 多账号ID列表（支持轮换）
     group_ids = data.get('group_ids', [])
     subject = data.get('subject', '')
     body = data.get('body', '')
@@ -5352,10 +5517,14 @@ async def api_task_create(request: Request, current_user: dict = Depends(login_r
     schedule_start = data.get('schedule_start', None)
     schedule_end = data.get('schedule_end', None)
     send_interval = data.get('send_interval', 2)  # 发送间隔（秒）
+    skip_enabled = data.get('skip_enabled', 1)    # 是否启用跳过规则（默认开启）
+    skip_days = data.get('skip_days', 7)          # 跳过天数（默认7天）
+    daily_limit_per_account = data.get('daily_limit_per_account', 1800)  # 单账号日发送上限
 
     success, result = create_task(
-        task_name, account_id, group_ids, subject, body,
-        placeholders, schedule_start, schedule_end, send_interval
+        task_name, account_ids, group_ids, subject, body,
+        placeholders, schedule_start, schedule_end, send_interval,
+        skip_enabled, skip_days, daily_limit_per_account
     )
 
     if success:
@@ -5528,6 +5697,79 @@ async def api_task_export(task_id: str, current_user: dict = Depends(login_requi
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     return {"success": False, "message": result}
+
+
+# ==================== 邮件模板管理 ====================
+
+@app.get("/api/template/list")
+async def api_template_list(current_user: dict = Depends(login_required)):
+    """获取邮件模板列表（当前用户创建的模板）"""
+    emp_id = current_user.get('emp_id', '')
+    templates = get_template_list(emp_id)
+    return {"success": True, "templates": templates}
+
+
+@app.get("/api/template/{template_id}")
+async def api_template_get(template_id: str, current_user: dict = Depends(login_required)):
+    """获取单个模板详情"""
+    template = get_template_by_id(template_id)
+    if template:
+        return {"success": True, "template": template}
+    return {"success": False, "message": "模板不存在"}
+
+
+@app.post("/api/template/add")
+async def api_template_add(request: Request, current_user: dict = Depends(login_required)):
+    """创建邮件模板"""
+    data = await request.json()
+    template_name = data.get('template_name', '')
+    subject = data.get('subject', '')
+    body = data.get('body', '')
+    emp_id = current_user.get('emp_id', '')
+
+    success, message = create_template(template_name, subject, body, emp_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/template/update")
+async def api_template_update(request: Request, current_user: dict = Depends(login_required)):
+    """更新邮件模板"""
+    data = await request.json()
+    template_id = data.get('template_id', '')
+    template_name = data.get('template_name', '')
+    subject = data.get('subject', '')
+    body = data.get('body', '')
+
+    success, message = update_template(template_id, template_name, subject, body)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/template/delete")
+async def api_template_delete(request: Request, current_user: dict = Depends(login_required)):
+    """删除邮件模板"""
+    data = await request.json()
+    template_id = data.get('template_id', '')
+
+    success, message = delete_template(template_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/template/batch-delete")
+async def api_template_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    """批量删除邮件模板"""
+    data = await request.json()
+    template_ids = data.get('template_ids', [])
+
+    if not template_ids or len(template_ids) == 0:
+        return {"success": False, "message": "请选择要删除的模板"}
+
+    success_count, failed_list = delete_templates_batch(template_ids)
+    return {
+        "success": True,
+        "message": f"成功删除 {success_count} 个模板",
+        "success_count": success_count,
+        "failed_list": failed_list
+    }
 
 
 @app.post("/api/group/add-static")

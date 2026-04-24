@@ -59,13 +59,28 @@ def get_task_by_id(task_id):
     """根据ID获取任务详情"""
     with get_db_connection() as conn:
         row = conn.execute("""
-            SELECT t.*, a.email as account_email, a.smtp_server
+            SELECT t.*
             FROM uni_email_task t
-            LEFT JOIN uni_email_account a ON t.account_id = a.account_id
             WHERE t.task_id = ?
         """, (task_id,)).fetchone()
         if row:
-            return {k: ("" if v is None else v) for k, v in dict(row).items()}
+            task = {k: ("" if v is None else v) for k, v in dict(row).items()}
+            # 解析account_ids获取账号信息列表
+            account_ids_json = task.get('account_ids', '[]')
+            try:
+                account_ids = json.loads(account_ids_json) if account_ids_json else []
+            except:
+                account_ids = []
+
+            # 获取所有账号信息
+            from Sills.db_email_account import get_account_by_id
+            accounts_info = []
+            for acc_id in account_ids:
+                acc = get_account_by_id(acc_id)
+                if acc:
+                    accounts_info.append(acc)
+            task['accounts_info'] = accounts_info
+            return task
         return None
 
 
@@ -73,13 +88,28 @@ def get_active_task():
     """获取当前活跃任务(单任务约束)"""
     with get_db_connection() as conn:
         row = conn.execute("""
-            SELECT t.*, a.email as account_email, a.smtp_server, a.password
+            SELECT t.*
             FROM uni_email_task t
-            LEFT JOIN uni_email_account a ON t.account_id = a.account_id
             WHERE t.status = 'running'
         """).fetchone()
         if row:
-            return {k: ("" if v is None else v) for k, v in dict(row).items()}
+            task = {k: ("" if v is None else v) for k, v in dict(row).items()}
+            # 解析account_ids获取账号信息列表
+            account_ids_json = task.get('account_ids', '[]')
+            try:
+                account_ids = json.loads(account_ids_json) if account_ids_json else []
+            except:
+                account_ids = []
+
+            # 获取所有账号信息（包含密码用于发送）
+            from Sills.db_email_account import get_account_by_id
+            accounts_info = []
+            for acc_id in account_ids:
+                acc = get_account_by_id(acc_id)
+                if acc:
+                    accounts_info.append(acc)
+            task['accounts_info'] = accounts_info
+            return task
         return None
 
 
@@ -92,13 +122,14 @@ def has_running_task():
         return count > 0
 
 
-def create_task(task_name, account_id, group_ids, subject, body,
-                placeholders=None, schedule_start=None, schedule_end=None, send_interval=2):
+def create_task(task_name, account_ids, group_ids, subject, body,
+                placeholders=None, schedule_start=None, schedule_end=None,
+                send_interval=2, skip_enabled=1, skip_days=7, daily_limit_per_account=1800):
     """创建邮件任务
 
     Args:
         task_name: 任务名称
-        account_id: 发件人账号ID
+        account_ids: list 发件人账号ID列表（支持多账号轮换）
         group_ids: list 组ID列表
         subject: 邮件主题
         body: HTML邮件内容
@@ -106,6 +137,9 @@ def create_task(task_name, account_id, group_ids, subject, body,
         schedule_start: 发送开始时间 HH:MM
         schedule_end: 发送结束时间 HH:MM
         send_interval: 发送间隔（秒），默认2秒
+        skip_enabled: 是否启用跳过规则（默认1开启）
+        skip_days: 成功发送后跳过天数（默认7天）
+        daily_limit_per_account: 单账号日发送上限（默认1800）
 
     Returns:
         (success, message_or_task_id) tuple
@@ -117,8 +151,8 @@ def create_task(task_name, account_id, group_ids, subject, body,
 
         if not task_name or not task_name.strip():
             return False, "任务名称不能为空"
-        if not account_id:
-            return False, "请选择发件人账号"
+        if not account_ids or len(account_ids) == 0:
+            return False, "请选择至少一个发件人账号"
         if not group_ids:
             return False, "请选择至少一个联系人组"
         if not subject or not subject.strip():
@@ -133,20 +167,24 @@ def create_task(task_name, account_id, group_ids, subject, body,
 
         task_id = get_next_task_id()
         group_ids_json = json.dumps(group_ids)
+        account_ids_json = json.dumps(account_ids)
         placeholders_json = json.dumps(placeholders) if placeholders else ""
 
         with get_db_connection() as conn:
             conn.execute("""
                 INSERT INTO uni_email_task (
-                    task_id, task_name, account_id, group_ids,
+                    task_id, task_name, account_ids, group_ids,
                     subject, body, placeholders,
                     schedule_start, schedule_end, send_interval,
-                    status, total_count, sent_count, failed_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 0)
+                    skip_enabled, skip_days, daily_limit_per_account,
+                    current_account_index,
+                    status, total_count, sent_count, failed_count, skipped_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, 0, 0, 0)
             """, (
-                task_id, task_name.strip(), account_id, group_ids_json,
+                task_id, task_name.strip(), account_ids_json, group_ids_json,
                 subject.strip(), body.strip(), placeholders_json,
                 schedule_start, schedule_end, send_interval,
+                skip_enabled, skip_days, daily_limit_per_account,
                 len(contacts)
             ))
             conn.commit()
@@ -173,7 +211,7 @@ def start_task(task_id):
         return False, str(e)
 
 
-def update_task_progress(task_id, sent_count=None, failed_count=None):
+def update_task_progress(task_id, sent_count=None, failed_count=None, skipped_count=None):
     """更新任务进度"""
     try:
         updates = []
@@ -186,6 +224,10 @@ def update_task_progress(task_id, sent_count=None, failed_count=None):
         if failed_count is not None:
             updates.append("failed_count = ?")
             params.append(failed_count)
+
+        if skipped_count is not None:
+            updates.append("skipped_count = ?")
+            params.append(skipped_count)
 
         if not updates:
             return True
@@ -232,6 +274,21 @@ def complete_task(task_id, failed_count=0):
             """, (failed_count, task_id))
             conn.commit()
             return True, "任务已完成"
+    except Exception as e:
+        return False, str(e)
+
+
+def update_current_account_index(task_id, account_index):
+    """更新当前使用的账号索引"""
+    try:
+        with get_db_connection() as conn:
+            conn.execute("""
+                UPDATE uni_email_task
+                SET current_account_index = ?
+                WHERE task_id = ?
+            """, (account_index, task_id))
+            conn.commit()
+            return True
     except Exception as e:
         return False, str(e)
 

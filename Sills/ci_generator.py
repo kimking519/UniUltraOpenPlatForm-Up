@@ -167,7 +167,7 @@ def get_orders_for_ci(order_ids):
         return [dict(r) for r in rows]
 
 
-def generate_ci_excel(orders, template_dir, output_path, invoice_no):
+def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_filename="CI_template_header.xlsx", footer_filename="CI_template_footer.xlsx"):
     """
     使用切分模板模式生成CI Excel文件
 
@@ -176,6 +176,8 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no):
         template_dir: 模板目录路径
         output_path: 输出文件路径
         invoice_no: 发票编号
+        header_filename: Header模板文件名（默认 CI_template_header.xlsx）
+        footer_filename: Footer模板文件名（默认 CI_template_footer.xlsx）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -190,9 +192,9 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no):
     first_order = orders[0]
     now = datetime.now()
 
-    # 加载模板
-    header_path = os.path.join(template_dir, "CI_template_header.xlsx")
-    footer_path = os.path.join(template_dir, "CI_template_footer.xlsx")
+    # 加载模板（支持自定义文件名）
+    header_path = os.path.join(template_dir, header_filename)
+    footer_path = os.path.join(template_dir, footer_filename)
 
     if not os.path.exists(header_path):
         return False, f"Header模板不存在: {header_path}"
@@ -519,3 +521,161 @@ def get_offers_for_ci(offer_ids):
             ORDER BY o.offer_id
         """, offer_ids).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_offers_for_ci_with_currency(offer_ids):
+    """获取报价列表（用于生成CI文档，包含币种字段）"""
+    if not offer_ids:
+        return []
+    placeholders = ','.join(['?'] * len(offer_ids))
+    with get_db_connection() as conn:
+        rows = conn.execute(f"""
+            SELECT o.offer_id, o.offer_date,
+                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb,
+                   o.price_kwr, o.price_usd, o.price_jpy,
+                   o.quoted_qty, o.date_code, o.delivery_date, o.inquiry_qty, o.inquiry_mpn,
+                   COALESCE(o.cli_id, q.cli_id) as cli_id,
+                   c.cli_name, c.cli_name_en, c.contact_name, c.address, c.email, c.phone,
+                   c.cli_full_name, c.region
+            FROM uni_offer o
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
+            WHERE o.offer_id IN ({placeholders})
+            ORDER BY o.offer_id
+        """, offer_ids).fetchall()
+        return [dict(r) for r in rows]
+
+
+def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    基于报价生成日元版 Commercial Invoice
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    # 获取报价数据
+    offers = get_offers_for_ci_with_currency(offer_ids)
+
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    # 检查客户一致性
+    cli_names = set(o.get("cli_name") or "未知客户" for o in offers)
+    if len(cli_names) > 1:
+        return False, f"报价属于不同客户 ({', '.join(cli_names)})，无法生成同一份CI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if not output_base:
+        output_base = _get_output_base()
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_JP")
+
+    # 确定模板目录（JP模板文件名带_JP后缀）
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "ci_jp")
+
+    # 使用日元价格字段
+    for offer in offers:
+        price_jpy = offer.get("price_jpy")
+        if price_jpy and float(price_jpy or 0) > 0:
+            offer["price_jpy"] = float(price_jpy)
+        else:
+            offer["price_jpy"] = 0
+
+    # 适配报价数据为订单格式（将 price_jpy 映射为 price_kwr，因为模板结构相同）
+    adapted_offers = []
+    for offer in offers:
+        adapted = {
+            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
+            "date_code": offer.get("date_code", ""),
+            "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
+            "inquiry_qty": offer.get("inquiry_qty", 0),
+            "delivery_date": offer.get("delivery_date", ""),
+            "price_kwr": offer.get("price_jpy", 0),  # JPY 价格映射到 kwr 字段
+            "price_rmb": offer.get("offer_price_rmb", 0),
+            "cli_name_en": offer.get("cli_name_en", "") or offer.get("cli_name", ""),
+            "cli_name": offer.get("cli_name", ""),
+            "contact_name": offer.get("contact_name", ""),
+            "email": offer.get("email", ""),
+            "phone": offer.get("phone", ""),
+            "address": offer.get("address", ""),
+        }
+        adapted_offers.append(adapted)
+
+    # 生成 CI-JP（使用JP模板文件名）
+    return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no,
+                             header_filename="CI_template_header_JP.xlsx",
+                             footer_filename="CI_template_footer_JP.xlsx")
+
+
+def generate_ci_auto_from_offers(offer_ids, output_base=None):
+    """
+    智能判断币种并生成CI
+
+    根据报价中的 price_kwr, price_usd, price_jpy 字段自动选择模板：
+    - 优先级: price_kwr > price_usd > price_jpy（选择第一个非零值）
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    # 获取报价数据（包含币种字段）
+    offers = get_offers_for_ci_with_currency(offer_ids)
+
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    # 检查币种：选择第一个报价中第一个非零的币种字段
+    currency_type = None
+    for offer in offers:
+        price_kwr = float(offer.get("price_kwr") or 0)
+        price_usd = float(offer.get("price_usd") or 0)
+        price_jpy = float(offer.get("price_jpy") or 0)
+
+        if price_kwr > 0:
+            currency_type = "KRW"
+            break
+        elif price_usd > 0:
+            currency_type = "USD"
+            break
+        elif price_jpy > 0:
+            currency_type = "JPY"
+            break
+
+    # 默认使用KRW（如果没有币种字段，使用RMB换算）
+    if not currency_type:
+        currency_type = "KRW"
+
+    # 根据币种调用对应的生成函数
+    if currency_type == "KRW":
+        return generate_ci_kr_from_offers(offer_ids, output_base)
+    elif currency_type == "USD":
+        from Sills.document_generator import generate_ci_us_from_offers
+        return generate_ci_us_from_offers(offer_ids, output_base)
+    elif currency_type == "JPY":
+        return generate_ci_jp_from_offers(offer_ids, output_base)
+
+    return False, "未知币种类型"

@@ -36,10 +36,12 @@ class EmailSenderWorker:
         self.task_id = task_id
         self.retry_mode = retry_mode  # 是否重试模式（只发失败邮件）
         self.task = None
-        self.account = None
+        self.accounts = []  # 账号列表（支持多账号轮换）
+        self.current_account_index = 0  # 当前账号索引
         self.contacts = []
         self.stop_flag = False
         self.thread = None
+        self.server = None  # SMTP连接
 
     def load_task_data(self):
         """加载任务数据"""
@@ -47,17 +49,21 @@ class EmailSenderWorker:
         if not self.task:
             raise ValueError(f"任务 {self.task_id} 不存在")
 
-        # 获取发件人账号
-        self.account = get_account_by_id(self.task['account_id'])
-        if not self.account:
-            raise ValueError(f"发件人账号 {self.task['account_id']} 不存在")
+        # 获取账号列表
+        accounts_info = self.task.get('accounts_info', [])
+        if not accounts_info:
+            raise ValueError("任务没有关联的发件人账号")
 
-        # 解密密码
-        if self.account.get('password'):
-            try:
-                self.account['password'] = aes_decrypt(self.account['password'])
-            except:
-                pass
+        # 解密所有账号密码
+        for acc in accounts_info:
+            if acc.get('password'):
+                try:
+                    acc['password'] = aes_decrypt(acc['password'])
+                except:
+                    pass
+
+        self.accounts = accounts_info
+        self.current_account_index = self.task.get('current_account_index', 0) or 0
 
         # 获取联系人列表：重试模式只获取失败联系人
         if self.retry_mode:
@@ -67,11 +73,32 @@ class EmailSenderWorker:
         else:
             self.contacts = get_task_contacts(self.task_id)
 
-    def connect_smtp(self):
+    def get_current_account(self):
+        """获取当前使用的账号"""
+        if self.current_account_index >= len(self.accounts):
+            return None
+        return self.accounts[self.current_account_index]
+
+    def switch_to_next_account(self):
+        """切换到下一个账号"""
+        if self.current_account_index < len(self.accounts) - 1:
+            self.current_account_index += 1
+            from Sills.db_email_task import update_current_account_index
+            update_current_account_index(self.task_id, self.current_account_index)
+            print(f"[Worker] 切换到账号 {self.current_account_index + 1}: {self.accounts[self.current_account_index].get('email')}")
+            return True
+        return False
+
+    def connect_smtp(self, account=None):
         """连接SMTP服务器"""
-        email = self.account['email']
-        password = self.account['password']
-        smtp_server = self.account.get('smtp_server', 'smtp.163.com')
+        if account is None:
+            account = self.get_current_account()
+        if not account:
+            raise ValueError("没有可用的发件人账号")
+
+        email = account['email']
+        password = account['password']
+        smtp_server = account.get('smtp_server', 'smtp.163.com')
 
         # 清除代理环境变量(避免代理拦截SMTP SSL连接)
         proxy_keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
@@ -86,7 +113,11 @@ class EmailSenderWorker:
 
     def send_single_email(self, server, to_email, company_name=""):
         """发送单封邮件（支持代理发送）"""
-        email = self.account['email']
+        account = self.get_current_account()
+        if not account:
+            raise ValueError("没有可用的发件人账号")
+
+        email = account['email']
         subject = self.task['subject']
         body = self.task['body']
 
@@ -113,7 +144,7 @@ class EmailSenderWorker:
             message['From'] = PRIMARY_EMAIL
             message['Sender'] = email
 
-        # 发送邮件（实际SMTP认证用的是self.account的邮箱）
+        # 发送邮件（实际SMTP认证用的是当前账号的邮箱）
         server.sendmail(email, [to_email, FIXED_CC_EMAIL], message.as_string())
 
     def is_in_schedule_time(self):
@@ -130,28 +161,54 @@ class EmailSenderWorker:
         return schedule_start <= current_time <= schedule_end
 
     def run(self):
-        """Worker主循环"""
+        """Worker主循环（支持多账号轮换）"""
         sent_count = 0
         failed_count = 0
+        skipped_count = 0
+        account_sent_counts = {}  # 每个账号的发送计数
 
         try:
             self.load_task_data()
 
-            # 连接SMTP
-            server = self.connect_smtp()
+            # 获取账号数量限制
+            daily_limit_per_account = self.task.get('daily_limit_per_account', 1800) or 1800
+
+            # 连接第一个账号的SMTP
+            current_account = self.get_current_account()
+            if not current_account:
+                raise ValueError("没有可用的发件人账号")
+
+            server = self.connect_smtp(current_account)
+            print(f"[Worker] 使用账号 {self.current_account_index + 1}: {current_account.get('email')}")
+
+            # 初始化账号发送计数
+            for i, acc in enumerate(self.accounts):
+                account_sent_counts[i] = 0
 
             total = len(self.contacts)
             mode_str = "[重试模式]" if self.retry_mode else ""
 
-            # 获取已发送成功的联系人列表（用于跳过）
+            # 获取已发送成功的联系人列表（用于跳过当前任务重复）
             from Sills.db_email_log import get_sent_emails_for_task
             sent_emails = get_sent_emails_for_task(self.task_id)
             sent_email_set = set(e.lower() for e in sent_emails)
+
+            # 获取跳过规则配置
+            skip_enabled = self.task.get('skip_enabled', 1) or 1
+            skip_days = self.task.get('skip_days', 7) or 7
+
+            # 如果启用跳过规则，获取最近N天内成功发送的邮箱列表（不限任务）
+            recently_sent_set = set()
+            if skip_enabled == 1 and not self.retry_mode:
+                from Sills.db_email_log import get_recently_sent_emails
+                recently_sent_set = get_recently_sent_emails(skip_days)
+                print(f"[Worker] 启用跳过规则：{skip_days}天内已发送的邮箱将被跳过，共{len(recently_sent_set)}个")
 
             # 获取任务当前的进度计数
             task = get_task_by_id(self.task_id)
             base_sent = task.get('sent_count', 0) or 0
             base_failed = task.get('failed_count', 0) or 0
+            base_skipped = task.get('skipped_count', 0) or 0
 
             for idx, contact in enumerate(self.contacts):
                 # 检查取消请求
@@ -169,44 +226,71 @@ class EmailSenderWorker:
                 if self.stop_flag:
                     break
 
-                # 检查日限
-                can_send, remaining = can_send_today(self.task['account_id'])
-                if not can_send:
-                    # 达到日限,等待到第二天
-                    print(f"[Worker] 达到日限,等待到第二天继续")
-                    # 保存当前进度并暂停
-                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count)
-                    error_task(self.task_id, "达到日发送限制,等待第二天继续")
+                # 检查当前账号是否达到日限
+                current_account = self.get_current_account()
+                if not current_account:
+                    # 所有账号都达到限制
+                    print(f"[Worker] 所有账号均已达到日限,等待到第二天继续")
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                    error_task(self.task_id, "所有账号均已达到日发送限制,等待第二天继续")
                     server.quit()
                     return
 
-                email = contact.get('email', '')
+                # 检查账号日发送限制（使用任务的daily_limit_per_account）
+                can_send, remaining = can_send_today(current_account['account_id'], daily_limit_per_account)
+                if not can_send:
+                    # 当前账号达到限制，尝试切换下一个账号
+                    print(f"[Worker] 账号 {current_account.get('email')} 达到日限({daily_limit_per_account}),尝试切换下一个账号")
+                    server.quit()
+
+                    if self.switch_to_next_account():
+                        next_account = self.get_current_account()
+                        server = self.connect_smtp(next_account)
+                        print(f"[Worker] 已切换到账号 {next_account.get('email')}")
+                        continue
+                    else:
+                        # 所有账号都达到限制
+                        print(f"[Worker] 所有账号均已达到日限,等待到第二天继续")
+                        update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                        error_task(self.task_id, "所有账号均已达到日发送限制,等待第二天继续")
+                        server.quit()
+                        return
+
+                email_addr = contact.get('email', '')
                 contact_id = contact.get('contact_id', '')
                 company_name = contact.get('company', '')
 
-                if not email:
+                if not email_addr:
                     continue
 
-                # 跳过已发送成功的联系人（已计入base_sent，不再累加）
-                if email.lower() in sent_email_set:
-                    print(f"[Worker] {mode_str} 跳过已发送: {email}")
+                # 跳过已发送成功的联系人（当前任务内重复）
+                if email_addr.lower() in sent_email_set:
+                    print(f"[Worker] {mode_str} 跳过已发送(当前任务): {email_addr}")
+                    continue
+
+                # 跳过规则：N天内已成功发送的邮箱（不限任务）
+                if skip_enabled == 1 and email_addr.lower() in recently_sent_set:
+                    print(f"[Worker] {mode_str} 跳过(最近{skip_days}天已发送): {email_addr}")
+                    skipped_count += 1
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
                     continue
 
                 try:
-                    self.send_single_email(server, email, company_name)
+                    self.send_single_email(server, email_addr, company_name)
                     # 重试模式：更新之前失败的日志状态为成功
                     if self.retry_mode:
                         from Sills.db_email_log import update_log_status
-                        update_log_status(self.task_id, email, 'sent', None)
+                        update_log_status(self.task_id, email_addr, 'sent', None)
                     else:
-                        add_log(self.task_id, contact_id, email, company_name, 'sent')
+                        add_log(self.task_id, contact_id, email_addr, company_name, 'sent')
                     sent_count += 1
-                    increment_sent_count(self.task['account_id'])
+                    account_sent_counts[self.current_account_index] += 1
+                    increment_sent_count(current_account['account_id'])
 
                     # 更新进度（累加原有进度）
-                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count)
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
 
-                    print(f"[Worker] {mode_str} 已发送 {base_sent + sent_count}/{total} 到 {email}")
+                    print(f"[Worker] {mode_str} 已发送 {base_sent + sent_count}/{total} 到 {email_addr} (账号{self.current_account_index + 1})")
 
                     # 发送间隔(使用任务配置的间隔，避免过快)
                     send_interval = self.task.get('send_interval', 2) or 2
@@ -217,35 +301,38 @@ class EmailSenderWorker:
                     # 重试模式：更新之前失败的日志，保持failed状态但更新错误信息
                     if self.retry_mode:
                         from Sills.db_email_log import update_log_status
-                        update_log_status(self.task_id, email, 'failed', error_msg)
+                        update_log_status(self.task_id, email_addr, 'failed', error_msg)
                     else:
-                        add_log(self.task_id, contact_id, email, company_name, 'failed', error_msg)
+                        add_log(self.task_id, contact_id, email_addr, company_name, 'failed', error_msg)
                     failed_count += 1
-                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count)
-                    print(f"[Worker] {mode_str} 发送失败 {email}: {error_msg}")
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                    print(f"[Worker] {mode_str} 发送失败 {email_addr}: {error_msg}")
                     # 继续发送下一个
 
             # 断开连接
             server.quit()
 
-            # 完成任务
-            if not self.stop_flag:
+            # 任务完成判断：sent + skipped + failed >= total 时才算完成
+            processed = sent_count + skipped_count + failed_count
+            if not self.stop_flag and processed >= total:
                 complete_task(self.task_id, base_failed + failed_count)
 
             # 发送报告邮件
-            self.send_report_email(sent_count, failed_count)
+            accounts_summary = ", ".join([f"{acc.get('email')}: {account_sent_counts[i]}封" for i, acc in enumerate(self.accounts) if account_sent_counts[i] > 0])
+            self.send_report_email(sent_count, failed_count, skipped_count, accounts_summary)
 
         except Exception as e:
             error_task(self.task_id, str(e))
             print(f"[Worker] 任务出错: {e}")
 
-    def send_report_email(self, sent_count, failed_count):
+    def send_report_email(self, sent_count, failed_count, skipped_count=0):
         """发送任务完成报告（使用主账号发送）"""
         try:
             server = self.connect_smtp()
 
             mode_str = "(重试)" if self.retry_mode else ""
             subject = f"[开发信管理] 任务完成报告{mode_str} - {self.task['task_name']}"
+            skip_info = f"<p><strong style=\"color: orange;\">跳过(已发送):</strong> {skipped_count}</p>" if skipped_count > 0 else ""
             body = f"""
             <html>
             <body>
@@ -258,6 +345,7 @@ class EmailSenderWorker:
             <p><strong>本次处理:</strong> {len(self.contacts)}</p>
             <p><strong style="color: green;">成功发送:</strong> {sent_count}</p>
             <p><strong style="color: red;">发送失败:</strong> {failed_count}</p>
+            {skip_info}
             <hr>
             <p><em>此报告由系统自动发送</em></p>
             </body>

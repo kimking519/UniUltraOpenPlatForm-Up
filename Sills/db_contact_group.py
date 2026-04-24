@@ -376,7 +376,12 @@ def get_group_contacts(group_id, page=1, page_size=100):
     query = f"""
     SELECT c.contact_id, c.cli_id, c.email, c.domain, c.contact_name,
            CASE WHEN c.country IS NOT NULL AND c.country != '' THEN c.country ELSE p.country END as country,
-           c.position, c.phone, c.company, c.is_bounced, c.is_read,
+           c.position, c.phone,
+           CASE WHEN c.company IS NOT NULL AND c.company != '' THEN c.company
+                WHEN p.prospect_name IS NOT NULL AND p.prospect_name != '' THEN p.prospect_name
+                ELSE ''
+           END as company,
+           c.is_bounced, c.is_read,
            c.send_count, c.bounce_count, c.read_count, c.last_sent_at, c.remark,
            p.prospect_name
     FROM uni_contact c
@@ -593,8 +598,20 @@ def get_group_contacts_all_types(group_id, page=1, page_size=100):
         return contacts, len(contacts)
     else:
         # 动态组：筛选条件 + 手动邮件合并
-        # 1. 从筛选条件获取联系人
-        filter_contacts, _ = get_group_contacts(group_id, page_size=1000)
+        # 1. 从筛选条件获取联系人（使用传入的page_size）
+        filter_contacts, filter_total = get_group_contacts(group_id, page_size=page_size)
+
+        # 如果总数超过page_size，继续获取剩余的联系人
+        if filter_total > page_size:
+            all_filter_contacts = filter_contacts[:]
+            current_page = 2
+            while len(all_filter_contacts) < filter_total:
+                more_contacts, _ = get_group_contacts(group_id, page=current_page, page_size=page_size)
+                if not more_contacts:
+                    break
+                all_filter_contacts.extend(more_contacts)
+                current_page += 1
+            filter_contacts = all_filter_contacts
 
         # 2. 从手动邮件列表获取
         manual_emails = json.loads(group.get('manual_emails', '[]') or '[]')

@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS uni_offer (
     offer_price_rmb DOUBLE PRECISION,
     price_kwr DOUBLE PRECISION,
     price_usd DOUBLE PRECISION,
+    price_jpy DOUBLE PRECISION,                  -- 日元报价
     platform TEXT,
     vendor_id TEXT,
     date_code TEXT,
@@ -183,10 +184,12 @@ CREATE TABLE IF NOT EXISTS uni_order_manager (
     customer_order_no TEXT UNIQUE NOT NULL,
     order_date TEXT NOT NULL,
     cli_id TEXT NOT NULL,
+    transaction_code TEXT,                     -- 交易编码（用于关联银行流水）
     total_cost_rmb DOUBLE PRECISION DEFAULT 0,
     total_price_rmb DOUBLE PRECISION DEFAULT 0,
     total_price_kwr DOUBLE PRECISION DEFAULT 0,
     total_price_usd DOUBLE PRECISION DEFAULT 0,
+    total_price_jpy DOUBLE PRECISION DEFAULT 0,
     profit_rmb DOUBLE PRECISION DEFAULT 0,
     model_count INTEGER DEFAULT 0,
     total_qty INTEGER DEFAULT 0,
@@ -474,6 +477,9 @@ CREATE TABLE IF NOT EXISTS uni_prospect (
     company_website TEXT,
     domain TEXT NOT NULL UNIQUE,
     country TEXT,
+    business_type TEXT,                     -- 主要业务
+    business_detail TEXT,                   -- 业务明细
+    value_level INTEGER DEFAULT 0,          -- 价值分级(1-3, 1最高, 0未分级)
     cli_id TEXT,
     status TEXT DEFAULT 'pending',
     contact_count INTEGER DEFAULT 0,
@@ -481,7 +487,8 @@ CREATE TABLE IF NOT EXISTS uni_prospect (
     remark TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON DELETE SET NULL,
-    CONSTRAINT chk_prospect_public CHECK (is_public_domain IN (0,1))
+    CONSTRAINT chk_prospect_public CHECK (is_public_domain IN (0,1)),
+    CONSTRAINT chk_prospect_value CHECK (value_level IN (0,1,2,3))
 );
 
 -- Prospect 索引
@@ -532,24 +539,30 @@ CREATE TABLE IF NOT EXISTS uni_email_account (
 CREATE TABLE IF NOT EXISTS uni_email_task (
     task_id TEXT PRIMARY KEY,
     task_name TEXT NOT NULL,
-    account_id TEXT NOT NULL,
+    account_ids TEXT NOT NULL,         -- JSON数组: 发件人账号IDs（支持多账号轮换）
     group_ids TEXT NOT NULL,          -- JSON数组: 关联的组IDs
     subject TEXT NOT NULL,
     body TEXT NOT NULL,               -- HTML邮件内容(含签名)
     placeholders TEXT,
     schedule_start TEXT,
     schedule_end TEXT,
+    send_interval INTEGER DEFAULT 2,  -- 发送间隔(秒)
+    daily_limit_per_account INTEGER DEFAULT 1800, -- 单账号日发送上限
+    skip_enabled INTEGER DEFAULT 1,   -- 是否启用跳过规则(默认开启)
+    skip_days INTEGER DEFAULT 7,      -- 成功发送后跳过天数
+    current_account_index INTEGER DEFAULT 0, -- 当前使用的账号索引
     status TEXT DEFAULT 'pending',    -- pending, running, paused, completed, cancelled, error
     total_count INTEGER DEFAULT 0,
     sent_count INTEGER DEFAULT 0,
     failed_count INTEGER DEFAULT 0,
+    skipped_count INTEGER DEFAULT 0,  -- 因时间限制跳过数量
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     cancel_requested INTEGER DEFAULT 0,
     error_message TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
-    FOREIGN KEY (account_id) REFERENCES uni_email_account(account_id) ON DELETE CASCADE,
-    CONSTRAINT chk_cancel_requested CHECK (cancel_requested IN (0,1))
+    CONSTRAINT chk_cancel_requested CHECK (cancel_requested IN (0,1)),
+    CONSTRAINT chk_skip_enabled CHECK (skip_enabled IN (0,1))
 );
 
 -- 邮件发送日志表
@@ -581,6 +594,107 @@ CREATE INDEX IF NOT EXISTS idx_group_rel_contact ON uni_contact_group_rel(contac
 ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS group_type TEXT DEFAULT 'dynamic';
 ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS email_list TEXT;
 ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS manual_emails TEXT;
+
+-- 客户订单表添加总价(JPY)字段
+ALTER TABLE uni_order_manager ADD COLUMN IF NOT EXISTS total_price_jpy DOUBLE PRECISION DEFAULT 0;
+
+-- 邮件任务表添加跳过规则字段
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS skip_enabled INTEGER DEFAULT 1;
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS skip_days INTEGER DEFAULT 7;
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS skipped_count INTEGER DEFAULT 0;
+
+-- 邮件任务表添加多账号轮换字段
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS account_ids TEXT;
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS daily_limit_per_account INTEGER DEFAULT 1800;
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS current_account_index INTEGER DEFAULT 0;
+
+-- 数据迁移：将旧的account_id转为account_ids JSON数组
+UPDATE uni_email_task SET account_ids = json_build_array(account_id) WHERE account_ids IS NULL AND account_id IS NOT NULL;
+
+-- ============ 银行流水管理表（财务管理模块） ============
+
+-- 银行流水主表
+CREATE TABLE IF NOT EXISTS uni_bank_transaction (
+    transaction_id TEXT PRIMARY KEY,              -- 格式: BT-YYYYMMDDHHMMSS-XXXX
+    transaction_time TIMESTAMP NOT NULL,         -- 银行交易时间
+    transaction_no TEXT NOT NULL,                 -- 银行流水号（去重依据1）
+    ledger_no TEXT,                               -- 记账流水号（去重依据2）
+    transaction_type TEXT NOT NULL,               -- 交易类型：收入/支出/转账等
+    transaction_detail TEXT,                      -- 交易详情描述
+    currency TEXT DEFAULT 'CNY',                  -- 货币类型
+    transaction_amount DOUBLE PRECISION NOT NULL, -- 交易金额（正数）
+    balance DOUBLE PRECISION,                     -- 交易后余额
+    payer_name TEXT,                              -- 付款方名称
+    payer_bank TEXT,                              -- 付款方银行
+    payer_account TEXT,                           -- 付款方账号
+    payee_name TEXT,                              -- 收款方名称
+    payee_bank TEXT,                              -- 收款方银行
+    payee_account TEXT,                           -- 收款方账号
+    payee_remark_name TEXT,                       -- 收款方备注名
+    remark_text TEXT,                             -- 流水备注信息
+    internal_remark TEXT,                         -- 内部备注（人工添加）
+    source_file TEXT,                             -- 来源文件名
+    import_batch TEXT NOT NULL,                   -- 导入批次号（格式: BATCH-YYYYMMDDHHMM-XXX）
+    is_matched INTEGER DEFAULT 0,                 -- 匹配状态：0=未匹配，1=完全匹配，2=部分匹配
+    matched_amount DOUBLE PRECISION DEFAULT 0,    -- 已匹配金额累计
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT chk_bt_is_matched CHECK (is_matched IN (0, 1, 2)),
+    CONSTRAINT chk_bt_amount_positive CHECK (transaction_amount > 0),
+    CONSTRAINT uq_bt_transaction_dedup UNIQUE(transaction_no, ledger_no)  -- 去重约束
+);
+
+-- 银行流水索引
+CREATE INDEX IF NOT EXISTS idx_bt_time ON uni_bank_transaction(transaction_time DESC);
+CREATE INDEX IF NOT EXISTS idx_bt_no ON uni_bank_transaction(transaction_no);
+CREATE INDEX IF NOT EXISTS idx_bt_matched ON uni_bank_transaction(is_matched);
+CREATE INDEX IF NOT EXISTS idx_bt_payer ON uni_bank_transaction(payer_name);
+CREATE INDEX IF NOT EXISTS idx_bt_payee ON uni_bank_transaction(payee_name);
+CREATE INDEX IF NOT EXISTS idx_bt_batch ON uni_bank_transaction(import_batch);
+CREATE INDEX IF NOT EXISTS idx_bt_amount ON uni_bank_transaction(transaction_amount);
+
+-- 台账关联表（流水与订单关联）
+CREATE TABLE IF NOT EXISTS uni_bank_ledger (
+    ledger_id TEXT PRIMARY KEY,                   -- 格式: LED-YYYYMMDDHHMMSS-XXXX
+    transaction_id TEXT NOT NULL,                 -- 关联流水ID
+    manager_id TEXT NOT NULL,                     -- 关联客户订单ID
+    allocation_amount DOUBLE PRECISION NOT NULL,  -- 分配金额
+    is_primary INTEGER DEFAULT 0,                 -- 是否主要匹配：0=否，1=是
+    match_type TEXT DEFAULT 'manual',             -- 匹配类型：manual/auto/partial
+    remark TEXT,                                  -- 备注
+    created_by TEXT,                              -- 创建人（员工ID）
+    created_at TIMESTAMP DEFAULT NOW(),
+
+    FOREIGN KEY (transaction_id) REFERENCES uni_bank_transaction(transaction_id) ON DELETE CASCADE,
+    FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES uni_emp(emp_id) ON DELETE SET NULL,
+
+    CONSTRAINT chk_bl_allocation_positive CHECK (allocation_amount > 0),
+    CONSTRAINT chk_bl_is_primary CHECK (is_primary IN (0, 1)),
+    CONSTRAINT chk_bl_match_type CHECK (match_type IN ('manual', 'auto', 'partial')),
+    CONSTRAINT uq_bl_ledger_unique UNIQUE(transaction_id, manager_id)  -- 防止重复关联
+);
+
+-- 台账关联表索引
+CREATE INDEX IF NOT EXISTS idx_bl_tx ON uni_bank_ledger(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_bl_manager ON uni_bank_ledger(manager_id);
+CREATE INDEX IF NOT EXISTS idx_bl_primary ON uni_bank_ledger(is_primary) WHERE is_primary = 1;
+CREATE INDEX IF NOT EXISTS idx_bl_date ON uni_bank_ledger(created_at DESC);
+
+-- 邮件模板表 (开发信模板管理)
+CREATE TABLE IF NOT EXISTS uni_email_template (
+    template_id TEXT PRIMARY KEY,         -- TPL+时间戳格式
+    template_name TEXT NOT NULL,          -- 模板名称
+    subject TEXT NOT NULL,                -- 邮件主题模板
+    body TEXT NOT NULL,                   -- HTML邮件内容模板
+    created_by TEXT NOT NULL,             -- 创建人(员工ID)
+    created_at TIMESTAMP DEFAULT NOW(),
+    FOREIGN KEY (created_by) REFERENCES uni_emp(emp_id) ON DELETE CASCADE
+);
+
+-- 邮件模板索引
+CREATE INDEX IF NOT EXISTS idx_template_created_by ON uni_email_template(created_by);
+CREATE INDEX IF NOT EXISTS idx_template_name ON uni_email_template(template_name);
 """
 
 # 默认管理员插入语句

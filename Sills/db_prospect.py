@@ -154,17 +154,30 @@ def add_prospect(data):
         # 统计关联联系人
         contact_count = count_contacts_by_domain(domain)
 
+        # 价值分级处理(0-3, 默认0未分级)
+        value_level = data.get('value_level', 0)
+        try:
+            value_level = int(value_level) if value_level else 0
+            if value_level < 0 or value_level > 3:
+                value_level = 0
+        except:
+            value_level = 0
+
         with get_db_connection() as conn:
             conn.execute("""
                 INSERT INTO uni_prospect (
                     prospect_id, prospect_name, company_website, domain,
-                    country, status, contact_count, is_public_domain, remark
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    country, business_type, business_detail, value_level,
+                    status, contact_count, is_public_domain, remark
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 prospect_id, prospect_name,
                 data.get('company_website', ''),
                 domain,
                 data.get('country', ''),
+                data.get('business_type', ''),
+                data.get('business_detail', ''),
+                value_level,
                 'pending',
                 contact_count,
                 is_public,
@@ -257,16 +270,29 @@ def import_prospects(data_list):
                 prospect_id = get_next_prospect_id()
                 is_public = 1 if is_public_domain(domain) else 0
 
+                # 价值分级处理
+                value_level = data.get('value_level', 0)
+                try:
+                    value_level = int(value_level) if value_level else 0
+                    if value_level < 0 or value_level > 3:
+                        value_level = 0
+                except:
+                    value_level = 0
+
                 conn.execute("""
                     INSERT INTO uni_prospect (
                         prospect_id, prospect_name, company_website, domain,
-                        country, status, contact_count, is_public_domain, remark
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        country, business_type, business_detail, value_level,
+                        status, contact_count, is_public_domain, remark
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     prospect_id, prospect_name,
                     data.get('company_website', ''),
                     domain,
                     data.get('country', ''),
+                    data.get('business_type', ''),
+                    data.get('business_detail', ''),
+                    value_level,
                     'pending',
                     0,
                     is_public,

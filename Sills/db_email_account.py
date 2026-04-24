@@ -228,8 +228,12 @@ def increment_sent_count(account_id):
         conn.commit()
 
 
-def can_send_today(account_id):
-    """检查今日是否可以继续发送
+def can_send_today(account_id, custom_limit=None):
+    """检查今日是否可以继续发送（支持自定义日限）
+
+    Args:
+        account_id: 账号ID
+        custom_limit: 自定义日发送上限（可选，默认使用账号设置的daily_limit）
 
     Returns:
         (can_send, remaining) tuple
@@ -246,9 +250,12 @@ def can_send_today(account_id):
             return False, 0
 
         # 确保类型正确
-        daily_limit = int(row.get('daily_limit') if isinstance(row, dict) else row[0] or 1800)
+        account_limit = int(row.get('daily_limit') if isinstance(row, dict) else row[0] or 1800)
         sent_today = int(row.get('sent_today') if isinstance(row, dict) else row[1] or 0)
         last_reset = row.get('last_reset_date') if isinstance(row, dict) else row[2]
+
+        # 使用自定义限制或账号限制
+        daily_limit = custom_limit if custom_limit is not None else account_limit
 
         # 如果是新的一天,自动重置
         if last_reset != today:

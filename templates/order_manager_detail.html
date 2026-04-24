@@ -112,6 +112,34 @@
             </div>
         </div>
 
+        <!-- 银行流水卡片 -->
+        <div class="om-card" id="bankLedgerCard">
+            <div class="om-card-header">
+                <h3 class="om-card-title">银行流水</h3>
+                <button type="button" class="om-btn om-btn-outline om-btn-xs" onclick="openAddLedgerModal()">
+                    <svg class="om-btn-icon-sm" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                    添加
+                </button>
+            </div>
+            <div class="om-card-body">
+                <div class="om-bank-summary">
+                    <div class="om-info-row">
+                        <span class="om-info-label">已收款</span>
+                        <span class="om-info-value om-text-success" id="totalReceived">0.00</span>
+                        <span class="om-info-unit">RMB</span>
+                    </div>
+                    <div class="om-info-row">
+                        <span class="om-info-label">订单总额</span>
+                        <span class="om-info-value">{{ "%.2f"|format(manager.total_price_rmb) }}</span>
+                        <span class="om-info-unit">RMB</span>
+                    </div>
+                </div>
+                <div class="om-bank-ledger-list" id="bankLedgerList">
+                    <p class="om-empty-hint">暂无关联流水</p>
+                </div>
+            </div>
+        </div>
+
         <!-- 附件区域 -->
         <div class="om-card">
             <div class="om-card-header">
@@ -239,8 +267,10 @@
                                 <th class="resizable">报价(RMB)</th>
                                 <th class="resizable">报价(KWR)</th>
                                 <th class="resizable">报价(USD)</th>
+                                <th class="resizable">报价(JPY)</th>
                                 <th class="resizable">利润</th>
                                 <th class="resizable">总利润</th>
+                                <th class="resizable">总价格</th>
                                 <th class="resizable">已转</th>
                                 <th class="om-col-action">操作</th>
                             </tr>
@@ -285,8 +315,12 @@
                                 <td class="om-num" ondblclick="makeEditablePrice(this, '{{ order.offer_id }}', 'price_usd', 'USD', {{ order.price_usd or 0 }}, {{ order.offer_price_rmb or 0 }})">
                                     <span class="om-text-primary">{{ "%.3f"|format(order.price_usd or 0) }}</span>
                                 </td>
+                                <td class="om-num" ondblclick="makeEditablePrice(this, '{{ order.offer_id }}', 'price_jpy', 'JPY', {{ order.price_jpy or 0 }}, {{ order.offer_price_rmb or 0 }})">
+                                    <span class="om-text-primary">{{ "%.1f"|format(order.price_jpy or 0) }}</span>
+                                </td>
                                 <td class="om-num"><span class="om-text-success om-font-medium">{{ "%.4f"|format(order.profit or 0) }}</span></td>
                                 <td class="om-num"><span class="om-text-success om-font-semibold">{{ "%.4f"|format((order.profit or 0) * (order.quoted_qty or 1)) }}</span></td>
+                                <td class="om-num"><span class="om-text-primary om-font-semibold">{% set price_val = (order.price_kwr or 0) if (order.price_kwr or 0) != 0 else ((order.price_usd or 0) if (order.price_usd or 0) != 0 else (order.price_jpy or 0)) %}{{ "%.2f"|format(price_val * (order.quoted_qty or 1)) }}</span></td>
                                 <td ondblclick="makeTransferredEditable(this, '{{ order.offer_id }}', '{{ order.is_transferred or '未转' }}')">
                                     <span class="om-badge {% if order.is_transferred == '已转' %}om-badge-success{% else %}om-badge-warning{% endif %}">{{ order.is_transferred or '未转' }}</span>
                                 </td>
@@ -783,6 +817,91 @@
     background: var(--om-gray-50);
     border-radius: var(--om-radius-sm);
 }
+/* 银行流水卡片样式 */
+.om-bank-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--om-gray-200);
+}
+.om-bank-ledger-list { display: flex; flex-direction: column; gap: 6px; }
+.om-bank-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--om-gray-50);
+    border-radius: var(--om-radius-sm);
+    border: 1px solid var(--om-gray-200);
+}
+.om-bank-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.om-bank-no { font-size: 13px; font-weight: 500; color: var(--om-gray-700); }
+.om-bank-time { font-size: 11px; color: var(--om-gray-400); }
+.om-bank-amount { font-size: 14px; font-weight: 600; color: var(--om-success); font-family: 'Inter', monospace; }
+.om-bank-payer { font-size: 12px; color: var(--om-gray-500); max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+.om-text-success { color: var(--om-success); }
+.om-info-unit { font-size: 12px; color: var(--om-gray-400); }
+/* 流水关联模态框样式 */
+.om-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+.om-modal-content {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+.om-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+.om-modal-header h3 { font-size: 16px; font-weight: 600; }
+.om-modal-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--om-gray-400);
+}
+.om-modal-body { margin-bottom: 16px; }
+.om-form-group { margin-bottom: 12px; }
+.om-form-label { font-size: 13px; font-weight: 500; color: var(--om-gray-600); margin-bottom: 4px; display: block; }
+.om-input { width: 100%; padding: 8px 12px; border: 1px solid var(--om-gray-300); border-radius: 4px; }
+.om-ledger-tx-list { max-height: 200px; overflow-y: auto; }
+.om-ledger-tx-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--om-gray-200);
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 4px;
+}
+.om-ledger-tx-item:hover { background: var(--om-gray-50); }
+.om-tx-info { flex: 1; display: flex; flex-direction: column; }
+.om-tx-no { font-size: 12px; font-weight: 500; }
+.om-tx-time { font-size: 11px; color: var(--om-gray-400); }
+.om-tx-amount { font-size: 14px; font-weight: 600; color: var(--om-success); }
+.om-tx-payer { font-size: 12px; color: var(--om-gray-500); }
+.om-selected-tx { padding: 8px; background: var(--om-gray-50); border-radius: 4px; }
+.om-tx-selected-info { display: flex; gap: 16px; font-size: 12px; }
+.om-modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+.om-btn-primary { background: var(--om-primary); color: white; }
 
 /* ============ 空状态 ============ */
 .om-empty-state { text-align: center; padding: 40px 20px; color: var(--om-gray-400); }
@@ -1035,12 +1154,16 @@ async function makeEditablePrice(td, offerId, field, currency, currentValue, cur
     if (td.querySelector('input')) return;
 
     // 获取最新汇率
-    let exchangeRate = currency === 'KWR' ? 180.0 : 7.0;
+    let exchangeRate = currency === 'KWR' ? 180.0 : (currency === 'JPY' ? 20.0 : 7.0);
     try {
-        const rateResp = await fetch('/api/daily/rate?currency=' + currency);
-        const rateData = await rateResp.json();
-        if (rateData.rate) exchangeRate = rateData.rate;
-    } catch (e) {}
+        const res = await fetch('/api/exchange/rates');
+        const rateData = await res.json();
+        if (rateData.success) {
+            exchangeRate = currency === 'KWR' ? rateData.krw : (currency === 'JPY' ? rateData.jpy : rateData.usd);
+        }
+    } catch (e) {
+        console.error('Failed to get exchange rate:', e);
+    }
 
     const originalValue = currentValue;
     td.innerHTML = `<input type="number" step="0.01" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
@@ -1289,5 +1412,201 @@ async function confirmBatchToPurchase() {
         alert('请求失败，请稍后重试');
     }
 }
+
+// ============ 银行流水关联功能 ============
+async function loadBankLedgers() {
+    try {
+        const response = await fetch(`/api/ledger/by_order/${managerId}`);
+        const data = await response.json();
+
+        // 更新已收款金额
+        document.getElementById('totalReceived').textContent = data.total_received.toFixed(2);
+
+        // 渲染关联流水列表
+        const listEl = document.getElementById('bankLedgerList');
+        if (data.items.length === 0) {
+            listEl.innerHTML = '<p class="om-empty-hint">暂无关联流水</p>';
+            return;
+        }
+
+        let html = '';
+        data.items.forEach(ledger => {
+            html += `
+                <div class="om-bank-item">
+                    <div class="om-bank-info">
+                        <span class="om-bank-no">${ledger.transaction_no || '--'}</span>
+                        <span class="om-bank-time">${ledger.transaction_time ? ledger.transaction_time.substring(0, 10) : '--'}</span>
+                    </div>
+                    <div class="om-bank-amount">${ledger.currency || 'CNY'} ${ledger.allocation_amount.toFixed(2)}</div>
+                    <div class="om-bank-payer">${ledger.payer_name || '--'}</div>
+                    <button class="om-btn om-btn-danger om-btn-xs" onclick="unlinkLedger('${ledger.ledger_id}')">解除</button>
+                </div>
+            `;
+        });
+        listEl.innerHTML = html;
+
+        // 自动更新paid_amount字段
+        const paidInput = document.getElementById('paid_amount');
+        if (paidInput && parseFloat(paidInput.value) !== data.total_received) {
+            paidInput.value = data.total_received.toFixed(2);
+        }
+    } catch (error) {
+        console.error('加载银行流水失败:', error);
+    }
+}
+
+function openAddLedgerModal() {
+    const modalHtml = `
+        <div class="om-modal-overlay" id="addLedgerModal" style="display: flex;">
+            <div class="om-modal-content" style="width: 500px;">
+                <div class="om-modal-header">
+                    <h3>添加银行流水关联</h3>
+                    <button class="om-modal-close" onclick="closeAddLedgerModal()">&times;</button>
+                </div>
+                <div class="om-modal-body">
+                    <div class="om-form-group">
+                        <label class="om-form-label">搜索流水</label>
+                        <input type="text" id="ledgerTxSearch" class="om-input" placeholder="输入流水号或付款方名称..." onkeyup="searchTransactions()">
+                    </div>
+                    <div class="om-ledger-tx-list" id="ledgerTxList">
+                        <p class="om-empty-hint">输入关键词搜索未匹配的流水</p>
+                    </div>
+                    <div class="om-form-group" id="selectedTxInfo" style="display: none;">
+                        <label class="om-form-label">选中流水</label>
+                        <div class="om-selected-tx" id="selectedTx"></div>
+                    </div>
+                    <div class="om-form-group">
+                        <label class="om-form-label">分配金额</label>
+                        <input type="number" id="ledgerAmount" class="om-input" step="0.01" placeholder="分配金额">
+                    </div>
+                </div>
+                <div class="om-modal-footer">
+                    <button class="om-btn om-btn-outline" onclick="closeAddLedgerModal()">取消</button>
+                    <button class="om-btn om-btn-primary" onclick="confirmAddLedger()">确认关联</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function closeAddLedgerModal() {
+    const modal = document.getElementById('addLedgerModal');
+    if (modal) modal.remove();
+}
+
+let selectedTxId = null;
+
+async function searchTransactions() {
+    const keyword = document.getElementById('ledgerTxSearch').value;
+    if (!keyword) {
+        document.getElementById('ledgerTxList').innerHTML = '<p class="om-empty-hint">输入关键词搜索未匹配的流水</p>';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/bank/list?payer_name=${encodeURIComponent(keyword)}&is_matched=0&page=1&page_size=10`);
+        const data = await response.json();
+
+        const listEl = document.getElementById('ledgerTxList');
+        if (data.items.length === 0) {
+            listEl.innerHTML = '<p class="om-empty-hint">未找到匹配的流水</p>';
+            return;
+        }
+
+        let html = '';
+        data.items.forEach(tx => {
+            html += `
+                <div class="om-ledger-tx-item" onclick="selectTransaction('${tx.transaction_id}', ${tx.transaction_amount}, '${tx.payer_name || ''}', '${tx.transaction_time || ''}')">
+                    <div class="om-tx-info">
+                        <span class="om-tx-no">${tx.transaction_no || '--'}</span>
+                        <span class="om-tx-time">${tx.transaction_time ? tx.transaction_time.substring(0, 10) : '--'}</span>
+                    </div>
+                    <div class="om-tx-amount">CNY ${tx.transaction_amount.toFixed(2)}</div>
+                    <div class="om-tx-payer">${tx.payer_name || '--'}</div>
+                </div>
+            `;
+        });
+        listEl.innerHTML = html;
+    } catch (error) {
+        console.error('搜索流水失败:', error);
+    }
+}
+
+function selectTransaction(txId, amount, payer, time) {
+    selectedTxId = txId;
+
+    document.getElementById('selectedTxInfo').style.display = 'block';
+    document.getElementById('selectedTx').innerHTML = `
+        <div class="om-tx-selected-info">
+            <span>流水号: ${txId}</span>
+            <span>金额: ${amount.toFixed(2)}</span>
+            <span>付款方: ${payer}</span>
+        </div>
+    `;
+    document.getElementById('ledgerAmount').value = amount.toFixed(2);
+}
+
+async function confirmAddLedger() {
+    if (!selectedTxId) {
+        alert('请先选择要关联的流水');
+        return;
+    }
+
+    const amount = parseFloat(document.getElementById('ledgerAmount').value);
+    if (!amount || amount <= 0) {
+        alert('请输入有效的分配金额');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/ledger/link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                transaction_id: selectedTxId,
+                manager_id: managerId,
+                allocation_amount: amount
+            })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            closeAddLedgerModal();
+            loadBankLedgers();
+            alert('关联成功');
+        } else {
+            alert('关联失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('关联流水失败:', error);
+        alert('请求失败，请稍后重试');
+    }
+}
+
+async function unlinkLedger(ledgerId) {
+    if (!confirm('确定解除该流水关联？')) return;
+
+    try {
+        const response = await fetch('/api/ledger/unlink', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ledger_id: ledgerId })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            loadBankLedgers();
+        } else {
+            alert('解除失败: ' + result.message);
+        }
+    } catch (error) {
+        console.error('解除流水关联失败:', error);
+        alert('请求失败，请稍后重试');
+    }
+}
+
+// 页面加载时加载银行流水
+loadBankLedgers();
 </script>
 {% endblock %}

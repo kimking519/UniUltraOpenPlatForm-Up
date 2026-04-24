@@ -24,6 +24,7 @@ def get_manager_list(page=1, page_size=10, search_kw="", cli_id="", start_date="
     query = """
     FROM uni_order_manager m
     JOIN uni_cli c ON m.cli_id = c.cli_id
+    LEFT JOIN uni_bank_transaction t ON m.transaction_code = t.transaction_no
     WHERE (m.customer_order_no LIKE ? OR c.cli_name LIKE ?)
     """
     params = [f"%{search_kw}%", f"%{search_kw}%"]
@@ -45,7 +46,7 @@ def get_manager_list(page=1, page_size=10, search_kw="", cli_id="", start_date="
         params.append(int(is_finished))
 
     count_sql = "SELECT COUNT(*) " + query
-    data_sql = """SELECT m.*, c.cli_name,
+    data_sql = """SELECT m.*, c.cli_name, t.currency as transaction_currency,
                    (SELECT COUNT(*) FROM uni_order_manager_rel WHERE manager_id = m.manager_id) as rel_count
             """ + query + " ORDER BY m.order_date DESC, m.created_at DESC LIMIT ? OFFSET ?"
     params_with_limit = params + [page_size, offset]
@@ -178,13 +179,20 @@ def update_manager(manager_id, data):
 
 
 def delete_manager(manager_id):
-    """删除客户订单（有关联报价订单时禁止删除）"""
+    """删除客户订单（级联删除关联的报价订单）"""
     try:
         with get_db_connection() as conn:
-            # 检查是否有关联的报价订单
-            rel_count = conn.execute("SELECT COUNT(*) FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,)).fetchone()[0]
-            if rel_count > 0:
-                return False, f"无法删除：该客户订单关联了 {rel_count} 条报价订单，请先移除关联"
+            # 获取关联的报价订单ID列表
+            offer_ids = conn.execute("SELECT offer_id FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,)).fetchall()
+            offer_ids = [row[0] for row in offer_ids]
+
+            # 删除关联的报价订单
+            if offer_ids:
+                placeholders = ','.join(['?'] * len(offer_ids))
+                conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({placeholders})", offer_ids)
+
+            # 删除关联记录（CASCADE也会自动删除，但手动删除更明确）
+            conn.execute("DELETE FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,))
 
             # 删除附件记录
             conn.execute("DELETE FROM uni_order_attachment WHERE manager_id = ?", (manager_id,))
@@ -192,7 +200,7 @@ def delete_manager(manager_id):
             # 删除客户订单
             conn.execute("DELETE FROM uni_order_manager WHERE manager_id = ?", (manager_id,))
             conn.commit()
-        return True, "删除成功"
+        return True, f"删除成功（同时删除了 {len(offer_ids)} 条关联报价）"
     except Exception as e:
         return False, f"数据库错误：{str(e)}"
 
@@ -250,7 +258,7 @@ def recalculate_manager_totals(manager_id):
     with get_db_connection() as conn:
         # 查询所有关联的报价订单
         rows = conn.execute("""
-            SELECT o.offer_price_rmb as price_rmb, o.price_kwr, o.price_usd, o.cost_price_rmb,
+            SELECT o.offer_price_rmb as price_rmb, o.price_kwr, o.price_usd, o.price_jpy, o.cost_price_rmb,
                    COALESCE(o.quoted_qty, 1) as qty
             FROM uni_order_manager_rel r
             JOIN uni_offer o ON r.offer_id = o.offer_id
@@ -260,6 +268,7 @@ def recalculate_manager_totals(manager_id):
         total_price_rmb = 0.0
         total_price_kwr = 0.0
         total_price_usd = 0.0
+        total_price_jpy = 0.0
         total_cost_rmb = 0.0
         total_qty = 0
 
@@ -268,12 +277,14 @@ def recalculate_manager_totals(manager_id):
             price_rmb = float(r['price_rmb'] or 0)
             price_kwr = float(r['price_kwr'] or 0)
             price_usd = float(r['price_usd'] or 0)
+            price_jpy = float(r['price_jpy'] or 0)
             cost_rmb = float(r['cost_price_rmb'] or 0)
 
             # 价格 × 数量 = 总价
             total_price_rmb += price_rmb * qty
             total_price_kwr += price_kwr * qty
             total_price_usd += price_usd * qty
+            total_price_jpy += price_jpy * qty
             total_cost_rmb += cost_rmb * qty
             total_qty += qty
 
@@ -283,10 +294,10 @@ def recalculate_manager_totals(manager_id):
         # 更新客户订单
         conn.execute("""
             UPDATE uni_order_manager SET
-                total_price_rmb = ?, total_price_kwr = ?, total_price_usd = ?,
+                total_price_rmb = ?, total_price_kwr = ?, total_price_usd = ?, total_price_jpy = ?,
                 total_cost_rmb = ?, profit_rmb = ?, model_count = ?, total_qty = ?
             WHERE manager_id = ?
-        """, (round(total_price_rmb, 2), round(total_price_kwr, 2), round(total_price_usd, 2),
+        """, (round(total_price_rmb, 2), round(total_price_kwr, 2), round(total_price_usd, 2), round(total_price_jpy, 2),
               round(total_cost_rmb, 2), round(profit_rmb, 2), model_count, total_qty, manager_id))
         conn.commit()
 
@@ -464,28 +475,32 @@ def batch_import_manager(text, cli_id=None):
 
 
 def batch_delete_managers(manager_ids):
-    """批量删除客户订单（有关联销售订单或报价时禁止删除）"""
+    """批量删除客户订单（级联删除关联的报价订单）"""
     if not manager_ids:
         return True, "无选中记录"
     try:
         with get_db_connection() as conn:
             placeholders = ','.join(['?'] * len(manager_ids))
-            # 检查是否有关联的销售订单
-            rel_count = conn.execute(f"SELECT COUNT(*) FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids).fetchone()[0]
-            if rel_count > 0:
-                return False, f"无法删除：选中的客户订单共关联了 {rel_count} 条销售订单，请先移除关联"
 
-            # 检查是否有关联的报价
-            offer_count = conn.execute(f"SELECT COUNT(*) FROM uni_offer WHERE manager_id IN ({placeholders})", manager_ids).fetchone()[0]
-            if offer_count > 0:
-                return False, f"无法删除：选中的客户订单共关联了 {offer_count} 条报价，请先移除关联"
+            # 获取关联的报价订单ID列表
+            offer_ids = conn.execute(f"SELECT offer_id FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids).fetchall()
+            offer_ids = [row[0] for row in offer_ids]
+
+            # 删除关联的报价订单
+            if offer_ids:
+                offer_placeholders = ','.join(['?'] * len(offer_ids))
+                conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
+
+            # 删除关联记录
+            conn.execute(f"DELETE FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids)
 
             # 删除附件
             conn.execute(f"DELETE FROM uni_order_attachment WHERE manager_id IN ({placeholders})", manager_ids)
+
             # 删除客户订单
             conn.execute(f"DELETE FROM uni_order_manager WHERE manager_id IN ({placeholders})", manager_ids)
             conn.commit()
-        return True, f"成功删除 {len(manager_ids)} 条记录"
+        return True, f"成功删除 {len(manager_ids)} 条客户订单（同时删除了 {len(offer_ids)} 条关联报价）"
     except Exception as e:
         return False, str(e)
 
@@ -752,3 +767,148 @@ def get_all_manager_orders_for_purchase(manager_ids):
         """, manager_ids).fetchall()
         # 只返回未转采购的
         return [dict(r) for r in rows if not r.get('is_purchased')]
+
+
+def batch_link_transactions(manager_ids, emp_id=None):
+    """
+    批量补关联银行流水
+
+    根据订单的 transaction_code 字段查找对应的银行流水并建立关联
+
+    Args:
+        manager_ids: 客户订单ID列表
+        emp_id: 操作员工ID
+
+    Returns:
+        {
+            'linked_count': 已关联数量,
+            'skipped_count': 无交易编码或已关联数量,
+            'failed_count': 失败数量,
+            'details': [
+                {'manager_id': xxx, 'order_no': xxx, 'status': 'linked/skipped/failed', 'message': xxx}
+            ]
+        }
+    """
+    result = {
+        'linked_count': 0,
+        'skipped_count': 0,
+        'failed_count': 0,
+        'details': []
+    }
+
+    if not manager_ids:
+        return result
+
+    from Sills.db_bank_ledger import create_ledger
+
+    with get_db_connection() as conn:
+        for manager_id in manager_ids:
+            try:
+                # 获取订单信息
+                manager = conn.execute("""
+                    SELECT m.manager_id, m.customer_order_no, m.transaction_code, m.total_price_rmb
+                    FROM uni_order_manager m
+                    WHERE m.manager_id = ?
+                """, (manager_id,)).fetchone()
+
+                if not manager:
+                    result['failed_count'] += 1
+                    result['details'].append({
+                        'manager_id': manager_id,
+                        'order_no': '-',
+                        'status': 'failed',
+                        'message': '订单不存在'
+                    })
+                    continue
+
+                transaction_code = manager['transaction_code']
+                order_no = manager['customer_order_no']
+
+                # 检查是否有交易编码
+                if not transaction_code:
+                    result['skipped_count'] += 1
+                    result['details'].append({
+                        'manager_id': manager_id,
+                        'order_no': order_no,
+                        'status': 'skipped',
+                        'message': '无交易编码'
+                    })
+                    continue
+
+                # 检查是否已关联流水
+                existing_ledger = conn.execute("""
+                    SELECT ledger_id FROM uni_bank_ledger WHERE manager_id = ?
+                """, (manager_id,)).fetchone()
+
+                if existing_ledger:
+                    result['skipped_count'] += 1
+                    result['details'].append({
+                        'manager_id': manager_id,
+                        'order_no': order_no,
+                        'status': 'skipped',
+                        'message': '已存在流水关联'
+                    })
+                    continue
+
+                # 查找银行流水
+                tx = conn.execute("""
+                    SELECT transaction_id, transaction_amount
+                    FROM uni_bank_transaction
+                    WHERE transaction_no = ? OR ledger_no = ?
+                    LIMIT 1
+                """, (transaction_code, transaction_code)).fetchone()
+
+                if not tx:
+                    result['failed_count'] += 1
+                    result['details'].append({
+                        'manager_id': manager_id,
+                        'order_no': order_no,
+                        'status': 'failed',
+                        'message': f'未找到交易编码 {transaction_code} 对应的银行流水'
+                    })
+                    continue
+
+                transaction_id = tx['transaction_id']
+                allocation_amount = float(manager['total_price_rmb'] or 0)
+
+                if allocation_amount <= 0:
+                    allocation_amount = float(tx['transaction_amount'])
+
+                # 创建关联
+                success, ledger_result = create_ledger(
+                    transaction_id=transaction_id,
+                    manager_id=manager_id,
+                    allocation_amount=allocation_amount,
+                    is_primary=1,
+                    match_type='manual',
+                    created_by=emp_id,
+                    remark=f'批量补关联，交易编码: {transaction_code}'
+                )
+
+                if success:
+                    result['linked_count'] += 1
+                    result['details'].append({
+                        'manager_id': manager_id,
+                        'order_no': order_no,
+                        'status': 'linked',
+                        'message': f'成功关联流水 {transaction_code}, 金额 {allocation_amount:.2f}'
+                    })
+                else:
+                    result['failed_count'] += 1
+                    result['details'].append({
+                        'manager_id': manager_id,
+                        'order_no': order_no,
+                        'status': 'failed',
+                        'message': f'关联失败: {ledger_result}'
+                    })
+
+            except Exception as e:
+                result['failed_count'] += 1
+                result['details'].append({
+                    'manager_id': manager_id,
+                    'order_no': '-',
+                    'status': 'failed',
+                    'message': str(e)
+                })
+
+    return result

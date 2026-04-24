@@ -356,6 +356,7 @@
                     <th>报价(RMB)</th>
                     <th>报价(KWR)</th>
                     <th>报价(USD)</th>
+                    <th>报价(JPY)</th>
                     <th>利润</th>
                     <th>总利润</th>
                     <th>供应商</th>
@@ -409,6 +410,8 @@
                             style="color:var(--primary);">{{ "%.1f"|format(row.price_kwr or 0) }}</span></td>
                     <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_usd', 'USD', {{ row.price_usd or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ "%.3f"|format(row.price_usd or 0) }}</span></td>
+                    <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_jpy', 'JPY', {{ row.price_jpy or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
+                            style="color:var(--primary);">{{ "%.1f"|format(row.price_jpy or 0) }}</span></td>
                     <td><span style="color:#10b981; font-weight:500;">{{ row.profit }}</span></td>
                     <td><span style="color:#10b981; font-weight:bold;">{{ row.total_profit }}</span></td>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
@@ -812,17 +815,17 @@
         };
     }
 
-    // 编辑价格字段（KWR/USD），完成后自动计算 RMB
+    // 编辑价格字段（KWR/USD/JPY），完成后自动计算 RMB
     async function makeEditablePrice(td, offer_id, field, currency, currentValue, currentRmb) {
         if (td.querySelector('input')) return;
 
         // 获取最新汇率
-        let exchangeRate = currency === 'KWR' ? 180.0 : 7.0;
+        let exchangeRate = currency === 'KWR' ? 180.0 : (currency === 'JPY' ? 20.0 : 7.0);
         try {
             const res = await fetch('/api/exchange/rates');
             const rateData = await res.json();
             if (rateData.success) {
-                exchangeRate = currency === 'KWR' ? rateData.krw : rateData.usd;
+                exchangeRate = currency === 'KWR' ? rateData.krw : (currency === 'JPY' ? rateData.jpy : rateData.usd);
             }
         } catch (e) {
             console.error('Failed to get exchange rate:', e);
