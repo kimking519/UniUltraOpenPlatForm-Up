@@ -403,6 +403,7 @@
                     <th>总成本</th>
                     <th>总价(RMB)</th>
                     <th>总价(KRW)</th>
+                    <th>总价(JPY)</th>
                     <th>总价(USD)</th>
                     <th>型号数</th>
                     <th>数量</th>
@@ -424,6 +425,7 @@
                     <td class="num">{{ "%.2f"|format(item.total_cost_rmb or 0) }}</td>
                     <td class="num">{{ "%.2f"|format(item.total_price_rmb or 0) }}</td>
                     <td class="num">{{ "%.0f"|format(item.total_price_kwr or 0) }}</td>
+                    <td class="num">{{ "%.0f"|format(item.total_price_jpy or 0) }}</td>
                     <td class="num">{{ "%.2f"|format(item.total_price_usd or 0) }}</td>
                     <td class="num">{{ item.model_count or 0 }}</td>
                     <td class="num">{{ item.total_qty or 0 }}</td>
@@ -460,17 +462,36 @@
     <!-- 分页 -->
     <div class="pagination">
         <span>共 {{ total }} 条，第 {{ page }}/{{ total_pages }} 页</span>
+        <select id="pageSizeSelect" style="margin-left: 0.5rem;">
+            <option value="20" {% if page_size == 20 %}selected{% endif %}>20条/页</option>
+            <option value="50" {% if page_size == 50 %}selected{% endif %}>50条/页</option>
+            <option value="100" {% if page_size == 100 %}selected{% endif %}>100条/页</option>
+            <option value="200" {% if page_size == 200 %}selected{% endif %}>200条/页</option>
+            <option value="500" {% if page_size == 500 %}selected{% endif %}>500条/页</option>
+            <option value="1000" {% if page_size == 1000 %}selected{% endif %}>1000条/页</option>
+        </select>
         <div>
             {% if page > 1 %}
-            <a href="?page=1&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">首页</a>
-            <a href="?page={{ page - 1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">上一页</a>
+            <a href="?page=1&page_size={{ page_size }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">首页</a>
+            <a href="?page={{ page - 1 }}&page_size={{ page_size }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">上一页</a>
             {% endif %}
             {% if page < total_pages %}
-            <a href="?page={{ page + 1 }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">下一页</a>
-            <a href="?page={{ total_pages }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">末页</a>
+            <a href="?page={{ page + 1 }}&page_size={{ page_size }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">下一页</a>
+            <a href="?page={{ total_pages }}&page_size={{ page_size }}&search={{ search }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_paid={{ is_paid }}&is_finished={{ is_finished }}">末页</a>
             {% endif %}
         </div>
     </div>
+
+<script>
+    // 页数选择下拉框
+    document.getElementById('pageSizeSelect').addEventListener('change', function() {
+        const pageSize = this.value;
+        const url = new URL(window.location.href);
+        url.searchParams.set('page_size', pageSize);
+        url.searchParams.set('page', '1');  // 切换页数时回到第一页
+        window.location.href = url.toString();
+    });
+</script>
 </div>
 
 <!-- 新增模态框 -->
@@ -576,8 +597,9 @@ function applyFilter() {
     const isFinished = document.getElementById('filter_finished').value;
     const startDate = document.getElementById('start_date').value;
     const endDate = document.getElementById('end_date').value;
+    const pageSize = document.getElementById('pageSizeSelect') ? document.getElementById('pageSizeSelect').value : '20';
 
-    let url = '/order_manager?';
+    let url = '/order_manager?page_size=' + pageSize + '&';
     if (search) url += 'search=' + encodeURIComponent(search) + '&';
     if (cliId) url += 'cli_id=' + cliId + '&';
     if (isPaid) url += 'is_paid=' + isPaid + '&';
