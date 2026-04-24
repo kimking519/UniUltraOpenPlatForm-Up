@@ -441,7 +441,7 @@ def generate_pi(order_ids, output_base=None, template_dir=None):
     invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
 
     # 获取汇率
-    krw_val, _ = get_exchange_rates()
+    krw_val, _, _ = get_exchange_rates()
 
     # 计算KWR价格
     for order in orders:
@@ -944,7 +944,7 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
     invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
 
     # 获取汇率 (USD汇率用于计算)
-    _, usd_val = get_exchange_rates()
+    _, usd_val, _ = get_exchange_rates()
 
     # 计算USD价格
     for order in orders:
@@ -1317,7 +1317,7 @@ def generate_koquote(offer_ids, output_base=None, template_dir=None):
     output_path = os.path.join(output_dir, output_filename)
 
     # 获取汇率
-    krw_val, _ = get_exchange_rates()
+    krw_val, _, _ = get_exchange_rates()
 
     return _generate_koquote_excel(offers, template_dir, output_path, krw_val)
 
@@ -1669,7 +1669,7 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None):
     invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
 
     # 获取汇率
-    krw_val, _ = get_exchange_rates()
+    krw_val, _, _ = get_exchange_rates()
 
     # 计算KWR价格 - 报价使用 offer_price_rmb
     for offer in offers:
@@ -1990,7 +1990,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None):
     invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
 
     # 获取汇率
-    _, usd_val = get_exchange_rates()
+    _, usd_val, _ = get_exchange_rates()
 
     # 计算USD价格 - 报价使用 offer_price_rmb
     for offer in offers:
@@ -2072,7 +2072,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
     invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
 
     # 获取汇率
-    _, usd_val = get_exchange_rates()
+    _, usd_val, _ = get_exchange_rates()
 
     # 计算USD价格
     for offer in offers:

@@ -58,7 +58,7 @@ def get_order_list(page=1, page_size=10, search_kw="", cli_id="", start_date="",
         rows = conn.execute(data_sql, params_with_limit).fetchall()
 
         results = [dict(r) for r in rows]
-        krw_val, usd_val = get_exchange_rates()
+        krw_val, usd_val, _ = get_exchange_rates()
 
         for r in results:
             price = r.get('price_rmb')

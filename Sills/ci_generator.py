@@ -240,7 +240,7 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no):
                 ws.row_dimensions[dst_row].height = ws.row_dimensions[src_row].height
 
     # 获取汇率
-    krw_val, _ = get_exchange_rates()
+    krw_val, _, _ = get_exchange_rates()
 
     # 填充数据
     total_qty = 0
@@ -464,7 +464,7 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
         template_dir = os.path.join(project_root, "templates", "ci_kr")
 
     # 获取汇率
-    krw_val, _ = get_exchange_rates()
+    krw_val, _, _ = get_exchange_rates()
 
     # 计算韩元价格
     for offer in offers:

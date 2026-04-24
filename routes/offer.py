@@ -137,7 +137,7 @@ api_router = APIRouter(tags=["offer-api"])
 @api_router.get("/api/exchange/rates")
 async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
     """获取最新汇率"""
-    krw, usd = get_exchange_rates()
+    krw, usd, _ = get_exchange_rates()
     return {"success": True, "krw": krw, "usd": usd}
 
 

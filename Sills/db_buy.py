@@ -54,7 +54,7 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
             results.append({k: ("" if v is None else v) for k, v in d.items()})
 
         # 使用缓存的汇率
-        krw_val, usd_val = get_exchange_rates()
+        krw_val, usd_val, _ = get_exchange_rates()
 
         for r in results:
             # 采购单价(RMB)作为计算基础

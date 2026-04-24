@@ -41,6 +41,16 @@ from Sills.db_mail import (
 from Sills.mail_service import sync_inbox, sync_inbox_async, send_email_now
 from Sills.ai_service import intent_recognizer, smart_replier
 from Sills.db_config import is_postgresql, is_sqlite, get_pg_config, get_sqlite_path
+from Sills.db_bank_transaction import (
+    get_transaction_list, get_transaction_by_id, add_transaction,
+    batch_import_transactions, update_transaction, delete_transaction,
+    batch_delete_by_batch, batch_delete_selected, get_batch_list, update_matched_status
+)
+from Sills.db_bank_ledger import (
+    get_ledger_by_transaction, get_ledger_by_manager, create_ledger,
+    delete_ledger, update_ledger, set_primary_ledger, get_ledger_summary,
+    validate_allocation_amount
+)
 from utils.price_engine import PriceEngine
 
 from typing import Optional
@@ -113,6 +123,10 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
             {"success": False, "message": exc.detail},
             status_code=401
         )
+    # 重定向类型的异常（301, 302, 303, 307, 308）需要返回RedirectResponse
+    if exc.status_code in (301, 302, 303, 307, 308) and exc.headers and "Location" in exc.headers:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=exc.headers["Location"], status_code=exc.status_code)
     # 其他异常按默认处理
     raise exc
 
@@ -623,7 +637,7 @@ async def order_update_api(order_id: str = Form(...), field: str = Form(...), va
             # 当修改price_rmb时，自动计算price_kwr和price_usd
             if field == 'price_rmb':
                 from Sills.base import get_exchange_rates
-                krw_rate, usd_rate = get_exchange_rates()
+                krw_rate, usd_rate, _ = get_exchange_rates()
 
                 # 汇率含义: 1 RMB = X 外币
                 # price_kwr = price_rmb * krw_rate (韩元)
@@ -1187,10 +1201,10 @@ async def offer_import_csv(csv_file: UploadFile = File(...), current_user: dict 
 
 @app.get("/api/exchange/rates")
 async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
-    """获取最新汇率（KRW 和 USD）"""
+    """获取最新汇率（KRW、USD 和 JPY）"""
     from Sills.base import get_exchange_rates
-    krw, usd = get_exchange_rates()
-    return {"success": True, "krw": krw, "usd": usd}
+    krw, usd, jpy = get_exchange_rates()
+    return {"success": True, "krw": krw, "usd": usd, "jpy": jpy}
 
 @app.get("/api/server/env")
 async def get_server_env_api():
@@ -1481,7 +1495,7 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
         rows = conn.execute(query, ids).fetchall()
 
     # 获取汇率
-    krw_rate, usd_rate = get_exchange_rates()
+    krw_rate, usd_rate, _ = get_exchange_rates()
 
     # CSV 头部 - 与页面展示一致
     headers = ['日期', '报价编号', '客户名称', '需求编号', '询价型号', '报价型号', '需求品牌', '报价品牌',
@@ -1738,7 +1752,7 @@ async def order_export_csv(request: Request, current_user: dict = Depends(login_
             WHERE ord.order_id IN ({placeholders})
         """, ids).fetchall()
 
-    krw_rate, usd_rate = get_exchange_rates()
+    krw_rate, usd_rate, _ = get_exchange_rates()
 
     import io, csv
     output = io.StringIO(); output.write('\ufeff')
@@ -1824,16 +1838,15 @@ async def api_order_manager_import_template(current_user: dict = Depends(get_cur
     ws = wb.active
     ws.title = "历史订单导入模板"
 
-    # 表头
+    # 表头（19个字段）
     headers = [
-        "日期", "客户订单号", "客户名称", "询价型号", "报价型号",
-        "询价品牌", "报价品牌", "询价数量", "报价数量",
-        "目标价(RMB)", "成本价(RMB)", "报价(RMB)",
-        "批号", "交期", "备注", "状态"
+        "日期", "交易编码", "客户订单号", "客户名称", "询价型号", "报价型号",
+        "询价品牌", "报价品牌", "询价数量", "报价数量", "目标价(RMB)", "成本价(RMB)",
+        "报价(RMB)", "报价(KRW)", "报价(USD)", "报价(JPY)", "批号", "交期", "备注"
     ]
 
-    # 必填列标识
-    required_cols = [1, 2, 3, 8, 11]  # 客户订单号, 客户名称, 询价型号, 报价数量, 报价(RMB)
+    # 必填列标识（客户订单号, 客户名称, 询价型号, 报价数量）
+    required_cols = [2, 3, 4, 9]
 
     # 样式
     header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
@@ -1860,9 +1873,9 @@ async def api_order_manager_import_template(current_user: dict = Depends(get_cur
 
     # 添加示例数据行
     sample_data = [
-        ["2026-01-01", "CO20260101001", "示例客户A", "STM32F103C8T6", "STM32F103C8T6", "ST", "ST", 100, 100, 12.0, 8.0, 10.5, "2345", "2026-01-15", "示例备注", "已报价"],
-        ["2026-01-01", "CO20260101001", "示例客户A", "LM358DR", "LM358DR", "TI", "TI", 200, 200, 3.0, 1.8, 2.5, "", "", "", ""],
-        ["2026-01-02", "CO20260101002", "示例客户B", "NE555D", "NE555D", "TI", "TI", 50, 50, 1.5, 0.8, 1.2, "2350", "2026-01-20", "", "待确认"],
+        ["2026-01-01", "TX001", "CO20260101001", "示例客户A", "STM32F103C8T6", "STM32F103C8T6", "ST", "ST", 100, 100, 12.0, 8.0, 10.5, 2345.0, 1.5, 160.0, "DC202601", "2026-01-15", "示例备注"],
+        ["2026-01-01", "TX001", "CO20260101001", "示例客户A", "LM358DR", "LM358DR", "TI", "TI", 200, 200, 3.0, 1.8, 2.5, 560.0, 0.35, 38.0, "", "", ""],
+        ["2026-01-02", "", "CO20260101002", "示例客户B", "NE555D", "NE555D", "TI", "TI", 50, 50, 1.5, 0.8, 1.2, 270.0, 0.17, 18.0, "DC2350", "2026-01-20", ""],
     ]
 
     for row_idx, row_data in enumerate(sample_data, 2):
@@ -1886,6 +1899,50 @@ async def api_order_manager_import_template(current_user: dict = Depends(get_cur
 
     from fastapi.responses import StreamingResponse
     from urllib.parse import quote
+    filename = "历史订单导入模板.xlsx"
+    encoded_filename = quote(filename)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
+
+
+# 历史订单导入模板下载API
+@app.get("/api/order_manager/history_template")
+async def download_history_template(current_user: dict = Depends(login_required)):
+    """下载历史订单导入模板"""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from urllib.parse import quote
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "历史订单导入模板"
+
+    # 新模板字段列表（19个字段）
+    headers = [
+        "日期", "交易编码", "客户订单号", "客户名称", "询价型号", "报价型号",
+        "询价品牌", "报价品牌", "询价数量", "报价数量", "目标价(RMB)", "成本价(RMB)",
+        "报价(RMB)", "报价(KRW)", "报价(USD)", "报价(JPY)", "批号", "交期", "备注"
+    ]
+
+    for col, header in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=header)
+
+    # 添加示例数据
+    example_data = [
+        "2024-01-15", "TX001", "ORD001", "客户A", "MPN-001", "MPN-001-A",
+        "BrandA", "BrandB", 100, 100, 0.7, 0.5,
+        0.8, 1000.0, 0.08, 120.0, "DC202401", "2024-02-15", "备注信息"
+    ]
+    for col, value in enumerate(example_data, 1):
+        ws.cell(row=2, column=col, value=value)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
     filename = "历史订单导入模板.xlsx"
     encoded_filename = quote(filename)
     return StreamingResponse(
@@ -1920,6 +1977,8 @@ async def api_import_history(
         emp_id = current_user.get('emp_id', '')
         success, skip, fail, errors = import_history_orders(tmp_path, emp_id)
         return {"success": success, "skip": skip, "fail": fail, "errors": errors}
+    except Exception as e:
+        return {"success": 0, "skip": 0, "fail": 0, "errors": [f"导入失败: {str(e)}"]}
     finally:
         # 删除临时文件
         try:
@@ -2572,7 +2631,7 @@ async def buy_export_csv(request: Request, current_user: dict = Depends(login_re
             WHERE b.buy_id IN ({placeholders})
         """, ids).fetchall()
 
-    krw_rate, usd_rate = get_exchange_rates()
+    krw_rate, usd_rate, _ = get_exchange_rates()
 
     import io, csv
     output = io.StringIO(); output.write('\ufeff')
@@ -4803,28 +4862,35 @@ async def api_prospect_template(current_user: dict = Depends(login_required)):
     from openpyxl import Workbook
     from fastapi.responses import StreamingResponse
     import io
+    from urllib.parse import quote
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Prospect导入模板"
-    ws.append(['客户名称*', '公司网站', '域名*', '国家', '备注'])
-    ws.append(['示例公司', 'https://example.com', 'example.com', '中国', '备注信息'])
+    # 新模板字段：客户名称、公司网站、域名、国家、主要业务、业务明细、价值分级、备注
+    ws.append(['客户名称*', '公司网站', '域名*', '国家', '主要业务', '业务明细', '价值分级(1-3)', '备注'])
+    ws.append(['示例公司', 'https://example.com', 'example.com', '中国', '电子元器件', '半导体分销', '2', '备注信息'])
 
     # 设置列宽
     ws.column_dimensions['A'].width = 20
     ws.column_dimensions['B'].width = 25
     ws.column_dimensions['C'].width = 20
     ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 30
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 20
+    ws.column_dimensions['G'].width = 15
+    ws.column_dimensions['H'].width = 30
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
 
+    filename = "prospect_template.xlsx"
+    encoded_filename = quote(filename)
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=prospect_template.xlsx"}
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
     )
 
 
@@ -4966,7 +5032,10 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
                 'company_website': str(row[1] or '').strip(),
                 'domain': str(row[2] or '').strip(),
                 'country': str(row[3] or '').strip(),
-                'remark': str(row[4] or '').strip()
+                'business_type': str(row[4] or '').strip(),
+                'business_detail': str(row[5] or '').strip(),
+                'value_level': row[6] if row[6] else 0,
+                'remark': str(row[7] or '').strip()
             }
             print(f"  -> 解析结果: {item}")
             data_list.append(item)
@@ -5771,3 +5840,340 @@ async def api_datacenter_export(request: Request, current_user: dict = Depends(l
     )
 
     return result
+
+
+# ============ 银行流水管理（财务管理模块） ============
+
+@app.get("/bank", response_class=HTMLResponse)
+async def bank_page(request: Request, current_user: dict = Depends(login_required)):
+    """银行流水管理页面"""
+    return templates.TemplateResponse("bank.html", {
+        "request": request,
+        "current_user": current_user
+    })
+
+
+@app.get("/bank/import", response_class=HTMLResponse)
+async def bank_import_page(request: Request, current_user: dict = Depends(login_required)):
+    """银行流水导入页面"""
+    return templates.TemplateResponse("bank_import.html", {
+        "request": request,
+        "current_user": current_user
+    })
+
+
+@app.get("/api/bank/list")
+async def api_bank_list(
+    page: int = 1,
+    page_size: int = 20,
+    start_date: str = "",
+    end_date: str = "",
+    transaction_type: str = "",
+    is_matched: str = "",
+    payer_name: str = "",
+    min_amount: str = "",
+    max_amount: str = "",
+    import_batch: str = "",
+    current_user: dict = Depends(login_required)
+):
+    """获取银行流水列表"""
+    results, total = get_transaction_list(
+        page=page,
+        page_size=page_size,
+        start_date=start_date,
+        end_date=end_date,
+        transaction_type=transaction_type,
+        is_matched=is_matched,
+        payer_name=payer_name,
+        min_amount=min_amount,
+        max_amount=max_amount,
+        import_batch=import_batch
+    )
+    return {
+        "items": results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size
+    }
+
+
+@app.get("/api/bank/template")
+async def api_bank_template(current_user: dict = Depends(login_required)):
+    """下载银行流水导入模板"""
+    import pandas as pd
+    from fastapi.responses import StreamingResponse
+
+    # 创建模板DataFrame
+    columns = ['交易时间', '交易编号', '记账流水号', '交易类型', '交易详情', '币种',
+               '交易金额', '总余额', '付款人名称', '付款银行', '付款账号',
+               '收款人名称', '收款银行', '收款账号', '收款人备注名', '附言', '重复']
+
+    # 示例数据（帮助用户理解格式）
+    sample_data = [
+        ['2026-04-20 17:33:20', '81990102355000026042005520183', '8990100034000026042072297477',
+         '手续费', '银行账户管理费', 'CNY', 41.09, 0.00, '', '', '', '', '', '', '', '', ''],
+        ['2026-04-20 17:33:20', '81990102355000026042005520184', '8990100034000026042072297475',
+         '支出', '转账-货款支付', 'CNY', 10229.95, 41.09, '深圳某科技有限公司', '', '',
+         '收款方公司', '招商银行', '6225880123456789', '', '备注信息', ''],
+        ['2026-04-20 17:33:19', '10990102137000026042007242615', '8990100034000026042072297471',
+         '收入', '收入-货款收款', 'CNY', 10271.04, 10271.04, '', '', '',
+         '付款方公司名', '工商银行', '1234567890', '', '', ''],
+    ]
+
+    df = pd.DataFrame(sample_data, columns=columns)
+
+    # 导出为Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='银行流水模板')
+    output.seek(0)
+
+    return StreamingResponse(
+        io.BytesIO(output.getvalue()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=bank_transaction_template.xlsx"}
+    )
+
+
+@app.get("/api/bank/batches")
+async def api_bank_batches(current_user: dict = Depends(login_required)):
+    """获取导入批次列表"""
+    batches = get_batch_list()
+    return {"items": batches}
+
+
+@app.get("/api/bank/{transaction_id}")
+async def api_bank_detail(transaction_id: str, current_user: dict = Depends(login_required)):
+    """获取流水详情"""
+    tx = get_transaction_by_id(transaction_id)
+    if not tx:
+        raise HTTPException(status_code=404, detail="流水不存在")
+    return tx
+
+
+@app.post("/api/bank/import")
+async def api_bank_import(request: Request, current_user: dict = Depends(login_required)):
+    """Excel批量导入银行流水"""
+    data = await request.json()
+    rows = data.get("rows", [])
+    source_file = data.get("source_file", "")
+
+    if not rows:
+        return {"success": False, "message": "无数据"}
+
+    success_count, errors, batch_id = batch_import_transactions(rows, source_file)
+
+    return {
+        "success": success_count > 0,
+        "message": f"成功导入 {success_count} 条流水" + (f"，失败 {len(errors)} 条" if errors else ""),
+        "batch_id": batch_id,
+        "errors": errors
+    }
+
+
+@app.post("/api/bank/upload")
+async def api_bank_upload(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(login_required)
+):
+    """上传Excel文件并解析"""
+    import pandas as pd
+
+    try:
+        # 读取Excel文件
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+
+        # 字段映射（Excel列名 -> 数据库字段名）
+        column_mapping = {
+            '交易时间': 'transaction_time',
+            '交易编号': 'transaction_no',
+            '记账流水号': 'ledger_no',
+            '交易类型': 'transaction_type',
+            '交易详情': 'transaction_detail',
+            '币种': 'currency',
+            '交易金额': 'transaction_amount',
+            '总余额': 'balance',
+            '付款人名称': 'payer_name',
+            '付款银行': 'payer_bank',
+            '付款账号': 'payer_account',
+            '收款人名称': 'payee_name',
+            '收款银行': 'payee_bank',
+            '收款账号': 'payee_account',
+            '收款人备注名': 'payee_remark_name',
+            '附言': 'remark_text',
+            '重复': 'duplicate_flag'
+        }
+
+        # 转换列名
+        df.columns = [column_mapping.get(col, col) for col in df.columns]
+
+        # 转换为字典列表
+        rows = []
+        for _, row in df.iterrows():
+            row_dict = {}
+            for col in df.columns:
+                value = row[col]
+                if pd.isna(value):
+                    row_dict[col] = ''
+                elif col == 'transaction_amount' or col == 'balance':
+                    row_dict[col] = float(value) if value else 0
+                else:
+                    row_dict[col] = str(value)
+            rows.append(row_dict)
+
+        return {
+            "success": True,
+            "rows": rows,
+            "count": len(rows),
+            "source_file": file.filename
+        }
+
+    except Exception as e:
+        return {"success": False, "message": f"解析失败：{str(e)}"}
+
+
+@app.post("/api/bank/update")
+async def api_bank_update(request: Request, current_user: dict = Depends(login_required)):
+    """更新流水信息（仅备注）"""
+    data = await request.json()
+    transaction_id = data.get("transaction_id")
+    if not transaction_id:
+        return {"success": False, "message": "缺少流水ID"}
+
+    success, message = update_transaction(transaction_id, data)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/bank/delete")
+async def api_bank_delete(request: Request, current_user: dict = Depends(login_required)):
+    """删除单条流水"""
+    data = await request.json()
+    transaction_id = data.get("transaction_id")
+    if not transaction_id:
+        return {"success": False, "message": "缺少流水ID"}
+
+    success, message = delete_transaction(transaction_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/bank/batch_delete")
+async def api_bank_batch_delete(request: Request, current_user: dict = Depends(login_required)):
+    """按批次删除流水"""
+    data = await request.json()
+    import_batch = data.get("import_batch")
+    if not import_batch:
+        return {"success": False, "message": "缺少批次号"}
+
+    success, message = batch_delete_by_batch(import_batch)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/bank/batch_delete_selected")
+async def api_bank_batch_delete_selected(request: Request, current_user: dict = Depends(login_required)):
+    """批量删除勾选的流水"""
+    data = await request.json()
+    transaction_ids = data.get("transaction_ids", [])
+    if not transaction_ids:
+        return {"success": False, "message": "未选择任何流水"}
+
+    success, message = batch_delete_selected(transaction_ids)
+    return {"success": success, "message": message}
+
+
+# ============ 台账关联管理 ============
+
+@app.get("/api/ledger/by_transaction/{transaction_id}")
+async def api_ledger_by_transaction(transaction_id: str, current_user: dict = Depends(login_required)):
+    """查询流水关联的所有订单"""
+    ledgers = get_ledger_by_transaction(transaction_id)
+    return {"items": ledgers}
+
+
+@app.get("/api/ledger/by_order/{manager_id}")
+async def api_ledger_by_order(manager_id: str, current_user: dict = Depends(login_required)):
+    """查询订单关联的所有流水"""
+    ledgers, total_received = get_ledger_by_manager(manager_id)
+    return {"items": ledgers, "total_received": total_received}
+
+
+@app.get("/api/ledger/summary/{manager_id}")
+async def api_ledger_summary(manager_id: str, current_user: dict = Depends(login_required)):
+    """获取订单收款摘要"""
+    summary = get_ledger_summary(manager_id)
+    return summary
+
+
+@app.post("/api/ledger/link")
+async def api_ledger_link(request: Request, current_user: dict = Depends(login_required)):
+    """创建流水与订单的关联"""
+    data = await request.json()
+    transaction_id = data.get("transaction_id")
+    manager_id = data.get("manager_id")
+    allocation_amount = data.get("allocation_amount")
+
+    if not transaction_id or not manager_id or not allocation_amount:
+        return {"success": False, "message": "缺少必要参数"}
+
+    success, result = create_ledger(
+        transaction_id=transaction_id,
+        manager_id=manager_id,
+        allocation_amount=float(allocation_amount),
+        match_type=data.get("match_type", "manual"),
+        created_by=current_user.get("emp_id"),
+        remark=data.get("remark", "")
+    )
+
+    if success:
+        return {"success": True, "ledger_id": result.get("ledger_id")}
+    else:
+        return {"success": False, "message": result}
+
+
+@app.post("/api/ledger/unlink")
+async def api_ledger_unlink(request: Request, current_user: dict = Depends(login_required)):
+    """解除流水与订单的关联"""
+    data = await request.json()
+    ledger_id = data.get("ledger_id")
+    if not ledger_id:
+        return {"success": False, "message": "缺少台账ID"}
+
+    success, message = delete_ledger(ledger_id)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/ledger/update")
+async def api_ledger_update(request: Request, current_user: dict = Depends(login_required)):
+    """更新关联信息"""
+    data = await request.json()
+    ledger_id = data.get("ledger_id")
+    if not ledger_id:
+        return {"success": False, "message": "缺少台账ID"}
+
+    success, message = update_ledger(
+        ledger_id=ledger_id,
+        allocation_amount=data.get("allocation_amount"),
+        remark=data.get("remark")
+    )
+    return {"success": success, "message": message}
+
+
+@app.post("/api/ledger/set_primary")
+async def api_ledger_set_primary(request: Request, current_user: dict = Depends(login_required)):
+    """设置主要匹配记录"""
+    data = await request.json()
+    manager_id = data.get("manager_id")
+    ledger_id = data.get("ledger_id")
+    if not manager_id or not ledger_id:
+        return {"success": False, "message": "缺少必要参数"}
+
+    success, message = set_primary_ledger(manager_id, ledger_id)
+    return {"success": success, "message": message}
+
+
+@app.get("/api/ledger/validate/{transaction_id}")
+async def api_ledger_validate(transaction_id: str, amount: float, current_user: dict = Depends(login_required)):
+    """验证分配金额是否有效"""
+    is_valid, remaining = validate_allocation_amount(transaction_id, amount)
+    return {"is_valid": is_valid, "remaining": remaining}

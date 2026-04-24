@@ -65,7 +65,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             results.append({k: ("" if v is None else v) for k, v in d.items()})
 
         # 使用缓存的汇率
-        krw_val, usd_val = get_exchange_rates()
+        krw_val, usd_val, _ = get_exchange_rates()
 
         for r in results:
             remark = r.get('remark') or ""
@@ -186,7 +186,7 @@ def add_offer(data, emp_id, conn=None):
                 offer_price = cost_price * (1 + margin / 100.0)
 
             # 使用缓存的汇率
-            krw_val, usd_val = get_exchange_rates()
+            krw_val, usd_val, _ = get_exchange_rates()
 
             if krw_val > 10: price_kwr = round(offer_price * krw_val, 1)
             else: price_kwr = round(offer_price / krw_val, 1) if krw_val else 0.0
@@ -245,7 +245,7 @@ def update_offer(offer_id, data):
 
         # 如果更新了 offer_price_rmb，需要计算 KWR 和 USD
         if 'offer_price_rmb' in data:
-            krw_val, usd_val = get_exchange_rates()
+            krw_val, usd_val, _ = get_exchange_rates()
             offer_price = float(data.get('offer_price_rmb') or 0)
 
             # 计算 KWR
