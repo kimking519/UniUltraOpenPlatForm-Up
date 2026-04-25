@@ -1787,6 +1787,15 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
 
     # 更新 TOTAL 公式
     total_row = footer_start_row
+
+    # 取消 Total 行的合并单元格（如果存在）
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row == total_row and merged_range.max_col >= 8:
+            try:
+                ws.unmerge_cells(str(merged_range))
+            except:
+                pass
+
     ws.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
     ws.cell(total_row, 8).number_format = '#,##0.0'
 
@@ -2046,9 +2055,24 @@ def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None):
 
 
 def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
-    """基于报价生成PI-JP Excel文件 - Header + Footer 模板拼接方式"""
+    """基于报价生成PI-JP Excel文件 - Header + Footer 模板拼接方式
+
+    模板结构 (JP版本):
+    Header模板 (JP - 1):
+    - Row 8: Invoice No. (D4=值)
+    - Row 9: Date (D4=值)
+    - Row 12-16: 客户信息 (C3=值)
+    - Row 18: 表头行
+    - Row 19-20: 2行示例数据
+
+    Footer模板 (JP - 2):
+    - Row 11: TOTAL AMOUNT + 公式
+    - Row 13-18: TERMS & CONDITIONS
+    - Row 20-27: PAYMENT METHOD
+    - Row 29: THANK YOU
+    """
     from openpyxl.utils import get_column_letter
-    from copy import copy
+    from copy import copy, deepcopy
 
     data_count = len(offers)
     first_offer = offers[0]
@@ -2100,62 +2124,68 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
     elif rows_diff < 0:
         ws.delete_rows(first_data_row + data_count, -rows_diff)
 
-    # 写入数据
+    # 写入报价数据
     for idx, offer in enumerate(offers):
         row = first_data_row + idx
 
         ws.cell(row, 1).value = idx + 1
-        ws.cell(row, 2).value = offer.get("inquiry_mpn", "") or ""
-        ws.cell(row, 3).value = offer.get("inquiry_brand", "") or ""
+        ws.cell(row, 2).value = offer.get("inquiry_mpn", "") or offer.get("quoted_mpn", "")
+        ws.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
         ws.cell(row, 4).value = offer.get("date_code", "") or ""
 
-        qty = offer.get("quoted_qty") or offer.get("inquiry_qty", 0)
+        # Col E = Qty (数量)
+        qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or 0
+        try:
+            qty = int(qty)
+        except:
+            qty = 0
         ws.cell(row, 5).value = qty
-        if qty:
-            ws.cell(row, 5).number_format = '#,##0'
+        ws.cell(row, 5).number_format = '#,##0'
 
+        # Col F = L/T (货期)
         ws.cell(row, 6).value = offer.get("delivery_date", "") or ""
 
-        price_jpy = offer.get("calculated_price_jpy", 0)
+        # Col G = Unit Price (单价 JPY)
+        price_jpy = offer.get("calculated_price_jpy", "") or offer.get("price_jpy", "") or 0
+        try:
+            price_jpy = float(price_jpy)
+        except:
+            price_jpy = 0
         ws.cell(row, 7).value = price_jpy
-        if price_jpy:
-            ws.cell(row, 7).number_format = '#,##0'
+        ws.cell(row, 7).number_format = '#,##0.0'
 
-        if qty and price_jpy:
-            ws.cell(row, 8).value = f"=G{row}*E{row}"
-            ws.cell(row, 8).number_format = '#,##0'
+        # Col H = Total Amount (公式: Qty * Unit Price)
+        ws.cell(row, 8).value = f"=E{row}*G{row}"
+        ws.cell(row, 8).number_format = '#,##0.0'
 
-    # ---- 3. 计算 Total 行位置 ----
+    # ---- 3. 完整拼接 Footer 内容（复制值、样式、合并单元格、行高、图片）----
     last_data_row = first_data_row + data_count - 1
+    footer_start_row = last_data_row + 2
+    footer_template_start = 11
 
-    # ---- 4. 拼接 footer 内容（从 Row 11 开始）----
-    insert_start_row = last_data_row + 2
-
-    footer_start_row = 11  # JP footer 从 Row 11 开始
-    for src_row_idx in range(footer_start_row, ws_footer.max_row + 1):
-        dest_row_idx = insert_start_row + src_row_idx - footer_start_row
-
+    for src_row_idx in range(footer_template_start, ws_footer.max_row + 1):
+        dest_row_idx = footer_start_row + (src_row_idx - footer_template_start)
         ws.insert_rows(dest_row_idx)
 
         for src_col in range(1, 9):
             src_cell = ws_footer.cell(row=src_row_idx, column=src_col)
             dest_cell = ws.cell(row=dest_row_idx, column=src_col)
-
             if src_cell.value is not None:
                 dest_cell.value = src_cell.value
-
             if src_cell.has_style:
                 dest_cell.font = copy(src_cell.font)
                 dest_cell.border = copy(src_cell.border)
                 dest_cell.fill = copy(src_cell.fill)
                 dest_cell.number_format = src_cell.number_format
                 dest_cell.alignment = copy(src_cell.alignment)
+        if ws_footer.row_dimensions[src_row_idx].height:
+            ws.row_dimensions[dest_row_idx].height = ws_footer.row_dimensions[src_row_idx].height
 
-    # 处理 footer 的合并单元格
+    # 复制Footer的合并单元格
     for merged_range in ws_footer.merged_cells.ranges:
-        if merged_range.min_row >= footer_start_row:
-            new_min_row = merged_range.min_row + insert_start_row - footer_start_row
-            new_max_row = merged_range.max_row + insert_start_row - footer_start_row
+        if merged_range.min_row >= footer_template_start:
+            new_min_row = footer_start_row + (merged_range.min_row - footer_template_start)
+            new_max_row = footer_start_row + (merged_range.max_row - footer_template_start)
             try:
                 ws.merge_cells(
                     start_row=new_min_row,
@@ -2166,42 +2196,37 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
             except:
                 pass
 
-    # ---- 5. 更新 Total Amount 行的公式 ----
-    total_row = insert_start_row
+    # 复制Footer中的图片（印章）
+    row_offset = footer_start_row - footer_template_start
+    for img in ws_footer._images:
+        new_img = deepcopy(img)
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            original_from_row = img.anchor._from.row
+            if original_from_row >= footer_template_start - 1:
+                new_img.anchor._from.row = original_from_row + row_offset
+            if hasattr(img.anchor, 'to'):
+                original_to_row = img.anchor.to.row
+                if original_to_row >= footer_template_start - 1:
+                    new_img.anchor.to.row = original_to_row + row_offset
+        ws.add_image(new_img)
 
-    # 取消 Total 行的合并单元格
+    # 更新 TOTAL 公式
+    total_row = footer_start_row
+
+    # 取消 Total 行的合并单元格（如果存在）
     for merged_range in list(ws.merged_cells.ranges):
-        if merged_range.min_row == total_row:
+        if merged_range.min_row == total_row and merged_range.max_col >= 8:
             try:
                 ws.unmerge_cells(str(merged_range))
             except:
                 pass
 
     ws.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
-    ws.cell(total_row, 8).number_format = '#,##0'
+    ws.cell(total_row, 8).number_format = '#,##0.0'
 
-    # 重新合并 Total 行
-    try:
-        ws.merge_cells(f"A{total_row}:G{total_row}")
-    except:
-        pass
-
-    # ---- 6. 复制 footer 的图片 ----
-    from copy import deepcopy
-    row_offset = insert_start_row - footer_start_row
-    for img in ws_footer._images:
-        new_img = deepcopy(img)
-        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
-            original_from_row = img.anchor._from.row
-            new_img.anchor._from.row = original_from_row + row_offset
-            if hasattr(img.anchor, 'to'):
-                original_to_row = img.anchor.to.row
-                new_img.anchor.to.row = original_to_row + row_offset
-        ws.add_image(new_img)
-
-    # ---- 7. 保存文件 ----
-    thank_you_row = insert_start_row + 18
-    ws.print_area = f"$A$1:$H${thank_you_row}"
+    # 设置打印区域
+    final_row = footer_start_row + (ws_footer.max_row - footer_template_start)
+    ws.print_area = f"$A$1:$H${final_row}"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb.save(output_path)
