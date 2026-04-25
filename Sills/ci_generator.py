@@ -6,6 +6,8 @@ CI Generator - Commercial Invoice 生成模块
 
 import os
 import platform
+import zipfile
+import tempfile
 from datetime import datetime
 from copy import copy
 
@@ -167,17 +169,18 @@ def get_orders_for_ci(order_ids):
         return [dict(r) for r in rows]
 
 
-def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_filename="CI_template_header.xlsx", footer_filename="CI_template_footer.xlsx"):
+def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_filename="CI_template_header.xlsx", footer_filename="CI_template_footer.xlsx", full_template_filename=None):
     """
-    使用切分模板模式生成CI Excel文件
+    使用模板生成CI Excel文件 - Header + Footer 简单拼接方式
 
     Args:
         orders: 订单数据列表
         template_dir: 模板目录路径
         output_path: 输出文件路径
         invoice_no: 发票编号
-        header_filename: Header模板文件名（默认 CI_template_header.xlsx）
-        footer_filename: Footer模板文件名（默认 CI_template_footer.xlsx）
+        header_filename: Header模板文件名
+        footer_filename: Footer模板文件名
+        full_template_filename: 已废弃，不再使用
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -192,7 +195,7 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
     first_order = orders[0]
     now = datetime.now()
 
-    # 加载模板（支持自定义文件名）
+    # 只使用 Header + Footer 拼接方式
     header_path = os.path.join(template_dir, header_filename)
     footer_path = os.path.join(template_dir, footer_filename)
 
@@ -272,20 +275,21 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
 
         price_kwr = calculate_price_kwr(order, krw_val)
         ws.cell(row=row, column=6).value = price_kwr
-        ws.cell(row=row, column=6).number_format = '#,##0'
+        ws.cell(row=row, column=6).number_format = '#,##0.0'
 
         total = price_kwr * qty
         ws.cell(row=row, column=7).value = total if total else 0
-        ws.cell(row=row, column=7).number_format = '#,##0'
+        ws.cell(row=row, column=7).number_format = '#,##0.0'
         total_amount += total
 
-    # 追加 Footer
+    # 完整拼接 Footer（复制值、样式、合并单元格、行高、图片）
     footer_start_row = data_start_row + data_count
 
     wb_footer = openpyxl.load_workbook(footer_path)
     ws_footer = wb_footer.active
 
-    for src_row in range(1, 4):
+    # 复制footer的所有行
+    for src_row in range(1, ws_footer.max_row + 1):
         dst_row = footer_start_row + src_row - 1
         for col in range(1, 8):
             src_cell = ws_footer.cell(row=src_row, column=col)
@@ -296,12 +300,11 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
                 dst_cell.border = copy(src_cell.border)
                 dst_cell.fill = copy(src_cell.fill)
                 dst_cell.number_format = src_cell.number_format
-                dst_cell.protection = copy(src_cell.protection)
                 dst_cell.alignment = copy(src_cell.alignment)
         if ws_footer.row_dimensions[src_row].height:
             ws.row_dimensions[dst_row].height = ws_footer.row_dimensions[src_row].height
 
-    # 复制 footer 中的合并单元格
+    # 复制footer的合并单元格
     for merged_range in ws_footer.merged_cells.ranges:
         new_range = f"{openpyxl.utils.get_column_letter(merged_range.min_col)}{footer_start_row + merged_range.min_row - 1}:{openpyxl.utils.get_column_letter(merged_range.max_col)}{footer_start_row + merged_range.max_row - 1}"
         try:
@@ -309,60 +312,171 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
         except:
             pass
 
+    # 复制footer中的图片（印章）
+    for img in ws_footer._images:
+        from copy import deepcopy
+        new_img = deepcopy(img)
+        # 调整图片位置
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            new_img.anchor._from.row = footer_start_row + img.anchor._from.row - 1
+            if hasattr(img.anchor, 'to'):
+                new_img.anchor.to.row = footer_start_row + img.anchor.to.row - 1
+        ws.add_image(new_img)
+
     ws.cell(row=footer_start_row, column=5).value = total_qty
     ws.cell(row=footer_start_row, column=5).number_format = '#,##0'
 
     ws.cell(row=footer_start_row + 1, column=7).value = total_amount
-    ws.cell(row=footer_start_row + 1, column=7).number_format = '#,##0'
+    ws.cell(row=footer_start_row + 1, column=7).number_format = '#,##0.0'
 
-    # 复制印章图片
-    if ws_footer._images:
-        img = ws_footer._images[0]
-        new_img = Image(img.ref)
-        import zipfile
-        import re
-        try:
-            with zipfile.ZipFile(footer_path, 'r') as z:
-                drawing_content = z.read('xl/drawings/drawing1.xml').decode('utf-8')
-                cx_match = re.search(r'cx="(\d+)"', drawing_content)
-                cy_match = re.search(r'cy="(\d+)"', drawing_content)
-                if cx_match and cy_match:
-                    new_img.width = int(cx_match.group(1)) / 9525
-                    new_img.height = int(cy_match.group(1)) / 9525
-        except:
-            new_img.width = img.width
-            new_img.height = img.height
-
-        target_row = footer_start_row + 2
-        ws.add_image(new_img, f'C{target_row}')
-
-    last_row = footer_start_row + 2
+    last_row = footer_start_row + ws_footer.max_row - 1
     ws.print_area = f"$A$1:$G${last_row}"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb.save(output_path)
 
-    # 生成 PDF
-    pdf_path = ""
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "excel_to_pdf",
-            os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                        "openclaw_skills", "order-ci-generator-kr", "scripts", "excel_to_pdf.py")
-        )
-        if spec and spec.loader:
-            pdf_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(pdf_module)
-            pdf_success, pdf_result = pdf_module.convert_to_pdf(output_path)
-            if pdf_success:
-                pdf_path = pdf_result
-    except Exception as e:
-        pass  # PDF 生成失败不影响 Excel
+    return True, {
+        "excel_path": output_path,
+        "pdf_path": "",
+        "invoice_no": invoice_no,
+        "total_qty": total_qty,
+        "total_amount": total_amount,
+        "cli_name": first_order.get("cli_name", ""),
+        "count": data_count
+    }
+
+
+def _generate_ci_from_full_template(orders, full_template_path, output_path, invoice_no):
+    """
+    使用完整模板生成CI Excel文件 - 保留印章图片
+
+    模板结构:
+    - Row 2: Invoice No. (B2), Invoice Date (F2)
+    - Row 9: Company (B9), Contact (F9)
+    - Row 10: Country (B10), TEL (F10)
+    - Row 11: Address (B11)
+    - Row 12: 表头行
+    - Row 13-15: 3行示例数据
+    - Row 16: Total Qty
+    - Row 17: Total invoice amount
+    - Row 18: SHIPPER'S SIGNATURE & STAMP (印章图片位置)
+    """
+    import shutil
+    from openpyxl.utils import get_column_letter
+
+    data_count = len(orders)
+    first_order = orders[0]
+    now = datetime.now()
+
+    # 复制完整模板到输出路径（保留印章图片）
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    shutil.copy(full_template_path, output_path)
+
+    # 打开副本进行修改
+    wb = openpyxl.load_workbook(output_path)
+    ws = wb.active
+
+    # 填写头部信息
+    invoice_date = now.strftime("%Y-%m-%d")
+    ws['B2'] = invoice_no
+    ws['F2'] = invoice_date
+
+    cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
+    ws['B9'] = cli_name_en
+    ws['F9'] = first_order.get("contact_name", "") or ""
+    ws['B10'] = first_order.get("region", "") or "韩国"
+    ws['F10'] = first_order.get("phone", "") or ""
+    ws['B11'] = first_order.get("address", "") or ""
+
+    # 处理数据行
+    data_start_row = 13
+    template_data_rows = 3
+    total_qty_row_template = 16
+    total_amount_row_template = 17
+
+    rows_diff = data_count - template_data_rows
+
+    if rows_diff > 0:
+        # 需要插入更多数据行
+        ws.insert_rows(data_start_row + template_data_rows, rows_diff)
+        # 复制样式到新行
+        src_row = data_start_row + template_data_rows - 1
+        for i in range(rows_diff):
+            dst_row = data_start_row + template_data_rows + i
+            for col in range(1, 8):
+                src_cell = ws.cell(row=src_row, column=col)
+                dst_cell = ws.cell(row=dst_row, column=col)
+                if src_cell.has_style:
+                    dst_cell.font = copy(src_cell.font)
+                    dst_cell.border = copy(src_cell.border)
+                    dst_cell.fill = copy(src_cell.fill)
+                    dst_cell.number_format = src_cell.number_format
+                    dst_cell.protection = copy(src_cell.protection)
+                    dst_cell.alignment = copy(src_cell.alignment)
+            if ws.row_dimensions[src_row].height:
+                ws.row_dimensions[dst_row].height = ws.row_dimensions[src_row].height
+    elif rows_diff < 0:
+        # 需要删除多余的数据行
+        ws.delete_rows(data_start_row + data_count, -rows_diff)
+
+    # 获取汇率
+    krw_val, _, _ = get_exchange_rates()
+
+    # 填充数据
+    total_qty = 0
+    total_amount = 0
+
+    for idx, order in enumerate(orders):
+        row = data_start_row + idx
+
+        # 取消该行的合并单元格
+        for merged_range in list(ws.merged_cells.ranges):
+            if merged_range.min_row == row:
+                try:
+                    ws.unmerge_cells(str(merged_range))
+                except:
+                    pass
+
+        ws.cell(row=row, column=1).value = idx + 1
+        ws.cell(row=row, column=2).value = "集成电路/IC"
+        ws.cell(row=row, column=3).value = order.get("inquiry_mpn", "") or ""
+        ws.cell(row=row, column=4).value = "8542399000"
+
+        qty = order.get("quoted_qty") or order.get("inquiry_qty") or 0
+        try:
+            qty = int(qty)
+        except:
+            qty = 0
+        ws.cell(row=row, column=5).value = qty
+        ws.cell(row=row, column=5).number_format = '#,##0'
+        total_qty += qty
+
+        price_kwr = calculate_price_kwr(order, krw_val)
+        ws.cell(row=row, column=6).value = price_kwr
+        ws.cell(row=row, column=6).number_format = '#,##0.0'
+
+        total = price_kwr * qty
+        ws.cell(row=row, column=7).value = total if total else 0
+        ws.cell(row=row, column=7).number_format = '#,##0.0'
+        total_amount += total
+
+    # 计算Total行的实际位置（考虑插入/删除后的偏移）
+    actual_total_qty_row = total_qty_row_template + rows_diff
+    actual_total_amount_row = total_amount_row_template + rows_diff
+
+    # 更新Total Qty和Total Amount
+    ws.cell(row=actual_total_qty_row, column=5).value = total_qty
+    ws.cell(row=actual_total_qty_row, column=5).number_format = '#,##0'
+
+    ws.cell(row=actual_total_amount_row, column=7).value = total_amount
+    ws.cell(row=actual_total_amount_row, column=7).number_format = '#,##0.0'
+
+    wb.save(output_path)
+    wb.close()
 
     return True, {
         "excel_path": output_path,
-        "pdf_path": pdf_path,
+        "pdf_path": "",
         "invoice_no": invoice_no,
         "total_qty": total_qty,
         "total_amount": total_amount,
@@ -417,8 +531,9 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
     if not template_dir:
         template_dir = os.path.join(project_root, "templates", "ci_kr")
 
-    # 生成 CI
-    return generate_ci_excel(orders, template_dir, output_path, invoice_no)
+    # 生成 CI（使用完整模板保留印章图片）
+    return generate_ci_excel(orders, template_dir, output_path, invoice_no,
+                             full_template_filename="CI_template.xlsx")
 
 
 def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
@@ -468,13 +583,17 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
     # 获取汇率
     krw_val, _, _ = get_exchange_rates()
 
-    # 计算韩元价格
+    # 计算韩元价格（优先使用已有的price_kwr，否则用offer_price_rmb换算）
     for offer in offers:
-        price_rmb = offer.get("offer_price_rmb")
-        if price_rmb and float(price_rmb or 0) > 0:
-            offer["price_kwr"] = round(float(price_rmb) * krw_val, 1)
+        price_kwr = float(offer.get("price_kwr") or 0)
+        if price_kwr > 0:
+            offer["price_kwr"] = price_kwr
         else:
-            offer["price_kwr"] = 0
+            price_rmb = offer.get("offer_price_rmb")
+            if price_rmb and float(price_rmb or 0) > 0:
+                offer["price_kwr"] = round(float(price_rmb) * krw_val, 1)
+            else:
+                offer["price_kwr"] = 0
 
     # 适配报价数据为订单格式
     adapted_offers = []
@@ -497,8 +616,9 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
         }
         adapted_offers.append(adapted)
 
-    # 生成 CI
-    return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no)
+    # 生成 CI（使用完整模板保留印章图片）
+    return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no,
+                             full_template_filename="CI_template.xlsx")
 
 
 def get_offers_for_ci(offer_ids):
@@ -509,7 +629,8 @@ def get_offers_for_ci(offer_ids):
     with get_db_connection() as conn:
         rows = conn.execute(f"""
             SELECT o.offer_id, o.offer_date,
-                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb, o.price_usd as offer_price_usd,
+                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb,
+                   o.price_kwr, o.price_usd as offer_price_usd, o.price_jpy,
                    o.quoted_qty, o.date_code, o.delivery_date, o.inquiry_qty, o.inquiry_mpn,
                    COALESCE(o.cli_id, q.cli_id) as cli_id,
                    c.cli_name, c.cli_name_en, c.contact_name, c.address, c.email, c.phone,
@@ -619,10 +740,11 @@ def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None):
         }
         adapted_offers.append(adapted)
 
-    # 生成 CI-JP（使用JP模板文件名）
+    # 生成 CI-JP（使用完整模板保留印章图片）
     return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no,
                              header_filename="CI_template_header_JP.xlsx",
-                             footer_filename="CI_template_footer_JP.xlsx")
+                             footer_filename="CI_template_footer_JP.xlsx",
+                             full_template_filename="CI_template_JP.xlsx")
 
 
 def generate_ci_auto_from_offers(offer_ids, output_base=None):

@@ -7,6 +7,8 @@ Document Generator - 统一的文档生成模块
 
 import os
 import platform
+import zipfile
+import tempfile
 from datetime import datetime
 from copy import copy
 
@@ -154,7 +156,8 @@ def get_offers_for_document(offer_ids):
     with get_db_connection() as conn:
         rows = conn.execute(f"""
             SELECT o.offer_id, o.offer_date,
-                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb, o.price_usd as offer_price_usd,
+                   o.quoted_mpn, o.quoted_brand, o.offer_price_rmb,
+                   o.price_kwr, o.price_usd as offer_price_usd, o.price_jpy,
                    o.quoted_qty, o.date_code, o.delivery_date, o.inquiry_qty, o.inquiry_mpn,
                    COALESCE(o.cli_id, q.cli_id) as cli_id,
                    c.cli_name, c.cli_name_en, c.contact_name, c.address, c.email, c.phone,
@@ -223,11 +226,14 @@ def generate_ci_us(order_ids, output_base=None, template_dir=None):
 
 
 def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
-    """生成美元版CI Excel文件"""
+    """生成美元版CI Excel文件 - Header + Footer 简单拼接方式"""
+    import shutil
+
     data_count = len(orders)
     first_order = orders[0]
     now = datetime.now()
 
+    # 只使用 Header + Footer 拼接方式
     header_path = os.path.join(template_dir, "CI_template_header_US.xlsx")
     footer_path = os.path.join(template_dir, "CI_template_footer_US.xlsx")
 
@@ -295,19 +301,20 @@ def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
 
         price_usd = float(order.get("price_usd") or 0)
         ws.cell(row=row, column=6).value = price_usd
-        ws.cell(row=row, column=6).number_format = '#,##0.00'
+        ws.cell(row=row, column=6).number_format = '#,##0.000'
 
         total = price_usd * qty
         ws.cell(row=row, column=7).value = total if total else 0
-        ws.cell(row=row, column=7).number_format = '#,##0.00'
+        ws.cell(row=row, column=7).number_format = '#,##0.000'
         total_amount += total
 
-    # 追加 Footer
+    # 完整拼接 Footer（复制值、样式、合并单元格、行高、图片）
     footer_start_row = data_start_row + data_count
     wb_footer = openpyxl.load_workbook(footer_path)
     ws_footer = wb_footer.active
 
-    for src_row in range(1, 4):
+    # 复制footer的所有行
+    for src_row in range(1, ws_footer.max_row + 1):
         dst_row = footer_start_row + src_row - 1
         for col in range(1, 8):
             src_cell = ws_footer.cell(row=src_row, column=col)
@@ -318,12 +325,11 @@ def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
                 dst_cell.border = copy(src_cell.border)
                 dst_cell.fill = copy(src_cell.fill)
                 dst_cell.number_format = src_cell.number_format
-                dst_cell.protection = copy(src_cell.protection)
                 dst_cell.alignment = copy(src_cell.alignment)
         if ws_footer.row_dimensions[src_row].height:
             ws.row_dimensions[dst_row].height = ws_footer.row_dimensions[src_row].height
 
-    # 复制 footer 中的合并单元格
+    # 复制footer的合并单元格
     for merged_range in ws_footer.merged_cells.ranges:
         new_range = f"{openpyxl.utils.get_column_letter(merged_range.min_col)}{footer_start_row + merged_range.min_row - 1}:{openpyxl.utils.get_column_letter(merged_range.max_col)}{footer_start_row + merged_range.max_row - 1}"
         try:
@@ -331,57 +337,31 @@ def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
         except:
             pass
 
+    # 复制footer中的图片（印章）
+    for img in ws_footer._images:
+        from copy import deepcopy
+        new_img = deepcopy(img)
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            new_img.anchor._from.row = footer_start_row + img.anchor._from.row - 1
+            if hasattr(img.anchor, 'to'):
+                new_img.anchor.to.row = footer_start_row + img.anchor.to.row - 1
+        ws.add_image(new_img)
+
+    # 更新 TOTAL 数据
     ws.cell(row=footer_start_row, column=5).value = total_qty
     ws.cell(row=footer_start_row, column=5).number_format = '#,##0'
     ws.cell(row=footer_start_row + 1, column=7).value = total_amount
-    ws.cell(row=footer_start_row + 1, column=7).number_format = '#,##0.00'
+    ws.cell(row=footer_start_row + 1, column=7).number_format = '#,##0.000'
 
-    # 复制印章图片
-    if ws_footer._images:
-        img = ws_footer._images[0]
-        new_img = Image(img.ref)
-        import zipfile
-        import re
-        try:
-            with zipfile.ZipFile(footer_path, 'r') as z:
-                drawing_content = z.read('xl/drawings/drawing1.xml').decode('utf-8')
-                cx_match = re.search(r'cx="(\d+)"', drawing_content)
-                cy_match = re.search(r'cy="(\d+)"', drawing_content)
-                if cx_match and cy_match:
-                    new_img.width = int(cx_match.group(1)) / 9525
-                    new_img.height = int(cy_match.group(1)) / 9525
-        except:
-            new_img.width = img.width
-            new_img.height = img.height
-        ws.add_image(new_img, f'C{footer_start_row + 2}')
-
-    last_row = footer_start_row + 2
+    last_row = footer_start_row + ws_footer.max_row - 1
     ws.print_area = f"$A$1:$G${last_row}"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb.save(output_path)
 
-    # 生成 PDF
-    pdf_path = ""
-    try:
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "excel_to_pdf",
-            os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                        "openclaw_skills", "order-ci-generator-us", "scripts", "excel_to_pdf.py")
-        )
-        if spec and spec.loader:
-            pdf_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(pdf_module)
-            pdf_success, pdf_result = pdf_module.convert_to_pdf(output_path)
-            if pdf_success:
-                pdf_path = pdf_result
-    except Exception as e:
-        pass  # PDF 生成失败不影响 Excel
-
     return True, {
         "excel_path": output_path,
-        "pdf_path": pdf_path,
+        "pdf_path": "",
         "invoice_no": invoice_no,
         "total_qty": total_qty,
         "total_amount": total_amount,
@@ -474,8 +454,8 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
     now = datetime.now()
 
     # 模板文件路径
-    template1_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_KR - 1.xlsx")
-    template2_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_KR - 2.xlsx")
+    template1_path = os.path.join(template_dir, "Proforma_Invoice_KR - 1.xlsx")
+    template2_path = os.path.join(template_dir, "Proforma_Invoice_KR - 2.xlsx")
 
     # 检查新模板是否存在
     use_new_template = os.path.exists(template1_path) and os.path.exists(template2_path)
@@ -562,46 +542,39 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
         price_kwr = order.get("calculated_price_kwr", "") or ""
         ws1.cell(row, 7).value = price_kwr
         if price_kwr:
-            ws1.cell(row, 7).number_format = '#,##0'
+            ws1.cell(row, 7).number_format = '#,##0.0'
 
         if qty and price_kwr:
             ws1.cell(row, 8).value = f"=G{row}*E{row}"
-            ws1.cell(row, 8).number_format = '#,##0'
+            ws1.cell(row, 8).number_format = '#,##0.0'
 
     # ---- 3. 计算 Total 行位置 ----
     last_data_row = first_data_row + data_count - 1
 
-    # ---- 4. 拼接 template2 内容 ----
-    # template2 从 Row 11 开始是 TOTAL AMOUNT, 空行, TERMS & CONDITIONS 等
-    # 跳过 Row 1-10 的头部信息
-    template2_start_row = 11  # TOTAL AMOUNT 所在行
-    insert_start_row = last_data_row + 2  # 数据行后空一行
+    # ---- 4. 完整拼接 template2 内容（复制值、样式、合并单元格、行高、图片）----
+    template2_start_row = 11
+    insert_start_row = last_data_row + 2
 
-    # 复制 template2 的所有行到 template1
     for src_row_idx in range(template2_start_row, ws2.max_row + 1):
         dest_row_idx = insert_start_row + (src_row_idx - template2_start_row)
-
-        # 插入新行
         ws1.insert_rows(dest_row_idx)
 
         for src_col in range(1, 9):
             src_cell = ws2.cell(row=src_row_idx, column=src_col)
             dest_cell = ws1.cell(row=dest_row_idx, column=src_col)
-
             if src_cell.value is not None:
                 dest_cell.value = src_cell.value
-
-            # 复制样式
             if src_cell.has_style:
                 dest_cell.font = copy(src_cell.font)
                 dest_cell.border = copy(src_cell.border)
                 dest_cell.fill = copy(src_cell.fill)
                 dest_cell.number_format = src_cell.number_format
                 dest_cell.alignment = copy(src_cell.alignment)
+        if ws2.row_dimensions[src_row_idx].height:
+            ws1.row_dimensions[dest_row_idx].height = ws2.row_dimensions[src_row_idx].height
 
-    # 处理 template2 的合并单元格（只处理从 template2_start_row 开始的）
+    # 复制template2的合并单元格
     for merged_range in ws2.merged_cells.ranges:
-        # 只处理 Row 11 及之后的合并单元格
         if merged_range.min_row >= template2_start_row:
             new_min_row = insert_start_row + (merged_range.min_row - template2_start_row)
             new_max_row = insert_start_row + (merged_range.max_row - template2_start_row)
@@ -615,50 +588,28 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
             except:
                 pass
 
-    # ---- 5. 更新 TOTAL AMOUNT 行的公式 ----
-    # template2 Row 11 是 TOTAL AMOUNT，公式需要更新
-    total_row = insert_start_row
-
-    # 取消 TOTAL 行的合并单元格
-    for merged_range in list(ws1.merged_cells.ranges):
-        if merged_range.min_row == total_row:
-            try:
-                ws1.unmerge_cells(str(merged_range))
-            except:
-                pass
-
-    ws1.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
-    ws1.cell(total_row, 8).number_format = '#,##0'
-
-    # 重新合并 TOTAL 行
-    try:
-        ws1.merge_cells(f"A{total_row}:G{total_row}")
-    except:
-        pass
-
-    # ---- 5.5 复制 template2 的图片 ----
-    # 复制 template2 中的图片到 template1，并调整位置
-    row_offset = insert_start_row - (template2_start_row - 1)  # 行偏移量
+    # 复制template2中的图片（印章）
+    from copy import deepcopy
+    row_offset = insert_start_row - template2_start_row
     for img in ws2._images:
-        from copy import deepcopy
         new_img = deepcopy(img)
-        # 获取图片原始位置
         if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
-            # 更新起始位置
             original_from_row = img.anchor._from.row
             if original_from_row >= template2_start_row - 1:
                 new_img.anchor._from.row = original_from_row + row_offset
-            # 更新结束位置 (TwoCellAnchor)
             if hasattr(img.anchor, 'to'):
                 original_to_row = img.anchor.to.row
                 if original_to_row >= template2_start_row - 1:
                     new_img.anchor.to.row = original_to_row + row_offset
         ws1.add_image(new_img)
 
-    # ---- 6. 保存文件 ----
-    # 设置打印范围 (到 THANK YOU FOR YOUR BUSINESS! 行)
-    # KR-2 模板中 THANK YOU 在 Row 29，相对于 template2_start_row(11) 的偏移是 18
-    thank_you_row = insert_start_row + 18  # THANK YOU FOR YOUR BUSINESS! 所在行
+    # 更新 TOTAL AMOUNT 行的公式
+    total_row = insert_start_row
+    ws1.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws1.cell(total_row, 8).number_format = '#,##0.0'
+
+    # 设置打印范围
+    thank_you_row = insert_start_row + (ws2.max_row - template2_start_row)
     ws1.print_area = f"$A$1:$H${thank_you_row}"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -684,7 +635,7 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
     template_path = None
     if os.path.isdir(template_dir):
         # 优先使用正确的模板（头部区域D8/D9是普通Cell，不是MergedCell）
-        preferred_template = "Proforma_Invoice_TAEJU_UNI2025110502_v2.xlsx"
+        preferred_template = "Proforma_Invoice_KR.xlsx"
         preferred_path = os.path.join(template_dir, preferred_template)
         if os.path.exists(preferred_path):
             template_path = preferred_path
@@ -848,18 +799,18 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
         price_kwr = order.get("calculated_price_kwr", "") or ""
         ws.cell(row, 7).value = price_kwr
         if price_kwr:
-            ws.cell(row, 7).number_format = '#,##0'
+            ws.cell(row, 7).number_format = '#,##0.0'
 
         if qty and price_kwr:
             ws.cell(row, 8).value = f"=G{row}*E{row}"
-            ws.cell(row, 8).number_format = '#,##0'
+            ws.cell(row, 8).number_format = '#,##0.0'
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
 
     # 只更新公式，保留模板原有的文字
     ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
-    ws.cell(actual_total_row, 8).number_format = '#,##0'
+    ws.cell(actual_total_row, 8).number_format = '#,##0.0'
 
     ws.print_area = f"$A$1:$H${ws.max_row}"
 
@@ -968,33 +919,23 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
     生成PI-US Excel文件 - 双模板拼接方式
 
     模板1 (US-1): 头部信息 + 数据表
-    模板2 (US-2): Total Amount + TERMS & CONDITIONS + 付款信息
+    模板2 (US-2): TOTAL AMOUNT + TERMS & CONDITIONS + 付款信息
     """
     from openpyxl.utils import get_column_letter
-    from copy import copy
+    from copy import copy, deepcopy
 
     data_count = len(orders)
     first_order = orders[0]
     now = datetime.now()
 
     # 模板文件路径
-    template1_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_US - 1.xlsx")
-    template2_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_US - 2.xlsx")
+    template1_path = os.path.join(template_dir, "Proforma_Invoice_US - 1.xlsx")
+    template2_path = os.path.join(template_dir, "Proforma_Invoice_US - 2.xlsx")
 
-    # 检查新模板是否存在
-    use_new_template = os.path.exists(template1_path) and os.path.exists(template2_path)
-
-    if not use_new_template:
-        # 回退到旧模板
-        template_path = None
-        if os.path.isdir(template_dir):
-            for f in os.listdir(template_dir):
-                if f.endswith(".xlsx") and not f.startswith("~") and "_US.xlsx" in f and "- " not in f:
-                    template_path = os.path.join(template_dir, f)
-                    break
-        if not template_path or not os.path.exists(template_path):
-            return False, f"US模板文件不存在于 {template_dir}"
-        return _generate_pi_us_excel_legacy(orders, template_path, output_path, invoice_no)
+    if not os.path.exists(template1_path):
+        return False, f"US Header模板不存在: {template1_path}"
+    if not os.path.exists(template2_path):
+        return False, f"US Footer模板不存在: {template2_path}"
 
     # 加载模板
     wb1 = openpyxl.load_workbook(template1_path)
@@ -1004,12 +945,9 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
     ws2 = wb2.active
 
     # ---- 1. 填写头部信息 ----
-    # Row 8: Invoice No. (D8)
     ws1.cell(8, 4).value = invoice_no
-    # Row 9: Date (D9)
     ws1.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
-    # Row 12-16: 客户信息
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
     ws1.cell(12, 3).value = cli_name_en
     ws1.cell(13, 3).value = first_order.get("contact_name", "") or ""
@@ -1018,18 +956,15 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
     ws1.cell(16, 3).value = first_order.get("address", "") or ""
 
     # ---- 2. 处理数据行 ----
-    # US-1 模板: Row 18=表头, Row 19=示例数据 (只有1行)
     header_row = 18
     first_data_row = 19
-    template_data_rows = 1  # US模板只有1行示例数据
+    template_data_rows = 1
 
-    # 调整行数
     rows_diff = data_count - template_data_rows
+
     if rows_diff > 0:
-        # 插入新行
         ws1.insert_rows(first_data_row + template_data_rows, rows_diff)
-        # 复制样式
-        style_row = first_data_row  # 使用第一行作为样式模板
+        style_row = first_data_row
         for i in range(rows_diff):
             new_row = first_data_row + template_data_rows + i
             for col in range(1, 9):
@@ -1041,7 +976,6 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
                     dest_cell.fill = copy(src_cell.fill)
                     dest_cell.alignment = copy(src_cell.alignment)
     elif rows_diff < 0:
-        # 删除多余行
         ws1.delete_rows(first_data_row + data_count, -rows_diff)
 
     # 取消数据行的合并单元格
@@ -1083,15 +1017,12 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
     # ---- 3. 计算 Total 行位置 ----
     last_data_row = first_data_row + data_count - 1
 
-    # ---- 4. 拼接 template2 内容 ----
-    # template2 从 Row 1 开始是 Total Amount, 空行, TERMS & CONDITIONS 等
-    insert_start_row = last_data_row + 2  # 数据行后空一行
+    # ---- 4. 拼接 template2 内容（从 Row 1 开始）----
+    insert_start_row = last_data_row + 2
 
-    # 复制 template2 的所有行到 template1
     for src_row_idx in range(1, ws2.max_row + 1):
         dest_row_idx = insert_start_row + src_row_idx - 1
 
-        # 插入新行 (除了第一行)
         if src_row_idx > 1:
             ws1.insert_rows(dest_row_idx)
 
@@ -1102,7 +1033,6 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
             if src_cell.value is not None:
                 dest_cell.value = src_cell.value
 
-            # 复制样式
             if src_cell.has_style:
                 dest_cell.font = copy(src_cell.font)
                 dest_cell.border = copy(src_cell.border)
@@ -1125,7 +1055,6 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
             pass
 
     # ---- 5. 更新 Total Amount 行的公式 ----
-    # template2 Row 1 是 Total Amount，公式需要更新
     total_row = insert_start_row
 
     # 取消 Total 行的合并单元格
@@ -1146,23 +1075,19 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
         pass
 
     # ---- 5.5 复制 template2 的图片 ----
-    row_offset = insert_start_row - 1  # 行偏移量 (template2 从 Row 1 开始)
+    row_offset = insert_start_row - 1
     for img in ws2._images:
-        from copy import deepcopy
         new_img = deepcopy(img)
         if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
             original_from_row = img.anchor._from.row
             new_img.anchor._from.row = original_from_row + row_offset
-            # 更新结束位置 (TwoCellAnchor)
             if hasattr(img.anchor, 'to'):
                 original_to_row = img.anchor.to.row
                 new_img.anchor.to.row = original_to_row + row_offset
         ws1.add_image(new_img)
 
     # ---- 6. 保存文件 ----
-    # 设置打印范围 (到 THANK YOU FOR YOUR BUSINESS! 行)
-    # US-2 模板中 THANK YOU 在 Row 19，相对于 Row 1 的偏移是 18
-    thank_you_row = insert_start_row + 18  # THANK YOU FOR YOUR BUSINESS! 所在行
+    thank_you_row = insert_start_row + 18
     ws1.print_area = f"$A$1:$H${thank_you_row}"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1671,21 +1596,45 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None):
     # 获取汇率
     krw_val, _, _ = get_exchange_rates()
 
-    # 计算KWR价格 - 报价使用 offer_price_rmb
+    # 计算KWR价格 - 优先使用已有的price_kwr，否则用offer_price_rmb换算
     for offer in offers:
-        price_rmb = offer.get("offer_price_rmb")
-        if price_rmb and float(price_rmb or 0) > 0:
-            price_kwr = round(float(price_rmb) * krw_val, 1)
+        price_kwr = float(offer.get("price_kwr") or 0)
+        if price_kwr > 0:
+            offer["calculated_price_kwr"] = price_kwr
         else:
-            price_kwr = 0
-        offer["calculated_price_kwr"] = price_kwr
+            price_rmb = offer.get("offer_price_rmb")
+            if price_rmb and float(price_rmb or 0) > 0:
+                offer["calculated_price_kwr"] = round(float(price_rmb) * krw_val, 1)
+            else:
+                offer["calculated_price_kwr"] = 0
 
     # 复用订单PI生成逻辑，适配报价字段
     return _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no)
 
 
 def _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no):
-    """基于报价生成PI-KR Excel文件"""
+    """基于报价生成PI-KR Excel文件 - Header + Footer 简单拼接方式"""
+    # 直接使用 header+footer 拼接方式
+    return _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no)
+
+
+def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no):
+    """基于报价生成PI Excel文件 - Header + Footer模板拼接方式
+
+    模板结构 (KR版本):
+    Header模板 (KR - 1):
+    - Row 8: Invoice No. (C1=标签, D4=值)
+    - Row 9: Date (C1=标签, D4=值)
+    - Row 12-16: 客户信息 (C1=标签, C3=值)
+    - Row 18: 表头行
+    - Row 19-20: 2行示例数据
+
+    Footer模板 (KR - 2):
+    - Row 11: TOTAL AMOUNT + 公式
+    - Row 13-18: TERMS & CONDITIONS
+    - Row 20-27: PAYMENT METHOD
+    - Row 29: THANK YOU
+    """
     from openpyxl.utils import get_column_letter
     from copy import copy
 
@@ -1693,217 +1642,59 @@ def _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice
     first_offer = offers[0]
     now = datetime.now()
 
-    # 模板文件路径
-    template1_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_KR - 1.xlsx")
-    template2_path = os.path.join(template_dir, "Proforma_Invoice_TAEJU_UNI2025110502_KR - 2.xlsx")
+    # 加载 Header 和 Footer 模板
+    header_path = os.path.join(template_dir, "Proforma_Invoice_KR - 1.xlsx")
+    footer_path = os.path.join(template_dir, "Proforma_Invoice_KR - 2.xlsx")
 
-    use_new_template = os.path.exists(template1_path) and os.path.exists(template2_path)
+    if not os.path.exists(header_path):
+        return False, f"Header模板不存在: {header_path}"
+    if not os.path.exists(footer_path):
+        return False, f"Footer模板不存在: {footer_path}"
 
-    if not use_new_template:
-        return _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no)
-
-    wb1 = openpyxl.load_workbook(template1_path)
-    ws1 = wb1.active
-
-    wb2 = openpyxl.load_workbook(template2_path)
-    ws2 = wb2.active
-
-    # 填写头部信息
-    ws1.cell(8, 4).value = invoice_no
-    ws1.cell(9, 4).value = now.strftime("%Y-%m-%d")
-
-    cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
-    ws1.cell(12, 3).value = cli_name_en
-    ws1.cell(13, 3).value = first_offer.get("contact_name", "") or ""
-    ws1.cell(14, 3).value = first_offer.get("email", "") or ""
-    ws1.cell(15, 3).value = first_offer.get("phone", "") or ""
-    ws1.cell(16, 3).value = first_offer.get("address", "") or ""
-
-    # 处理数据行
-    header_row = 18
-    first_data_row = 19
-    template_data_rows = 2
-
-    rows_diff = data_count - template_data_rows
-    if rows_diff > 0:
-        ws1.insert_rows(first_data_row + template_data_rows, rows_diff)
-        style_row = first_data_row
-        for i in range(rows_diff):
-            new_row = first_data_row + template_data_rows + i
-            for col in range(1, 9):
-                src_cell = ws1.cell(row=style_row, column=col)
-                dest_cell = ws1.cell(row=new_row, column=col)
-                if src_cell.has_style:
-                    dest_cell.font = copy(src_cell.font)
-                    dest_cell.border = copy(src_cell.border)
-                    dest_cell.fill = copy(src_cell.fill)
-                    dest_cell.alignment = copy(src_cell.alignment)
-    elif rows_diff < 0:
-        ws1.delete_rows(first_data_row + data_count, -rows_diff)
-
-    # 取消合并单元格
-    merged_to_remove = []
-    for merged_range in list(ws1.merged_cells.ranges):
-        if first_data_row <= merged_range.min_row < first_data_row + data_count:
-            merged_to_remove.append(merged_range)
-    for merged_range in merged_to_remove:
-        try:
-            ws1.unmerge_cells(str(merged_range))
-        except:
-            pass
-
-    # 写入数据 - 报价字段映射
-    for idx, offer in enumerate(offers):
-        row = first_data_row + idx
-
-        ws1.cell(row, 1).value = idx + 1
-        ws1.cell(row, 2).value = offer.get("inquiry_mpn", "") or offer.get("quoted_mpn", "")
-        ws1.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
-        ws1.cell(row, 4).value = offer.get("date_code", "") or ""
-
-        qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or ""
-        ws1.cell(row, 5).value = qty
-        if qty:
-            ws1.cell(row, 5).number_format = '#,##0'
-
-        ws1.cell(row, 6).value = offer.get("delivery_date", "") or ""
-
-        price_kwr = offer.get("calculated_price_kwr", "") or ""
-        ws1.cell(row, 7).value = price_kwr
-        if price_kwr:
-            ws1.cell(row, 7).number_format = '#,##0'
-
-        if qty and price_kwr:
-            ws1.cell(row, 8).value = f"=G{row}*E{row}"
-            ws1.cell(row, 8).number_format = '#,##0'
-
-    last_data_row = first_data_row + data_count - 1
-    template2_start_row = 11
-    insert_start_row = last_data_row + 2
-
-    # 拼接 template2
-    for src_row_idx in range(template2_start_row, ws2.max_row + 1):
-        dest_row_idx = insert_start_row + (src_row_idx - template2_start_row)
-        ws1.insert_rows(dest_row_idx)
-
-        for src_col in range(1, 9):
-            src_cell = ws2.cell(row=src_row_idx, column=src_col)
-            dest_cell = ws1.cell(row=dest_row_idx, column=src_col)
-
-            if src_cell.value is not None:
-                dest_cell.value = src_cell.value
-
-            if src_cell.has_style:
-                dest_cell.font = copy(src_cell.font)
-                dest_cell.border = copy(src_cell.border)
-                dest_cell.fill = copy(src_cell.fill)
-                dest_cell.number_format = src_cell.number_format
-                dest_cell.alignment = copy(src_cell.alignment)
-
-    # 处理 template2 合并单元格
-    for merged_range in ws2.merged_cells.ranges:
-        if merged_range.min_row >= template2_start_row:
-            new_min_row = insert_start_row + (merged_range.min_row - template2_start_row)
-            new_max_row = insert_start_row + (merged_range.max_row - template2_start_row)
-            try:
-                ws1.merge_cells(
-                    start_row=new_min_row,
-                    start_column=merged_range.min_col,
-                    end_row=new_max_row,
-                    end_column=merged_range.max_col
-                )
-            except:
-                pass
-
-    # 更新 TOTAL 行
-    total_row = insert_start_row
-    for merged_range in list(ws1.merged_cells.ranges):
-        if merged_range.min_row == total_row:
-            try:
-                ws1.unmerge_cells(str(merged_range))
-            except:
-                pass
-
-    ws1.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
-    ws1.cell(total_row, 8).number_format = '#,##0'
-
-    try:
-        ws1.merge_cells(f"A{total_row}:G{total_row}")
-    except:
-        pass
-
-    # 复制图片
-    row_offset = insert_start_row - (template2_start_row - 1)
-    for img in ws2._images:
-        from copy import deepcopy
-        new_img = deepcopy(img)
-        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
-            original_from_row = img.anchor._from.row
-            if original_from_row >= template2_start_row - 1:
-                new_img.anchor._from.row = original_from_row + row_offset
-            if hasattr(img.anchor, 'to'):
-                original_to_row = img.anchor.to.row
-                if original_to_row >= template2_start_row - 1:
-                    new_img.anchor.to.row = original_to_row + row_offset
-        ws1.add_image(new_img)
-
-    thank_you_row = insert_start_row + 18
-    ws1.print_area = f"$A$1:$H${thank_you_row}"
-
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    wb1.save(output_path)
-    wb1.close()
-    wb2.close()
-
-    return True, {
-        "excel_path": output_path,
-        "invoice_no": invoice_no,
-        "cli_name": first_offer.get("cli_name", ""),
-        "count": data_count
-    }
-
-
-def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no):
-    """旧模板生成逻辑"""
-    data_count = len(offers)
-    first_offer = offers[0]
-    now = datetime.now()
-
-    template_path = None
-    if os.path.isdir(template_dir):
-        preferred_template = "Proforma_Invoice_TAEJU_UNI2025110502_v2.xlsx"
-        preferred_path = os.path.join(template_dir, preferred_template)
-        if os.path.exists(preferred_path):
-            template_path = preferred_path
-        else:
-            for f in os.listdir(template_dir):
-                if f.endswith(".xlsx") and not f.startswith("~"):
-                    template_path = os.path.join(template_dir, f)
-                    break
-
-    if not template_path or not os.path.exists(template_path):
-        return False, f"模板文件不存在于 {template_dir}"
-
-    wb = openpyxl.load_workbook(template_path)
+    wb = openpyxl.load_workbook(header_path)
     ws = wb.active
 
+    wb_footer = openpyxl.load_workbook(footer_path)
+    ws_footer = wb_footer.active
+
+    # ---- 1. 写入头部信息 ----
+    # Invoice No.: D8 (Row 8, Col 4)
     ws.cell(8, 4).value = invoice_no
+    # Date: D9 (Row 9, Col 4)
     ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
 
+    # 客户信息
     cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
+    # Company: C12 (Row 12, Col 3)
     ws.cell(12, 3).value = cli_name_en
+    # Contact: C13
     ws.cell(13, 3).value = first_offer.get("contact_name", "") or ""
+    # Email: C14
     ws.cell(14, 3).value = first_offer.get("email", "") or ""
+    # Phone: C15
     ws.cell(15, 3).value = first_offer.get("phone", "") or ""
+    # Address: C16
     ws.cell(16, 3).value = first_offer.get("address", "") or ""
 
-    header_row = 18
-    first_data_row = 19
-    template_data_rows = 2
+    # ---- 2. 处理数据行 ----
+    header_row = 18  # 表头行
+    first_data_row = 19  # 第一行数据
+    template_data_rows = 2  # 模板中有2行示例数据 (Row 19-20)
 
+    # 调整行数
     rows_diff = data_count - template_data_rows
     if rows_diff > 0:
         ws.insert_rows(first_data_row + template_data_rows, rows_diff)
+        # 复制样式
+        for i in range(rows_diff):
+            new_row = first_data_row + template_data_rows + i
+            for col in range(1, 9):
+                src_cell = ws.cell(row=first_data_row + template_data_rows - 1, column=col)
+                dest_cell = ws.cell(row=new_row, column=col)
+                if src_cell.has_style:
+                    dest_cell.font = copy(src_cell.font)
+                    dest_cell.border = copy(src_cell.border)
+                    dest_cell.alignment = copy(src_cell.alignment)
     elif rows_diff < 0:
         ws.delete_rows(first_data_row + data_count, -rows_diff)
 
@@ -1916,23 +1707,92 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
         ws.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
         ws.cell(row, 4).value = offer.get("date_code", "") or ""
 
-        qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or ""
+        # Col E = Qty (数量)
+        qty = offer.get("quoted_qty") or offer.get("inquiry_qty") or 0
+        try:
+            qty = int(qty)
+        except:
+            qty = 0
         ws.cell(row, 5).value = qty
-        if qty:
-            ws.cell(row, 5).number_format = '#,##0'
+        ws.cell(row, 5).number_format = '#,##0'
 
+        # Col F = L/T (货期)
         ws.cell(row, 6).value = offer.get("delivery_date", "") or ""
 
-        price_kwr = offer.get("calculated_price_kwr", "") or ""
+        # Col G = Unit Price (单价 KRW)
+        price_kwr = offer.get("calculated_price_kwr", "") or offer.get("offer_price_kwr", "") or 0
+        try:
+            price_kwr = float(price_kwr)
+        except:
+            price_kwr = 0
         ws.cell(row, 7).value = price_kwr
-        if price_kwr:
-            ws.cell(row, 7).number_format = '#,##0'
+        ws.cell(row, 7).number_format = '#,##0.0'
 
-        if qty and price_kwr:
-            ws.cell(row, 8).value = f"=G{row}*E{row}"
-            ws.cell(row, 8).number_format = '#,##0'
+        # Col H = Total Amount (公式: Qty * Unit Price)
+        ws.cell(row, 8).value = f"=E{row}*G{row}"
+        ws.cell(row, 8).number_format = '#,##0.0'
 
-    ws.print_area = f"$A$1:$H${ws.max_row}"
+    # ---- 3. 完整拼接 Footer 内容（复制值、样式、合并单元格、行高、图片）----
+    last_data_row = first_data_row + data_count - 1
+    footer_start_row = last_data_row + 2
+    footer_template_start = 11
+
+    for src_row_idx in range(footer_template_start, ws_footer.max_row + 1):
+        dest_row_idx = footer_start_row + (src_row_idx - footer_template_start)
+        ws.insert_rows(dest_row_idx)
+
+        for src_col in range(1, 9):
+            src_cell = ws_footer.cell(row=src_row_idx, column=src_col)
+            dest_cell = ws.cell(row=dest_row_idx, column=src_col)
+            if src_cell.value is not None:
+                dest_cell.value = src_cell.value
+            if src_cell.has_style:
+                dest_cell.font = copy(src_cell.font)
+                dest_cell.border = copy(src_cell.border)
+                dest_cell.fill = copy(src_cell.fill)
+                dest_cell.number_format = src_cell.number_format
+                dest_cell.alignment = copy(src_cell.alignment)
+        if ws_footer.row_dimensions[src_row_idx].height:
+            ws.row_dimensions[dest_row_idx].height = ws_footer.row_dimensions[src_row_idx].height
+
+    # 复制Footer的合并单元格
+    for merged_range in ws_footer.merged_cells.ranges:
+        if merged_range.min_row >= footer_template_start:
+            new_min_row = footer_start_row + (merged_range.min_row - footer_template_start)
+            new_max_row = footer_start_row + (merged_range.max_row - footer_template_start)
+            try:
+                ws.merge_cells(
+                    start_row=new_min_row,
+                    start_column=merged_range.min_col,
+                    end_row=new_max_row,
+                    end_column=merged_range.max_col
+                )
+            except:
+                pass
+
+    # 复制Footer中的图片（印章）
+    from copy import deepcopy
+    row_offset = footer_start_row - footer_template_start
+    for img in ws_footer._images:
+        new_img = deepcopy(img)
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            original_from_row = img.anchor._from.row
+            if original_from_row >= footer_template_start - 1:
+                new_img.anchor._from.row = original_from_row + row_offset
+            if hasattr(img.anchor, 'to'):
+                original_to_row = img.anchor.to.row
+                if original_to_row >= footer_template_start - 1:
+                    new_img.anchor.to.row = original_to_row + row_offset
+        ws.add_image(new_img)
+
+    # 更新 TOTAL 公式
+    total_row = footer_start_row
+    ws.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws.cell(total_row, 8).number_format = '#,##0.0'
+
+    # 设置打印区域
+    final_row = footer_start_row + (ws_footer.max_row - footer_template_start)
+    ws.print_area = f"$A$1:$H${final_row}"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     wb.save(output_path)
