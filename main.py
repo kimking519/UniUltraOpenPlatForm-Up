@@ -2371,7 +2371,7 @@ async def api_order_manager_generate_pi_ci_kr(request: Request, current_user: di
     from datetime import datetime
     import os
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"PI-CI-PO-{timestamp}")
+    output_dir = os.path.join(r"E:\1_Business\1_unicorn\3_合规\审计资料2026\3_data\客户订单", f"PI-CI-KR-{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
 
     success_count = 0
@@ -2469,7 +2469,7 @@ async def api_order_manager_generate_pi_ci_us(request: Request, current_user: di
     from datetime import datetime
     import os
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"PI-CI-PO-{timestamp}")
+    output_dir = os.path.join(r"E:\1_Business\1_unicorn\3_合规\审计资料2026\3_data\客户订单", f"PI-CI-US-{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
 
     success_count = 0
@@ -2553,9 +2553,15 @@ async def api_order_manager_generate_pi_ci_us(request: Request, current_user: di
 
 @app.post("/api/order_manager/generate_pi")
 async def api_order_manager_generate_pi(request: Request, current_user: dict = Depends(login_required)):
-    """批量生成PI文件"""
+    """批量生成PI文件（智能判断币种）
+
+    判断逻辑：
+    1. 首先检查客户订单汇总字段：total_price_kwr, total_price_usd, total_price_jpy
+    2. 如果汇总字段都为零，检查报价单价格字段：price_kwr, price_usd, price_jpy
+    3. 取首个非零值决定币种，优先级：KRW > USD > JPY
+    """
     from Sills.db_order_manager import get_manager_by_id, get_manager_offers
-    from Sills.document_generator import generate_pi_from_offers
+    from Sills.document_generator import generate_pi_from_offers, generate_pi_us_from_offers, generate_pi_jp_from_offers
 
     data = await request.json()
     manager_ids = data.get('manager_ids', [])
@@ -2567,7 +2573,7 @@ async def api_order_manager_generate_pi(request: Request, current_user: dict = D
     from datetime import datetime
     import os
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"PI-{timestamp}")
+    output_dir = os.path.join(r"E:\1_Business\1_unicorn\3_合规\审计资料2026\3_data\客户订单", f"PI-{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
 
     success_count = 0
@@ -2591,12 +2597,53 @@ async def api_order_manager_generate_pi(request: Request, current_user: dict = D
 
             offer_ids = [o['offer_id'] for o in offers]
 
-            # 生成 PI
-            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir)
+            # 判断币种：优先使用客户订单汇总字段
+            currency_type = None
+            total_kwr = float(manager.get('total_price_kwr') or 0)
+            total_usd = float(manager.get('total_price_usd') or 0)
+            total_jpy = float(manager.get('total_price_jpy') or 0)
+
+            if total_kwr > 0:
+                currency_type = "KRW"
+            elif total_usd > 0:
+                currency_type = "USD"
+            elif total_jpy > 0:
+                currency_type = "JPY"
+
+            # 如果汇总字段都为零，检查报价单价格字段
+            if not currency_type:
+                for offer in offers:
+                    price_kwr = float(offer.get('price_kwr') or 0)
+                    price_usd = float(offer.get('price_usd') or 0)
+                    price_jpy = float(offer.get('price_jpy') or 0)
+
+                    if price_kwr > 0:
+                        currency_type = "KRW"
+                        break
+                    elif price_usd > 0:
+                        currency_type = "USD"
+                        break
+                    elif price_jpy > 0:
+                        currency_type = "JPY"
+                        break
+
+            # 默认使用 KRW
+            if not currency_type:
+                currency_type = "KRW"
+
+            # 根据币种生成 PI
+            if currency_type == "KRW":
+                pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir)
+            elif currency_type == "USD":
+                pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir)
+            elif currency_type == "JPY":
+                pi_success, pi_result = generate_pi_jp_from_offers(offer_ids, output_base=output_dir)
+
             if pi_success:
                 old_path = pi_result.get('excel_path', '')
                 if old_path and os.path.exists(old_path):
-                    new_name = f"Proforma Invoice_{cli_name}_{customer_order_no}.xlsx"
+                    # 文件名包含币种标识
+                    new_name = f"Proforma Invoice_{cli_name}_{customer_order_no}_{currency_type}.xlsx"
                     new_path = os.path.join(output_dir, new_name)
                     os.rename(old_path, new_path)
                     generated_files.append(new_name)
@@ -2618,9 +2665,16 @@ async def api_order_manager_generate_pi(request: Request, current_user: dict = D
 
 @app.post("/api/order_manager/generate_ci")
 async def api_order_manager_generate_ci(request: Request, current_user: dict = Depends(login_required)):
-    """批量生成CI文件（智能判断币种）"""
+    """批量生成CI文件（智能判断币种）
+
+    判断逻辑：
+    1. 首先检查客户订单汇总字段：total_price_kwr, total_price_usd, total_price_jpy
+    2. 如果汇总字段都为零，检查报价单价格字段：price_kwr, price_usd, price_jpy
+    3. 取首个非零值决定币种，优先级：KRW > USD > JPY
+    """
     from Sills.db_order_manager import get_manager_by_id, get_manager_offers
-    from Sills.ci_generator import generate_ci_auto_from_offers
+    from Sills.ci_generator import generate_ci_kr_from_offers, generate_ci_jp_from_offers
+    from Sills.document_generator import generate_ci_us_from_offers
 
     data = await request.json()
     manager_ids = data.get('manager_ids', [])
@@ -2632,7 +2686,7 @@ async def api_order_manager_generate_ci(request: Request, current_user: dict = D
     from datetime import datetime
     import os
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    output_dir = os.path.join(r"C:\Users\Kim\Downloads", f"CI-{timestamp}")
+    output_dir = os.path.join(r"E:\1_Business\1_unicorn\3_合规\审计资料2026\3_data\客户订单", f"CI-{timestamp}")
     os.makedirs(output_dir, exist_ok=True)
 
     success_count = 0
@@ -2656,12 +2710,53 @@ async def api_order_manager_generate_ci(request: Request, current_user: dict = D
 
             offer_ids = [o['offer_id'] for o in offers]
 
-            # 生成 CI（智能判断币种）
-            ci_success, ci_result = generate_ci_auto_from_offers(offer_ids, output_base=output_dir)
+            # 判断币种：优先使用客户订单汇总字段
+            currency_type = None
+            total_kwr = float(manager.get('total_price_kwr') or 0)
+            total_usd = float(manager.get('total_price_usd') or 0)
+            total_jpy = float(manager.get('total_price_jpy') or 0)
+
+            if total_kwr > 0:
+                currency_type = "KRW"
+            elif total_usd > 0:
+                currency_type = "USD"
+            elif total_jpy > 0:
+                currency_type = "JPY"
+
+            # 如果汇总字段都为零，检查报价单价格字段
+            if not currency_type:
+                for offer in offers:
+                    price_kwr = float(offer.get('price_kwr') or 0)
+                    price_usd = float(offer.get('price_usd') or 0)
+                    price_jpy = float(offer.get('price_jpy') or 0)
+
+                    if price_kwr > 0:
+                        currency_type = "KRW"
+                        break
+                    elif price_usd > 0:
+                        currency_type = "USD"
+                        break
+                    elif price_jpy > 0:
+                        currency_type = "JPY"
+                        break
+
+            # 默认使用 KRW
+            if not currency_type:
+                currency_type = "KRW"
+
+            # 根据币种生成 CI
+            if currency_type == "KRW":
+                ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir)
+            elif currency_type == "USD":
+                ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir)
+            elif currency_type == "JPY":
+                ci_success, ci_result = generate_ci_jp_from_offers(offer_ids, output_base=output_dir)
+
             if ci_success:
                 old_path = ci_result.get('excel_path', '')
                 if old_path and os.path.exists(old_path):
-                    new_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}.xlsx"
+                    # 文件名包含币种标识
+                    new_name = f"COMMERCIAL INVOICE_{cli_name}_{customer_order_no}_{currency_type}.xlsx"
                     new_path = os.path.join(output_dir, new_name)
                     os.rename(old_path, new_path)
                     generated_files.append(new_name)

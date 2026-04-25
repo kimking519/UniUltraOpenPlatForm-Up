@@ -1969,3 +1969,302 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
         adapted_offers.append(adapted)
 
     return _generate_ci_us_excel(adapted_offers, template_dir, output_path, invoice_no)
+
+
+def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    基于报价生成 Proforma Invoice (JPY日元版本)
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if openpyxl is None:
+        return False, "缺少依赖: 请安装 openpyxl -> pip install openpyxl"
+
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    offers = get_offers_for_document(offer_ids)
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    cli_names = set(o.get("cli_name") or "未知客户" for o in offers)
+    if len(cli_names) > 1:
+        return False, f"报价属于不同客户 ({', '.join(cli_names)})，无法生成同一份PI"
+
+    cli_name = list(cli_names)[0]
+
+    # 确定输出目录
+    project_root = os.environ.get('UNIULTRA_PROJECT_ROOT',
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    if not output_base:
+        output_base = _get_output_base()
+
+    if not template_dir:
+        template_dir = os.path.join(project_root, "templates", "pi")
+
+    now = datetime.now()
+    date_dir = now.strftime("%Y%m%d")
+
+    output_dir = os.path.join(output_base, cli_name, date_dir)
+    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_JP")
+
+    # 使用日元价格字段
+    for offer in offers:
+        price_jpy = offer.get("price_jpy")
+        if price_jpy and float(price_jpy or 0) > 0:
+            offer["calculated_price_jpy"] = float(price_jpy)
+        else:
+            offer["calculated_price_jpy"] = 0
+
+    # 将报价数据适配为订单格式，复用现有模板逻辑
+    adapted_offers = []
+    for offer in offers:
+        adapted = {
+            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
+            "date_code": offer.get("date_code", ""),
+            "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
+            "delivery_date": offer.get("delivery_date", ""),
+            "calculated_price_jpy": offer.get("calculated_price_jpy", 0),
+            "cli_name_en": offer.get("cli_name_en", "") or offer.get("cli_name", ""),
+            "cli_name": offer.get("cli_name", ""),
+            "contact_name": offer.get("contact_name", ""),
+            "email": offer.get("email", ""),
+            "phone": offer.get("phone", ""),
+            "address": offer.get("address", ""),
+        }
+        adapted_offers.append(adapted)
+
+    return _generate_pi_jp_excel(adapted_offers, template_dir, output_path, invoice_no)
+
+
+def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
+    """基于报价生成PI-JP Excel文件 - Header + Footer 模板拼接方式"""
+    from openpyxl.utils import get_column_letter
+    from copy import copy
+
+    data_count = len(offers)
+    first_offer = offers[0]
+    now = datetime.now()
+
+    # 加载 Header 和 Footer 模板
+    header_path = os.path.join(template_dir, "Proforma_Invoice_JP - 1.xlsx")
+    footer_path = os.path.join(template_dir, "Proforma_Invoice_JP - 2.xlsx")
+
+    if not os.path.exists(header_path):
+        return False, f"Header模板不存在: {header_path}"
+    if not os.path.exists(footer_path):
+        return False, f"Footer模板不存在: {footer_path}"
+
+    wb = openpyxl.load_workbook(header_path)
+    ws = wb.active
+
+    wb_footer = openpyxl.load_workbook(footer_path)
+    ws_footer = wb_footer.active
+
+    # ---- 1. 写入头部信息 ----
+    ws.cell(8, 4).value = invoice_no
+    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
+
+    cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
+    ws.cell(12, 3).value = cli_name_en
+    ws.cell(13, 3).value = first_offer.get("contact_name", "") or ""
+    ws.cell(14, 3).value = first_offer.get("email", "") or ""
+    ws.cell(15, 3).value = first_offer.get("phone", "") or ""
+    ws.cell(16, 3).value = first_offer.get("address", "") or ""
+
+    # ---- 2. 处理数据行 ----
+    header_row = 18
+    first_data_row = 19
+    template_data_rows = 2
+
+    rows_diff = data_count - template_data_rows
+    if rows_diff > 0:
+        ws.insert_rows(first_data_row + template_data_rows, rows_diff)
+        for i in range(rows_diff):
+            new_row = first_data_row + template_data_rows + i
+            for col in range(1, 9):
+                src_cell = ws.cell(row=first_data_row + template_data_rows - 1, column=col)
+                dest_cell = ws.cell(row=new_row, column=col)
+                if src_cell.has_style:
+                    dest_cell.font = copy(src_cell.font)
+                    dest_cell.border = copy(src_cell.border)
+                    dest_cell.alignment = copy(src_cell.alignment)
+    elif rows_diff < 0:
+        ws.delete_rows(first_data_row + data_count, -rows_diff)
+
+    # 写入数据
+    for idx, offer in enumerate(offers):
+        row = first_data_row + idx
+
+        ws.cell(row, 1).value = idx + 1
+        ws.cell(row, 2).value = offer.get("inquiry_mpn", "") or ""
+        ws.cell(row, 3).value = offer.get("inquiry_brand", "") or ""
+        ws.cell(row, 4).value = offer.get("date_code", "") or ""
+
+        qty = offer.get("quoted_qty") or offer.get("inquiry_qty", 0)
+        ws.cell(row, 5).value = qty
+        if qty:
+            ws.cell(row, 5).number_format = '#,##0'
+
+        ws.cell(row, 6).value = offer.get("delivery_date", "") or ""
+
+        price_jpy = offer.get("calculated_price_jpy", 0)
+        ws.cell(row, 7).value = price_jpy
+        if price_jpy:
+            ws.cell(row, 7).number_format = '#,##0'
+
+        if qty and price_jpy:
+            ws.cell(row, 8).value = f"=G{row}*E{row}"
+            ws.cell(row, 8).number_format = '#,##0'
+
+    # ---- 3. 计算 Total 行位置 ----
+    last_data_row = first_data_row + data_count - 1
+
+    # ---- 4. 拼接 footer 内容（从 Row 11 开始）----
+    insert_start_row = last_data_row + 2
+
+    footer_start_row = 11  # JP footer 从 Row 11 开始
+    for src_row_idx in range(footer_start_row, ws_footer.max_row + 1):
+        dest_row_idx = insert_start_row + src_row_idx - footer_start_row
+
+        ws.insert_rows(dest_row_idx)
+
+        for src_col in range(1, 9):
+            src_cell = ws_footer.cell(row=src_row_idx, column=src_col)
+            dest_cell = ws.cell(row=dest_row_idx, column=src_col)
+
+            if src_cell.value is not None:
+                dest_cell.value = src_cell.value
+
+            if src_cell.has_style:
+                dest_cell.font = copy(src_cell.font)
+                dest_cell.border = copy(src_cell.border)
+                dest_cell.fill = copy(src_cell.fill)
+                dest_cell.number_format = src_cell.number_format
+                dest_cell.alignment = copy(src_cell.alignment)
+
+    # 处理 footer 的合并单元格
+    for merged_range in ws_footer.merged_cells.ranges:
+        if merged_range.min_row >= footer_start_row:
+            new_min_row = merged_range.min_row + insert_start_row - footer_start_row
+            new_max_row = merged_range.max_row + insert_start_row - footer_start_row
+            try:
+                ws.merge_cells(
+                    start_row=new_min_row,
+                    start_column=merged_range.min_col,
+                    end_row=new_max_row,
+                    end_column=merged_range.max_col
+                )
+            except:
+                pass
+
+    # ---- 5. 更新 Total Amount 行的公式 ----
+    total_row = insert_start_row
+
+    # 取消 Total 行的合并单元格
+    for merged_range in list(ws.merged_cells.ranges):
+        if merged_range.min_row == total_row:
+            try:
+                ws.unmerge_cells(str(merged_range))
+            except:
+                pass
+
+    ws.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws.cell(total_row, 8).number_format = '#,##0'
+
+    # 重新合并 Total 行
+    try:
+        ws.merge_cells(f"A{total_row}:G{total_row}")
+    except:
+        pass
+
+    # ---- 6. 复制 footer 的图片 ----
+    from copy import deepcopy
+    row_offset = insert_start_row - footer_start_row
+    for img in ws_footer._images:
+        new_img = deepcopy(img)
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            original_from_row = img.anchor._from.row
+            new_img.anchor._from.row = original_from_row + row_offset
+            if hasattr(img.anchor, 'to'):
+                original_to_row = img.anchor.to.row
+                new_img.anchor.to.row = original_to_row + row_offset
+        ws.add_image(new_img)
+
+    # ---- 7. 保存文件 ----
+    thank_you_row = insert_start_row + 18
+    ws.print_area = f"$A$1:$H${thank_you_row}"
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    wb.save(output_path)
+    wb.close()
+    wb_footer.close()
+
+    return True, {
+        "excel_path": output_path,
+        "invoice_no": invoice_no,
+        "cli_name": first_offer.get("cli_name", ""),
+        "count": data_count
+    }
+
+
+def generate_pi_auto_from_offers(offer_ids, output_base=None, template_dir=None):
+    """
+    智能判断币种并生成PI
+
+    根据报价中的 price_kwr, price_usd, price_jpy 字段自动选择模板：
+    - 优先级: price_kwr > price_usd > price_jpy（选择第一个非零值）
+
+    Args:
+        offer_ids: 报价ID列表
+        output_base: 输出基础目录（可选）
+        template_dir: 模板目录（可选）
+
+    Returns:
+        tuple: (success: bool, result: dict or error_message: str)
+    """
+    if not offer_ids:
+        return False, "未提供报价编号"
+
+    # 获取报价数据
+    offers = get_offers_for_document(offer_ids)
+
+    if not offers:
+        return False, f"报价编号 {offer_ids} 不存在"
+
+    # 检查币种：选择第一个报价中第一个非零的币种字段
+    currency_type = None
+    for offer in offers:
+        price_kwr = float(offer.get("price_kwr") or 0)
+        price_usd = float(offer.get("price_usd") or 0)
+        price_jpy = float(offer.get("price_jpy") or 0)
+
+        if price_kwr > 0:
+            currency_type = "KRW"
+            break
+        elif price_usd > 0:
+            currency_type = "USD"
+            break
+        elif price_jpy > 0:
+            currency_type = "JPY"
+            break
+
+    # 默认使用KRW（如果没有币种字段）
+    if not currency_type:
+        currency_type = "KRW"
+
+    # 根据币种调用对应的生成函数
+    if currency_type == "KRW":
+        return generate_pi_from_offers(offer_ids, output_base, template_dir)
+    elif currency_type == "USD":
+        return generate_pi_us_from_offers(offer_ids, output_base, template_dir)
+    elif currency_type == "JPY":
+        return generate_pi_jp_from_offers(offer_ids, output_base, template_dir)
