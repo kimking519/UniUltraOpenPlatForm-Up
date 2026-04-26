@@ -8,7 +8,7 @@ from datetime import datetime
 from Sills.base import get_db_connection
 
 
-def add_log(task_id, contact_id, email, company_name="", status="sent", error_message=None):
+def add_log(task_id, contact_id, email, company_name="", status="sent", error_message=None, account_id=None, account_email=None):
     """添加发送日志
 
     Args:
@@ -18,6 +18,8 @@ def add_log(task_id, contact_id, email, company_name="", status="sent", error_me
         company_name: 公司名称
         status: 发送状态 (sent/failed)
         error_message: 错误信息(失败时)
+        account_id: 发送使用的账号ID
+        account_email: 发送使用的账号邮箱
 
     Returns:
         log_id
@@ -27,9 +29,9 @@ def add_log(task_id, contact_id, email, company_name="", status="sent", error_me
 
     with get_db_connection() as conn:
         result = conn.execute("""
-            INSERT INTO uni_email_log (task_id, contact_id, email, company_name, status, error_message)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (task_id, contact_id_value, email, company_name, status, error_message or ""))
+            INSERT INTO uni_email_log (task_id, contact_id, email, company_name, status, error_message, account_id, account_email)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (task_id, contact_id_value, email, company_name, status, error_message or "", account_id, account_email))
         conn.commit()
         return result.lastrowid
 
@@ -159,7 +161,7 @@ def delete_task_logs(task_id):
         conn.commit()
 
 
-def update_log_status(task_id, email, status, error_message=None):
+def update_log_status(task_id, email, status, error_message=None, account_id=None, account_email=None):
     """更新日志状态（用于重试模式）
 
     Args:
@@ -167,6 +169,8 @@ def update_log_status(task_id, email, status, error_message=None):
         email: 邮箱地址
         status: 新状态 (sent/failed)
         error_message: 错误信息（失败时）
+        account_id: 发送使用的账号ID
+        account_email: 发送使用的账号邮箱
 
     Returns:
         bool 是否更新成功
@@ -174,9 +178,9 @@ def update_log_status(task_id, email, status, error_message=None):
     with get_db_connection() as conn:
         conn.execute("""
             UPDATE uni_email_log
-            SET status = ?, error_message = ?, sent_at = NOW()
+            SET status = ?, error_message = ?, sent_at = NOW(), account_id = ?, account_email = ?
             WHERE task_id = ? AND email = ?
-        """, (status, error_message or "", task_id, email.lower()))
+        """, (status, error_message or "", account_id, account_email, task_id, email.lower()))
         conn.commit()
         return True
 
@@ -201,18 +205,27 @@ def get_recent_logs(limit=100):
 def get_all_task_contacts_with_status(task_id):
     """获取任务所有联系人及其发送状态（用于导出）
 
+    注意：导出需要所有联系人，不排除已发送的
+
     Returns:
         list 联系人列表，包含所有字段和发送状态
     """
-    from Sills.db_email_task import get_task_contacts
+    from Sills.db_email_task import get_task_by_id, get_all_groups_contacts_all_types
+    import json
 
-    # 获取任务的所有联系人
-    contacts = get_task_contacts(task_id)
+    # 获取任务信息
+    task = get_task_by_id(task_id)
+    if not task:
+        return []
 
-    # 获取已发送的日志
+    # 获取所有联系人（不排除已发送的）
+    group_ids = json.loads(task.get('group_ids', '[]') or '[]')
+    contacts = get_all_groups_contacts_all_types(group_ids)
+
+    # 获取已发送的日志（包含账号信息）
     with get_db_connection() as conn:
         sent_logs = conn.execute("""
-            SELECT email, status, sent_at, error_message
+            SELECT email, status, sent_at, error_message, account_id, account_email
             FROM uni_email_log
             WHERE task_id = ?
         """, (task_id,)).fetchall()
@@ -225,7 +238,9 @@ def get_all_task_contacts_with_status(task_id):
             status_map[email] = {
                 'send_status': log.get('status', ''),
                 'sent_at': log.get('sent_at', ''),
-                'error_message': log.get('error_message', '') or ''
+                'error_message': log.get('error_message', '') or '',
+                'log_account_id': log.get('account_id', ''),
+                'log_account_email': log.get('account_email', '')
             }
 
     # 合并联系人信息和发送状态
@@ -251,7 +266,9 @@ def get_all_task_contacts_with_status(task_id):
             'remark': contact.get('remark', ''),
             'send_status': status_info.get('send_status', 'pending'),
             'sent_at': status_info.get('sent_at', ''),
-            'error_message': status_info.get('error_message', '')
+            'error_message': status_info.get('error_message', ''),
+            'log_account_id': status_info.get('log_account_id', ''),
+            'log_account_email': status_info.get('log_account_email', '')
         })
 
     return results
@@ -363,6 +380,21 @@ def export_task_contacts_to_excel(task_id, output_path=None):
 
         # 写入数据
         for row_idx, contact in enumerate(contacts, header_row + 1):
+            # 对于已发送记录，使用日志中的账号；对于待发送，使用任务默认账号
+            log_account_email = contact.get('log_account_email', '')
+            log_account_id = contact.get('log_account_id', '')
+
+            # 如果有日志记录的账号，使用它；否则使用任务默认账号
+            display_account_name = account_name if log_account_id == '' else ''
+            display_account_email = log_account_email if log_account_email else account_email
+
+            # 如果有日志账号ID，查询账号名
+            if log_account_id and not display_account_name:
+                from Sills.db_email_account import get_account_by_id
+                log_account = get_account_by_id(log_account_id)
+                if log_account:
+                    display_account_name = log_account.get('account_name', '')
+
             data = [
                 contact.get('contact_id', ''),
                 contact.get('email', ''),
@@ -378,8 +410,8 @@ def export_task_contacts_to_excel(task_id, output_path=None):
                 contact.get('read_count', 0),
                 contact.get('last_sent_at', ''),
                 contact.get('remark', ''),
-                account_name,  # 账号名
-                account_email,  # 发件邮箱
+                display_account_name,  # 账号名（每条记录的实际发送账号）
+                display_account_email,  # 发件邮箱（每条记录的实际发送邮箱）
                 contact.get('send_status', 'pending'),
                 contact.get('sent_at', ''),
                 contact.get('error_message', '')
