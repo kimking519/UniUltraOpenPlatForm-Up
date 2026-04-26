@@ -10,9 +10,11 @@ from Sills.db_bank_transaction import update_matched_status
 
 
 def generate_ledger_id():
-    """生成台账ID (格式: LED-YYYYMMDDHHMMSS-XXXX)"""
+    """生成台账ID (格式: LED-YYYYMMDDHHMMSS-XXXXXXXX)
+    使用8位随机字符，避免批量创建时ID碰撞
+    """
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    random_num = uuid.uuid4().hex[:4].upper()
+    random_num = uuid.uuid4().hex[:8].upper()  # 8位随机，约4亿种组合
     return f"LED-{timestamp}-{random_num}"
 
 
