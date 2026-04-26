@@ -378,13 +378,27 @@ def is_cancel_requested(task_id):
 
 
 def get_task_contacts(task_id):
-    """获取任务的联系人列表"""
+    """获取任务的联系人列表（排除已发送成功的邮箱）
+
+    Returns:
+        list 未发送联系人列表 [{"contact_id", "email", "company", ...}, ...]
+    """
     task = get_task_by_id(task_id)
     if not task:
         return []
 
     group_ids = json.loads(task.get('group_ids', '[]') or '[]')
-    return get_all_groups_contacts_all_types(group_ids)
+    all_contacts = get_all_groups_contacts_all_types(group_ids)
+
+    # 获取本任务已发送成功的邮箱列表，排除已发送的
+    from Sills.db_email_log import get_sent_emails_for_task
+    sent_emails = get_sent_emails_for_task(task_id)
+    sent_email_set = set(e.lower() for e in sent_emails)
+
+    # 过滤掉已发送成功的联系人
+    unsent_contacts = [c for c in all_contacts if c.get('email', '').lower() not in sent_email_set]
+
+    return unsent_contacts
 
 
 def get_task_failed_contacts(task_id):

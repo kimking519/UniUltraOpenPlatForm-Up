@@ -339,9 +339,9 @@ class EmailSenderWorker:
             # 断开连接
             server.quit()
 
-            # 任务完成判断：sent + skipped + failed >= total 时才算完成
-            processed = sent_count + skipped_count + failed_count
-            if not self.stop_flag and processed >= total:
+            # 任务完成判断：所有联系人已处理完毕（不再依赖累加计数）
+            # 判断方式：本次循环遍历完所有联系人，且未被中断
+            if not self.stop_flag:
                 complete_task(self.task_id, base_failed + failed_count)
 
             # 发送报告邮件
