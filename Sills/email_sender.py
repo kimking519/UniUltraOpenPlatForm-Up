@@ -168,6 +168,10 @@ class EmailSenderWorker:
         skipped_count = 0
         account_sent_counts = {}  # 每个账号的发送计数
 
+        # 去重集合：记录已跳过/已失败的邮箱（避免同一邮箱多次计数）
+        skipped_email_set = set()  # 已跳过的邮箱
+        failed_email_set = set()   # 已失败的邮箱
+
         try:
             self.load_task_data()
 
@@ -272,18 +276,24 @@ class EmailSenderWorker:
                 # 跳过规则：N天内已成功发送的邮箱（不限任务）
                 if skip_enabled == 1 and email_addr.lower() in recently_sent_set:
                     print(f"[Worker] {mode_str} 跳过(最近{skip_days}天已发送): {email_addr}")
-                    skipped_count += 1
+                    # 去重计数：同一个邮箱只计一次
+                    if email_addr.lower() not in skipped_email_set:
+                        skipped_email_set.add(email_addr.lower())
+                        skipped_count += 1
                     update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
                     continue
 
                 try:
                     self.send_single_email(server, email_addr, company_name)
+                    # 获取当前账号信息用于记录
+                    current_account_id = current_account.get('account_id')
+                    current_account_email = current_account.get('email')
                     # 重试模式：更新之前失败的日志状态为成功
                     if self.retry_mode:
                         from Sills.db_email_log import update_log_status
-                        update_log_status(self.task_id, email_addr, 'sent', None)
+                        update_log_status(self.task_id, email_addr, 'sent', None, current_account_id, current_account_email)
                     else:
-                        add_log(self.task_id, contact_id, email_addr, company_name, 'sent')
+                        add_log(self.task_id, contact_id, email_addr, company_name, 'sent', None, current_account_id, current_account_email)
                     sent_count += 1
                     account_sent_counts[self.current_account_index] += 1
                     increment_sent_count(current_account['account_id'])
@@ -309,13 +319,19 @@ class EmailSenderWorker:
 
                 except Exception as e:
                     error_msg = str(e)
+                    # 获取当前账号信息用于记录
+                    current_account_id = current_account.get('account_id')
+                    current_account_email = current_account.get('email')
                     # 重试模式：更新之前失败的日志，保持failed状态但更新错误信息
                     if self.retry_mode:
                         from Sills.db_email_log import update_log_status
-                        update_log_status(self.task_id, email_addr, 'failed', error_msg)
+                        update_log_status(self.task_id, email_addr, 'failed', error_msg, current_account_id, current_account_email)
                     else:
-                        add_log(self.task_id, contact_id, email_addr, company_name, 'failed', error_msg)
-                    failed_count += 1
+                        add_log(self.task_id, contact_id, email_addr, company_name, 'failed', error_msg, current_account_id, current_account_email)
+                    # 去重计数：同一个邮箱只计一次失败
+                    if email_addr.lower() not in failed_email_set:
+                        failed_email_set.add(email_addr.lower())
+                        failed_count += 1
                     update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
                     print(f"[Worker] {mode_str} 发送失败 {email_addr}: {error_msg}")
                     # 继续发送下一个
