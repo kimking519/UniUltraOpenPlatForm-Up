@@ -771,9 +771,10 @@ def get_all_manager_orders_for_purchase(manager_ids):
 
 def batch_link_transactions(manager_ids, emp_id=None):
     """
-    批量补关联银行流水
+    批量补关联银行流水（支持共享流水按比例分配）
 
     根据订单的 transaction_code 字段查找对应的银行流水并建立关联
+    同一 transaction_code 关联多个订单时，按各订单金额比例分配
 
     Args:
         manager_ids: 客户订单ID列表
@@ -802,84 +803,155 @@ def batch_link_transactions(manager_ids, emp_id=None):
     from Sills.db_bank_ledger import create_ledger
 
     with get_db_connection() as conn:
+        # 先收集所有订单信息，按 transaction_code 分组
+        orders_by_tx = {}  # {transaction_code: [{'manager_id', 'order_no', 'amount'}, ...]}
+        order_info = {}  # {manager_id: {'transaction_code', 'order_no', ...}}
+
         for manager_id in manager_ids:
-            try:
-                # 获取订单信息
-                manager = conn.execute("""
-                    SELECT m.manager_id, m.customer_order_no, m.transaction_code, m.total_price_rmb
-                    FROM uni_order_manager m
-                    WHERE m.manager_id = ?
-                """, (manager_id,)).fetchone()
+            manager = conn.execute("""
+                SELECT m.manager_id, m.customer_order_no, m.transaction_code,
+                       m.total_price_rmb, m.total_price_kwr, m.total_price_jpy, m.total_price_usd
+                FROM uni_order_manager m
+                WHERE m.manager_id = ?
+            """, (manager_id,)).fetchone()
 
-                if not manager:
+            if not manager:
+                result['failed_count'] += 1
+                result['details'].append({
+                    'manager_id': manager_id,
+                    'order_no': '-',
+                    'status': 'failed',
+                    'message': '订单不存在'
+                })
+                continue
+
+            transaction_code = manager['transaction_code']
+            order_no = manager['customer_order_no']
+
+            # 检查是否有交易编码
+            if not transaction_code:
+                result['skipped_count'] += 1
+                result['details'].append({
+                    'manager_id': manager_id,
+                    'order_no': order_no,
+                    'status': 'skipped',
+                    'message': '无交易编码'
+                })
+                continue
+
+            # 检查是否已关联流水
+            existing_ledger = conn.execute("""
+                SELECT ledger_id FROM uni_bank_ledger WHERE manager_id = ?
+            """, (manager_id,)).fetchone()
+
+            if existing_ledger:
+                result['skipped_count'] += 1
+                result['details'].append({
+                    'manager_id': manager_id,
+                    'order_no': order_no,
+                    'status': 'skipped',
+                    'message': '已存在流水关联'
+                })
+                continue
+
+            # 计算订单金额（取第一个有值的币种）
+            order_amount = float(
+                manager['total_price_rmb'] or
+                manager['total_price_kwr'] or
+                manager['total_price_jpy'] or
+                manager['total_price_usd'] or 0
+            )
+
+            # 收集订单信息
+            order_info[manager_id] = {
+                'transaction_code': transaction_code,
+                'order_no': order_no,
+                'amount': order_amount
+            }
+
+            if transaction_code not in orders_by_tx:
+                orders_by_tx[transaction_code] = []
+            orders_by_tx[transaction_code].append({
+                'manager_id': manager_id,
+                'order_no': order_no,
+                'amount': order_amount
+            })
+
+        # 按 transaction_code 分组处理银行流水关联
+        for transaction_code, orders in orders_by_tx.items():
+            # 查找银行流水
+            tx = conn.execute("""
+                SELECT transaction_id, transaction_amount
+                FROM uni_bank_transaction
+                WHERE transaction_no = ? OR ledger_no = ?
+                LIMIT 1
+            """, (transaction_code, transaction_code)).fetchone()
+
+            if not tx:
+                for o in orders:
                     result['failed_count'] += 1
                     result['details'].append({
-                        'manager_id': manager_id,
-                        'order_no': '-',
-                        'status': 'failed',
-                        'message': '订单不存在'
-                    })
-                    continue
-
-                transaction_code = manager['transaction_code']
-                order_no = manager['customer_order_no']
-
-                # 检查是否有交易编码
-                if not transaction_code:
-                    result['skipped_count'] += 1
-                    result['details'].append({
-                        'manager_id': manager_id,
-                        'order_no': order_no,
-                        'status': 'skipped',
-                        'message': '无交易编码'
-                    })
-                    continue
-
-                # 检查是否已关联流水
-                existing_ledger = conn.execute("""
-                    SELECT ledger_id FROM uni_bank_ledger WHERE manager_id = ?
-                """, (manager_id,)).fetchone()
-
-                if existing_ledger:
-                    result['skipped_count'] += 1
-                    result['details'].append({
-                        'manager_id': manager_id,
-                        'order_no': order_no,
-                        'status': 'skipped',
-                        'message': '已存在流水关联'
-                    })
-                    continue
-
-                # 查找银行流水
-                tx = conn.execute("""
-                    SELECT transaction_id, transaction_amount
-                    FROM uni_bank_transaction
-                    WHERE transaction_no = ? OR ledger_no = ?
-                    LIMIT 1
-                """, (transaction_code, transaction_code)).fetchone()
-
-                if not tx:
-                    result['failed_count'] += 1
-                    result['details'].append({
-                        'manager_id': manager_id,
-                        'order_no': order_no,
+                        'manager_id': o['manager_id'],
+                        'order_no': o['order_no'],
                         'status': 'failed',
                         'message': f'未找到交易编码 {transaction_code} 对应的银行流水'
                     })
-                    continue
+                continue
 
-                transaction_id = tx['transaction_id']
-                allocation_amount = float(manager['total_price_rmb'] or 0)
+            transaction_id = tx['transaction_id']
+            tx_amount = float(tx['transaction_amount'] or 0)
 
-                if allocation_amount <= 0:
-                    allocation_amount = float(tx['transaction_amount'])
+            # 计算订单总金额
+            total_order_amount = sum(o['amount'] for o in orders)
+
+            # 检查已有分配（其他订单可能已分配）
+            existing_allocations = conn.execute("""
+                SELECT manager_id, allocation_amount
+                FROM uni_bank_ledger
+                WHERE transaction_id = ?
+            """, (transaction_id,)).fetchall()
+
+            allocated_amount = sum(float(a['allocation_amount'] or 0) for a in existing_allocations)
+            remaining_amount = tx_amount - allocated_amount
+
+            # 过滤掉已分配的订单
+            unassigned_orders = [o for o in orders if not any(a['manager_id'] == o['manager_id'] for a in existing_allocations)]
+
+            if not unassigned_orders:
+                # 所有订单都已分配
+                continue
+
+            if remaining_amount <= 0.01:
+                # 流水已全额分配
+                for o in unassigned_orders:
+                    result['failed_count'] += 1
+                    result['details'].append({
+                        'manager_id': o['manager_id'],
+                        'order_no': o['order_no'],
+                        'status': 'failed',
+                        'message': f'关联失败: 分配金额超出剩余可分配金额（剩余：{remaining_amount:.2f}）'
+                    })
+                continue
+
+            # 按比例计算分配金额
+            unassigned_total = sum(o['amount'] for o in unassigned_orders)
+
+            for o in unassigned_orders:
+                if unassigned_total > 0 and o['amount'] > 0:
+                    allocation_amount = round(remaining_amount * (o['amount'] / unassigned_total), 2)
+                elif o['amount'] > 0:
+                    # 单订单，使用订单金额或流水金额
+                    allocation_amount = min(o['amount'], remaining_amount)
+                else:
+                    # 订单金额为0，使用流水金额平均分配
+                    allocation_amount = round(remaining_amount / len(unassigned_orders), 2)
 
                 # 创建关联
                 success, ledger_result = create_ledger(
                     transaction_id=transaction_id,
-                    manager_id=manager_id,
+                    manager_id=o['manager_id'],
                     allocation_amount=allocation_amount,
-                    is_primary=1,
+                    is_primary=1 if len(unassigned_orders) == 1 else 0,  # 多订单时都为次要
                     match_type='manual',
                     created_by=emp_id,
                     remark=f'批量补关联，交易编码: {transaction_code}'
@@ -888,27 +960,18 @@ def batch_link_transactions(manager_ids, emp_id=None):
                 if success:
                     result['linked_count'] += 1
                     result['details'].append({
-                        'manager_id': manager_id,
-                        'order_no': order_no,
+                        'manager_id': o['manager_id'],
+                        'order_no': o['order_no'],
                         'status': 'linked',
                         'message': f'成功关联流水 {transaction_code}, 金额 {allocation_amount:.2f}'
                     })
                 else:
                     result['failed_count'] += 1
                     result['details'].append({
-                        'manager_id': manager_id,
-                        'order_no': order_no,
+                        'manager_id': o['manager_id'],
+                        'order_no': o['order_no'],
                         'status': 'failed',
                         'message': f'关联失败: {ledger_result}'
                     })
-
-            except Exception as e:
-                result['failed_count'] += 1
-                result['details'].append({
-                    'manager_id': manager_id,
-                    'order_no': '-',
-                    'status': 'failed',
-                    'message': str(e)
-                })
 
     return result
