@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response, Cookie, File, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -738,6 +738,33 @@ async def cli_list_api(current_user: dict = Depends(get_current_user)):
         return {"success": False, "message": "未登录", "items": []}
     items, total = get_cli_list(page=1, page_size=1000)
     return {"success": True, "items": items, "total": total}
+
+
+@app.get("/api/cli/export")
+async def cli_export_api(current_user: dict = Depends(login_required)):
+    """导出客户数据到Excel"""
+    from Sills.db_cli import export_cli_to_excel
+    from urllib.parse import quote
+    import io
+
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    filename = f"cli_export_{timestamp}.xlsx"
+
+    output = io.BytesIO()
+    success, result = export_cli_to_excel(output)
+
+    if not success:
+        return {"success": False, "message": result}
+
+    output.seek(0)
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
+
 
 @app.get("/api/order/list")
 async def order_list_api(current_user: dict = Depends(get_current_user)):
@@ -2397,8 +2424,8 @@ async def api_order_manager_generate_pi_ci_kr(request: Request, current_user: di
 
             offer_ids = [o['offer_id'] for o in offers]
 
-            # 生成 PI
-            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir)
+            # 生成 PI（传入customer_order_no作为invoice_no）
+            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             if pi_success:
                 # 重命名文件使用客户订单号
                 old_path = pi_result.get('excel_path', '')
@@ -2418,8 +2445,8 @@ async def api_order_manager_generate_pi_ci_kr(request: Request, current_user: di
             else:
                 errors.append(f"{customer_order_no} PI生成失败: {pi_result}")
 
-            # 生成 CI
-            ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir)
+            # 生成 CI（传入customer_order_no作为invoice_no）
+            ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             if ci_success:
                 # 重命名文件使用客户订单号
                 old_path = ci_result.get('excel_path', '')
@@ -2495,8 +2522,8 @@ async def api_order_manager_generate_pi_ci_us(request: Request, current_user: di
 
             offer_ids = [o['offer_id'] for o in offers]
 
-            # 生成 PI-US
-            pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir)
+            # 生成 PI-US（传入customer_order_no作为invoice_no）
+            pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             if pi_success:
                 # 重命名文件使用客户订单号
                 old_path = pi_result.get('excel_path', '')
@@ -2516,8 +2543,8 @@ async def api_order_manager_generate_pi_ci_us(request: Request, current_user: di
             else:
                 errors.append(f"{customer_order_no} PI生成失败: {pi_result}")
 
-            # 生成 CI-US
-            ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir)
+            # 生成 CI-US（传入customer_order_no作为invoice_no）
+            ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             if ci_success:
                 # 重命名文件使用客户订单号
                 old_path = ci_result.get('excel_path', '')
@@ -2631,13 +2658,13 @@ async def api_order_manager_generate_pi(request: Request, current_user: dict = D
             if not currency_type:
                 currency_type = "KRW"
 
-            # 根据币种生成 PI
+            # 根据币种生成 PI（传入customer_order_no作为invoice_no）
             if currency_type == "KRW":
-                pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir)
+                pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             elif currency_type == "USD":
-                pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir)
+                pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             elif currency_type == "JPY":
-                pi_success, pi_result = generate_pi_jp_from_offers(offer_ids, output_base=output_dir)
+                pi_success, pi_result = generate_pi_jp_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
 
             if pi_success:
                 old_path = pi_result.get('excel_path', '')
@@ -2744,13 +2771,13 @@ async def api_order_manager_generate_ci(request: Request, current_user: dict = D
             if not currency_type:
                 currency_type = "KRW"
 
-            # 根据币种生成 CI
+            # 根据币种生成 CI（传入customer_order_no作为invoice_no）
             if currency_type == "KRW":
-                ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir)
+                ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             elif currency_type == "USD":
-                ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir)
+                ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
             elif currency_type == "JPY":
-                ci_success, ci_result = generate_ci_jp_from_offers(offer_ids, output_base=output_dir)
+                ci_success, ci_result = generate_ci_jp_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
 
             if ci_success:
                 old_path = ci_result.get('excel_path', '')

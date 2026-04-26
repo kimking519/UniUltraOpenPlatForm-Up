@@ -1573,7 +1573,7 @@ def _generate_koquote_excel_legacy(offers, template_path, output_path, exchange_
 # 基于报价的 PI/CI 生成函数
 # ============================================================
 
-def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None):
+def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
     """
     基于报价生成 Proforma Invoice (KRW版本)
 
@@ -1581,6 +1581,7 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None):
         offer_ids: 报价ID列表
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
+        invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -1615,7 +1616,15 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+
+    # 如果未传入invoice_no，则自动生成
+    if not invoice_no:
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+    else:
+        # 使用传入的invoice_no生成文件路径
+        doc_prefix = "Proforma Invoice"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
 
     # 获取汇率
     krw_val, _, _ = get_exchange_rates()
@@ -1838,7 +1847,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
     }
 
 
-def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None):
+def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
     """
     基于报价生成 Proforma Invoice (USD版本)
 
@@ -1846,6 +1855,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None):
         offer_ids: 报价ID列表
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
+        invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -1880,7 +1890,15 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+
+    # 如果未传入invoice_no，则自动生成
+    if not invoice_no:
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+    else:
+        # 使用传入的invoice_no生成文件路径
+        doc_prefix = "Proforma Invoice"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
 
     # 获取汇率
     _, usd_val, _ = get_exchange_rates()
@@ -1920,7 +1938,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None):
     return _generate_pi_us_excel(adapted_offers, template_dir, output_path, invoice_no)
 
 
-def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
+def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
     """
     基于报价生成美元版 Commercial Invoice
 
@@ -1928,6 +1946,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
         offer_ids: 报价ID列表
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
+        invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -1962,7 +1981,15 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
+
+    # 如果未传入invoice_no，则自动生成
+    if not invoice_no:
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
+    else:
+        # 使用传入的invoice_no生成文件路径
+        doc_prefix = "COMMERCIAL INVOICE"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
 
     # 获取汇率
     _, usd_val, _ = get_exchange_rates()
@@ -2004,7 +2031,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None):
     return _generate_ci_us_excel(adapted_offers, template_dir, output_path, invoice_no)
 
 
-def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None):
+def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
     """
     基于报价生成 Proforma Invoice (JPY日元版本)
 
@@ -2012,6 +2039,7 @@ def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None):
         offer_ids: 报价ID列表
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
+        invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -2046,7 +2074,15 @@ def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_JP")
+
+    # 如果未传入invoice_no，则自动生成
+    if not invoice_no:
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI_JP")
+    else:
+        # 使用传入的invoice_no生成文件路径
+        doc_prefix = "Proforma Invoice"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
 
     # 使用日元价格字段
     for offer in offers:

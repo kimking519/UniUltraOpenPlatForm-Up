@@ -536,7 +536,7 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
                              full_template_filename="CI_template.xlsx")
 
 
-def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
+def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
     """
     基于报价生成韩国版 Commercial Invoice
 
@@ -544,6 +544,7 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
         offer_ids: 报价ID列表
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
+        invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -574,7 +575,15 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI")
+
+    # 如果未传入invoice_no，则自动生成
+    if not invoice_no:
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI")
+    else:
+        # 使用传入的invoice_no生成文件路径
+        doc_prefix = "COMMERCIAL INVOICE"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
 
     # 确定模板目录
     if not template_dir:
@@ -667,7 +676,7 @@ def get_offers_for_ci_with_currency(offer_ids):
         return [dict(r) for r in rows]
 
 
-def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None):
+def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
     """
     基于报价生成日元版 Commercial Invoice
 
@@ -675,6 +684,7 @@ def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None):
         offer_ids: 报价ID列表
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
+        invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -705,7 +715,15 @@ def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None):
     date_dir = now.strftime("%Y%m%d")
 
     output_dir = os.path.join(output_base, cli_name, date_dir)
-    invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_JP")
+
+    # 如果未传入invoice_no，则自动生成
+    if not invoice_no:
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_JP")
+    else:
+        # 使用传入的invoice_no生成文件路径
+        doc_prefix = "COMMERCIAL INVOICE"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_path = os.path.join(output_dir, output_filename)
 
     # 确定模板目录（JP模板文件名带_JP后缀）
     if not template_dir:
