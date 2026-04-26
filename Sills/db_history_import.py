@@ -99,6 +99,7 @@ def import_history_orders(file_path, emp_id):
     """
     主导入函数
     返回: (success_count, skip_count, fail_count, errors[])
+    支持银行流水按比例分配：同一transaction_code关联多个订单时，按各订单金额比例分配
     """
     print(f"[导入] 开始导入: {file_path}")
     success_count = 0
@@ -106,6 +107,10 @@ def import_history_orders(file_path, emp_id):
     fail_count = 0
     errors = []
     linked_transactions = []  # 记录已关联的交易
+
+    # 记录订单信息用于后续银行流水按比例分配
+    # 格式: {transaction_code: [{'manager_id': ..., 'order_no': ..., 'amount': ...}, ...]}
+    orders_by_transaction = {}
 
     try:
         # 解析Excel
@@ -260,7 +265,7 @@ def import_history_orders(file_path, emp_id):
                                     date_code, delivery_date, emp_id, remark, status, is_transferred
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
-                                offer_id, datetime.now().strftime('%Y-%m-%d'), None, cli_id,
+                                offer_id, order_date, None, cli_id,
                                 inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
                                 inquiry_qty, quoted_qty,
                                 target_price, cost_price, offer_price, offer_price_krw, offer_price_usd, offer_price_jpy,
@@ -286,56 +291,124 @@ def import_history_orders(file_path, emp_id):
                     from Sills.db_order_manager import recalculate_manager_totals
                     recalculate_manager_totals(manager_id)
 
-                    # 自动关联银行流水（如果有交易编码）
+                    # 记录订单信息用于后续银行流水按比例分配
                     if transaction_code:
-                        try:
-                            transaction_id = find_bank_transaction_by_code(transaction_code, conn)
-                            if transaction_id:
-                                # 获取订单总金额用于关联
-                                manager = conn.execute(
-                                    "SELECT total_price_rmb FROM uni_order_manager WHERE manager_id = ?",
-                                    (manager_id,)
-                                ).fetchone()
-                                if manager and manager['total_price_rmb']:
-                                    allocation_amount = float(manager['total_price_rmb'])
-
-                                    # 检查是否已存在关联
-                                    existing_link = conn.execute(
-                                        "SELECT ledger_id FROM uni_bank_ledger WHERE transaction_id = ? AND manager_id = ?",
-                                        (transaction_id, manager_id)
-                                    ).fetchone()
-
-                                    if not existing_link:
-                                        # 创建关联
-                                        from Sills.db_bank_ledger import create_ledger
-                                        success, result = create_ledger(
-                                            transaction_id=transaction_id,
-                                            manager_id=manager_id,
-                                            allocation_amount=allocation_amount,
-                                            is_primary=1,
-                                            match_type='manual',
-                                            created_by=emp_id,
-                                            remark=f'历史订单导入自动关联，交易编码: {transaction_code}'
-                                        )
-                                        if success:
-                                            linked_transactions.append({
-                                                'order_no': order_no,
-                                                'transaction_code': transaction_code
-                                            })
-                                        else:
-                                            errors.append(f"订单 {order_no} 关联流水失败: {result}")
-                        except Exception as e:
-                            errors.append(f"订单 {order_no} 关联流水时出错: {str(e)}")
+                        # 获取订单总金额（使用任意币种，优先RMB）
+                        manager = conn.execute(
+                            "SELECT total_price_rmb, total_price_kwr, total_price_usd, total_price_jpy FROM uni_order_manager WHERE manager_id = ?",
+                            (manager_id,)
+                        ).fetchone()
+                        if manager:
+                            # 使用第一个有值的币种金额
+                            order_amount = float(manager['total_price_rmb'] or manager['total_price_jpy'] or manager['total_price_kwr'] or manager['total_price_usd'] or 0)
+                            if order_amount > 0:
+                                if transaction_code not in orders_by_transaction:
+                                    orders_by_transaction[transaction_code] = []
+                                orders_by_transaction[transaction_code].append({
+                                    'manager_id': manager_id,
+                                    'order_no': order_no,
+                                    'amount': order_amount
+                                })
 
                 except Exception as e:
                     errors.append(f"订单 {order_no}: {str(e)}")
                     fail_count += len(group)
                     conn.rollback()
 
+        # 所有订单导入完成后，按比例分配银行流水
+        print("[导入] 开始银行流水按比例分配...")
+        for transaction_code, orders in orders_by_transaction.items():
+            try:
+                transaction_id = find_bank_transaction_by_code(transaction_code, conn)
+                if not transaction_id:
+                    errors.append(f"交易编码 {transaction_code}: 未找到对应银行流水")
+                    continue
+
+                # 获取银行流水金额
+                transaction = conn.execute(
+                    "SELECT amount FROM uni_bank_transaction WHERE transaction_id = ?",
+                    (transaction_id,)
+                ).fetchone()
+                if not transaction:
+                    errors.append(f"交易编码 {transaction_code}: 银行流水不存在")
+                    continue
+
+                bank_amount = float(transaction['amount'] or 0)
+                if bank_amount <= 0:
+                    errors.append(f"交易编码 {transaction_code}: 银行流水金额为0")
+                    continue
+
+                # 计算订单总金额
+                total_order_amount = sum(o['amount'] for o in orders)
+
+                # 检查是否已存在关联（已分配的金额）
+                existing_allocations = conn.execute(
+                    "SELECT manager_id, allocation_amount FROM uni_bank_ledger WHERE transaction_id = ?",
+                    (transaction_id,)
+                ).fetchall()
+
+                # 如果已有分配，检查是否已全部分配
+                allocated_amount = sum(float(a['allocation_amount'] or 0) for a in existing_allocations)
+                remaining_amount = bank_amount - allocated_amount
+
+                if remaining_amount <= 0:
+                    # 银行流水已全额分配，跳过
+                    for o in orders:
+                        if not any(a['manager_id'] == o['manager_id'] for a in existing_allocations):
+                            errors.append(f"订单 {o['order_no']}: 银行流水已全额分配给其他订单")
+                    continue
+
+                # 按比例分配剩余金额
+                # 如果已有部分订单分配，只处理未分配的订单
+                unassigned_orders = [o for o in orders if not any(a['manager_id'] == o['manager_id'] for a in existing_allocations)]
+
+                if not unassigned_orders:
+                    continue
+
+                # 计算未分配订单的总金额
+                unassigned_total = sum(o['amount'] for o in unassigned_orders)
+
+                for order_info in unassigned_orders:
+                    # 按比例计算分配金额
+                    if unassigned_total > 0:
+                        allocation_amount = remaining_amount * (order_info['amount'] / unassigned_total)
+                    else:
+                        allocation_amount = remaining_amount / len(unassigned_orders)  # 平均分配
+
+                    allocation_amount = round(allocation_amount, 2)  # 保留2位小数
+
+                    # 创建关联
+                    from Sills.db_bank_ledger import create_ledger
+                    success, result = create_ledger(
+                        transaction_id=transaction_id,
+                        manager_id=order_info['manager_id'],
+                        allocation_amount=allocation_amount,
+                        is_primary=1 if len(orders) == 1 else 0,  # 单订单时为主要，多订单时都为次要
+                        match_type='manual',
+                        created_by=emp_id,
+                        remark=f'历史订单导入按比例分配，交易编码: {transaction_code}, 分配比例: {order_info["amount"]}/{unassigned_total}'
+                    )
+                    if success:
+                        linked_transactions.append({
+                            'order_no': order_info['order_no'],
+                            'transaction_code': transaction_code,
+                            'allocation_amount': allocation_amount
+                        })
+                    else:
+                        errors.append(f"订单 {order_info['order_no']} 关联流水失败: {result}")
+
+            except Exception as e:
+                errors.append(f"交易编码 {transaction_code} 分配流水时出错: {str(e)}")
+
+        conn.commit()
+
         # 返回结果
         result_msg = f"成功导入 {success_count} 条报价"
         if linked_transactions:
-            result_msg += f"，自动关联 {len(linked_transactions)} 条银行流水"
+            result_msg += f"，银行流水按比例分配 {len(linked_transactions)} 条订单"
+            # 输出详细分配信息
+            for lt in linked_transactions:
+                print(f"[导入] 订单 {lt['order_no']}: 分配金额 {lt.get('allocation_amount', 'N/A')}")
 
         return success_count, skip_count, fail_count, errors
 
