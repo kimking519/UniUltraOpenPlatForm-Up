@@ -891,20 +891,19 @@ async function batchLinkTransactions() {
 
         if (result.success) {
             let detailMsg = result.message;
+            let logContent = '';
             if (result.details && result.details.length > 0) {
-                detailMsg += '\n\n详细信息：';
-                result.details.forEach(d => {
+                logContent = result.details.map(d => {
                     if (d.status === 'linked') {
-                        detailMsg += `\n✅ ${d.order_no}: ${d.message}`;
+                        return `${d.order_no}: 关联成功 - ${d.message}`;
                     } else if (d.status === 'skipped') {
-                        detailMsg += `\n⏭️ ${d.order_no}: ${d.message}`;
+                        return `${d.order_no}: 跳过 - ${d.message}`;
                     } else {
-                        detailMsg += `\n❌ ${d.order_no}: ${d.message}`;
+                        return `${d.order_no}: 失败 - ${d.message}`;
                     }
-                });
+                }).join('\n');
             }
-            alert(detailMsg);
-            location.reload();
+            showLinkLogModal(result.message, logContent, result.details);
         } else {
             alert('补关联失败: ' + result.message);
         }
@@ -913,6 +912,94 @@ async function batchLinkTransactions() {
         alert('请求失败，请稍后重试');
     }
 }
+
+// 显示流水关联日志弹窗
+function showLinkLogModal(summary, logContent, details) {
+    // 创建弹窗
+    const modal = document.createElement('div');
+    modal.id = 'linkLogModal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:white;border-radius:8px;width:500px;max-width:90%;max-height:80%;overflow:hidden;display:flex;flex-direction:column;';
+
+    // 标题栏
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:16px 20px;background:#2563EB;color:white;display:flex;justify-content:space-between;align-items:center;';
+    header.innerHTML = `
+        <span style="font-size:18px;font-weight:bold;">流水关联日志</span>
+        <button onclick="document.getElementById('linkLogModal').remove();location.reload();" style="background:none;border:none;color:white;font-size:24px;cursor:pointer;">&times;</button>
+    `;
+
+    // 内容区
+    const content = document.createElement('div');
+    content.style.cssText = 'padding:16px 20px;overflow-y:auto;max-height:400px;';
+
+    // 摘要
+    const summaryDiv = document.createElement('div');
+    summaryDiv.style.cssText = 'font-size:16px;font-weight:bold;margin-bottom:12px;color:#1F2937;';
+    summaryDiv.textContent = summary;
+    content.appendChild(summaryDiv);
+
+    // 详细日志
+    if (details && details.length > 0) {
+        const logDiv = document.createElement('div');
+        logDiv.id = 'linkLogContent';
+        logDiv.style.cssText = 'background:#F3F4F6;padding:12px;border-radius:4px;font-size:14px;line-height:1.6;white-space:pre-wrap;font-family:monospace;';
+
+        details.forEach(d => {
+            const line = document.createElement('div');
+            line.style.cssText = 'padding:4px 0;';
+            if (d.status === 'linked') {
+                line.innerHTML = `<span style="color:#10B981;">✅</span> ${d.order_no}: ${d.message}`;
+            } else if (d.status === 'skipped') {
+                line.innerHTML = `<span style="color:#F59E0B;">⏭️</span> ${d.order_no}: ${d.message}`;
+            } else {
+                line.innerHTML = `<span style="color:#EF4444;">❌</span> ${d.order_no}: ${d.message}`;
+            }
+            logDiv.appendChild(line);
+        });
+
+        content.appendChild(logDiv);
+    }
+
+    // 按钮区
+    const footer = document.createElement('div');
+    footer.style.cssText = 'padding:12px 20px;background:#F9FAFB;border-top:1px solid #E5E7EB;display:flex;justify-content:space-between;';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = '一键复制日志';
+    copyBtn.style.cssText = 'padding:8px 16px;background:#2563EB;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;';
+    copyBtn.onclick = function() {
+        const text = summary + '\n\n' + logContent;
+        navigator.clipboard.writeText(text).then(() => {
+            copyBtn.textContent = '已复制!';
+            copyBtn.style.background = '#10B981';
+            setTimeout(() => {
+                copyBtn.textContent = '一键复制日志';
+                copyBtn.style.background = '#2563EB';
+            }, 2000);
+        }).catch(err => {
+            alert('复制失败，请手动复制');
+        });
+    };
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '关闭并刷新';
+    closeBtn.style.cssText = 'padding:8px 16px;background:#6B7280;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;';
+    closeBtn.onclick = function() {
+        modal.remove();
+        location.reload();
+    };
+
+    footer.appendChild(copyBtn);
+    footer.appendChild(closeBtn);
+
+    box.appendChild(header);
+    box.appendChild(content);
+    box.appendChild(footer);
+    modal.appendChild(box);
+    document.body.appendChild(modal);
 </script>
 <script src="/static/column-drag.js"></script>
 <script>
