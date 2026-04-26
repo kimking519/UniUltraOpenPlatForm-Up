@@ -524,6 +524,7 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
             pass
 
     # 写入数据
+    total_sum = 0  # 累计Total Amount
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
@@ -552,9 +553,11 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
         ws1.cell(row, 7).value = price_kwr
         ws1.cell(row, 7).number_format = '#,##0.0'
 
-        # Total Amount: 始终写入公式
-        ws1.cell(row, 8).value = f"=G{row}*E{row}"
+        # Total Amount: 直接写入计算值
+        total_amount = qty * price_kwr
+        ws1.cell(row, 8).value = total_amount
         ws1.cell(row, 8).number_format = '#,##0.0'
+        total_sum += total_amount
 
     # ---- 3. 计算 Total 行位置 ----
     last_data_row = first_data_row + data_count - 1
@@ -611,9 +614,9 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
                     new_img.anchor.to.row = original_to_row + row_offset
         ws1.add_image(new_img)
 
-    # 更新 TOTAL AMOUNT 行的公式
+    # 更新 TOTAL AMOUNT 行的值
     total_row = insert_start_row
-    ws1.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws1.cell(total_row, 8).value = total_sum
     ws1.cell(total_row, 8).number_format = '#,##0.0'
 
     # 设置打印范围
@@ -789,6 +792,7 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
             pass
 
     # 写入数据 (legacy版本)
+    total_sum = 0  # 累计Total Amount
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
@@ -817,15 +821,17 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
         ws.cell(row, 7).value = price_kwr
         ws.cell(row, 7).number_format = '#,##0.0'
 
-        # Total Amount: 始终写入公式
-        ws.cell(row, 8).value = f"=G{row}*E{row}"
+        # Total Amount: 直接写入计算值
+        total_amount = qty * price_kwr
+        ws.cell(row, 8).value = total_amount
         ws.cell(row, 8).number_format = '#,##0.0'
+        total_sum += total_amount
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
 
-    # 只更新公式，保留模板原有的文字
-    ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    # 更新 TOTAL 行的累计值
+    ws.cell(actual_total_row, 8).value = total_sum
     ws.cell(actual_total_row, 8).number_format = '#,##0.0'
 
     ws.print_area = f"$A$1:$H${ws.max_row}"
@@ -1006,6 +1012,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
             pass
 
     # 写入数据 (US版本)
+    total_sum = 0  # 累计Total Amount
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
@@ -1034,9 +1041,11 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
         ws1.cell(row, 7).value = price_usd
         ws1.cell(row, 7).number_format = '#,##0.000'
 
-        # Total Amount: 始终写入公式
-        ws1.cell(row, 8).value = f"=G{row}*E{row}"
+        # Total Amount: 直接写入计算值
+        total_amount = qty * price_usd
+        ws1.cell(row, 8).value = total_amount
         ws1.cell(row, 8).number_format = '#,##0.000'
+        total_sum += total_amount
 
     # ---- 3. 计算 Total 行位置 ----
     last_data_row = first_data_row + data_count - 1
@@ -1089,7 +1098,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
             except:
                 pass
 
-    ws1.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws1.cell(total_row, 8).value = total_sum
     ws1.cell(total_row, 8).number_format = '#,##0.000'
 
     # 重新合并 Total 行
@@ -1174,6 +1183,7 @@ def _generate_pi_us_excel_legacy(orders, template_path, output_path, invoice_no)
             pass
 
     # 写入数据
+    total_sum = 0  # 累计Total Amount
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
@@ -1194,13 +1204,18 @@ def _generate_pi_us_excel_legacy(orders, template_path, output_path, invoice_no)
         if price_usd:
             ws.cell(row, 7).number_format = '#,##0.000'
 
-        if qty and price_usd:
-            ws.cell(row, 8).value = f"=G{row}*E{row}"
-            ws.cell(row, 8).number_format = '#,##0.000'
+        # Total Amount: 直接写入计算值
+        try:
+            total_amount = (qty or 0) * float(price_usd or 0)
+        except:
+            total_amount = 0
+        ws.cell(row, 8).value = total_amount
+        ws.cell(row, 8).number_format = '#,##0.000'
+        total_sum += total_amount
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
-    ws.cell(actual_total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws.cell(actual_total_row, 8).value = total_sum
     ws.cell(actual_total_row, 8).number_format = '#,##0.000'
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1732,6 +1747,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
         ws.delete_rows(first_data_row + data_count, -rows_diff)
 
     # 写入报价数据
+    total_sum = 0  # 累计Total Amount
     for idx, offer in enumerate(offers):
         row = first_data_row + idx
 
@@ -1761,9 +1777,11 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
         ws.cell(row, 7).value = price_kwr
         ws.cell(row, 7).number_format = '#,##0.0'
 
-        # Col H = Total Amount (公式: Qty * Unit Price)
-        ws.cell(row, 8).value = f"=E{row}*G{row}"
+        # Col H = Total Amount: 直接写入计算值
+        total_amount = qty * price_kwr
+        ws.cell(row, 8).value = total_amount
         ws.cell(row, 8).number_format = '#,##0.0'
+        total_sum += total_amount
 
     # ---- 3. 完整拼接 Footer 内容（复制值、样式、合并单元格、行高、图片）----
     last_data_row = first_data_row + data_count - 1
@@ -1818,7 +1836,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
                     new_img.anchor.to.row = original_to_row + row_offset
         ws.add_image(new_img)
 
-    # 更新 TOTAL 公式
+    # 更新 TOTAL 值
     total_row = footer_start_row
 
     # 取消 Total 行的合并单元格（如果存在）
@@ -1829,7 +1847,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
             except:
                 pass
 
-    ws.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws.cell(total_row, 8).value = total_sum
     ws.cell(total_row, 8).number_format = '#,##0.0'
 
     # 设置打印区域
@@ -2185,6 +2203,7 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
         ws.delete_rows(first_data_row + data_count, -rows_diff)
 
     # 写入报价数据
+    total_sum = 0  # 累计Total Amount
     for idx, offer in enumerate(offers):
         row = first_data_row + idx
 
@@ -2214,9 +2233,11 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
         ws.cell(row, 7).value = price_jpy
         ws.cell(row, 7).number_format = '#,##0.0'
 
-        # Col H = Total Amount (公式: Qty * Unit Price)
-        ws.cell(row, 8).value = f"=E{row}*G{row}"
+        # Col H = Total Amount: 直接写入计算值
+        total_amount = qty * price_jpy
+        ws.cell(row, 8).value = total_amount
         ws.cell(row, 8).number_format = '#,##0.0'
+        total_sum += total_amount
 
     # ---- 3. 完整拼接 Footer 内容（复制值、样式、合并单元格、行高、图片）----
     # JP-2 模板结构: Row 1=Total Amount, Row 3-8=TERMS, Row 10-11=BANK, Row 19=THANK YOU
@@ -2271,7 +2292,7 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
                     new_img.anchor.to.row = original_to_row + row_offset
         ws.add_image(new_img)
 
-    # 更新 TOTAL 公式
+    # 更新 TOTAL 值
     total_row = footer_start_row
 
     # 取消 Total 行的合并单元格（如果存在）
@@ -2282,7 +2303,7 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
             except:
                 pass
 
-    ws.cell(total_row, 8).value = f"=SUM(H{first_data_row}:H{last_data_row})"
+    ws.cell(total_row, 8).value = total_sum
     ws.cell(total_row, 8).number_format = '#,##0.0'
 
     # 设置打印区域
