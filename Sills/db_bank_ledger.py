@@ -79,7 +79,8 @@ def validate_allocation_amount(transaction_id, new_allocation):
         allocated = float(allocated)
 
         remaining = total_amount - allocated
-        return new_allocation <= remaining, remaining
+        # 增加容差0.01处理浮点精度误差
+        return new_allocation <= remaining + 0.01, remaining
 
 
 def create_ledger(transaction_id, manager_id, allocation_amount,
