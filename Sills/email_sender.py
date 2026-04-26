@@ -325,7 +325,7 @@ class EmailSenderWorker:
             error_task(self.task_id, str(e))
             print(f"[Worker] 任务出错: {e}")
 
-    def send_report_email(self, sent_count, failed_count, skipped_count=0):
+    def send_report_email(self, sent_count, failed_count, skipped_count=0, accounts_summary=""):
         """发送任务完成报告（使用主账号发送）"""
         try:
             server = self.connect_smtp()
@@ -333,6 +333,7 @@ class EmailSenderWorker:
             mode_str = "(重试)" if self.retry_mode else ""
             subject = f"[开发信管理] 任务完成报告{mode_str} - {self.task['task_name']}"
             skip_info = f"<p><strong style=\"color: orange;\">跳过(已发送):</strong> {skipped_count}</p>" if skipped_count > 0 else ""
+            accounts_info = f"<p><strong>各账号发送:</strong> {accounts_summary}</p>" if accounts_summary else ""
             body = f"""
             <html>
             <body>
@@ -346,6 +347,7 @@ class EmailSenderWorker:
             <p><strong style="color: green;">成功发送:</strong> {sent_count}</p>
             <p><strong style="color: red;">发送失败:</strong> {failed_count}</p>
             {skip_info}
+            {accounts_info}
             <hr>
             <p><em>此报告由系统自动发送</em></p>
             </body>

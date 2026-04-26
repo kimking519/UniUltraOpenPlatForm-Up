@@ -532,21 +532,29 @@ def _generate_pi_kr_excel(orders, template_dir, output_path, invoice_no):
         ws1.cell(row, 3).value = order.get("inquiry_brand", "") or ""
         ws1.cell(row, 4).value = order.get("date_code", "") or ""
 
-        qty = order.get("quoted_qty") or order.get("inquiry_qty") or ""
+        # Qty: 优先使用 quoted_qty，无值时写 0
+        qty = order.get("quoted_qty") or order.get("inquiry_qty") or 0
+        try:
+            qty = int(qty) if qty else 0
+        except:
+            qty = 0
         ws1.cell(row, 5).value = qty
-        if qty:
-            ws1.cell(row, 5).number_format = '#,##0'
+        ws1.cell(row, 5).number_format = '#,##0'
 
         ws1.cell(row, 6).value = order.get("delivery_date", "") or ""
 
-        price_kwr = order.get("calculated_price_kwr", "") or ""
+        # Unit Price: 无值时写 0，始终设置 number_format
+        price_kwr = order.get("calculated_price_kwr") or 0
+        try:
+            price_kwr = float(price_kwr) if price_kwr else 0
+        except:
+            price_kwr = 0
         ws1.cell(row, 7).value = price_kwr
-        if price_kwr:
-            ws1.cell(row, 7).number_format = '#,##0.0'
+        ws1.cell(row, 7).number_format = '#,##0.0'
 
-        if qty and price_kwr:
-            ws1.cell(row, 8).value = f"=G{row}*E{row}"
-            ws1.cell(row, 8).number_format = '#,##0.0'
+        # Total Amount: 始终写入公式
+        ws1.cell(row, 8).value = f"=G{row}*E{row}"
+        ws1.cell(row, 8).number_format = '#,##0.0'
 
     # ---- 3. 计算 Total 行位置 ----
     last_data_row = first_data_row + data_count - 1
@@ -780,7 +788,7 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
         except:
             pass
 
-    # 写入数据
+    # 写入数据 (legacy版本)
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
@@ -789,21 +797,29 @@ def _generate_pi_excel_legacy(orders, template_dir, output_path, invoice_no):
         ws.cell(row, 3).value = order.get("inquiry_brand", "") or ""
         ws.cell(row, 4).value = order.get("date_code", "") or ""
 
-        qty = order.get("quoted_qty") or order.get("inquiry_qty") or ""
+        # Qty: 无值时写 0，始终设置 number_format
+        qty = order.get("quoted_qty") or order.get("inquiry_qty") or 0
+        try:
+            qty = int(qty) if qty else 0
+        except:
+            qty = 0
         ws.cell(row, 5).value = qty
-        if qty:
-            ws.cell(row, 5).number_format = '#,##0'
+        ws.cell(row, 5).number_format = '#,##0'
 
         ws.cell(row, 6).value = order.get("delivery_date", "") or ""
 
-        price_kwr = order.get("calculated_price_kwr", "") or ""
+        # Unit Price: 无值时写 0，始终设置 number_format
+        price_kwr = order.get("calculated_price_kwr") or 0
+        try:
+            price_kwr = float(price_kwr) if price_kwr else 0
+        except:
+            price_kwr = 0
         ws.cell(row, 7).value = price_kwr
-        if price_kwr:
-            ws.cell(row, 7).number_format = '#,##0.0'
+        ws.cell(row, 7).number_format = '#,##0.0'
 
-        if qty and price_kwr:
-            ws.cell(row, 8).value = f"=G{row}*E{row}"
-            ws.cell(row, 8).number_format = '#,##0.0'
+        # Total Amount: 始终写入公式
+        ws.cell(row, 8).value = f"=G{row}*E{row}"
+        ws.cell(row, 8).number_format = '#,##0.0'
 
     # 更新 TOTAL 行
     last_data_row = actual_total_row - 1
@@ -989,7 +1005,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
         except:
             pass
 
-    # 写入数据
+    # 写入数据 (US版本)
     for idx, order in enumerate(orders):
         row = first_data_row + idx
 
@@ -998,21 +1014,29 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
         ws1.cell(row, 3).value = order.get("inquiry_brand", "") or ""
         ws1.cell(row, 4).value = order.get("date_code", "") or ""
 
-        qty = order.get("quoted_qty") or order.get("inquiry_qty") or ""
+        # Qty: 无值时写 0，始终设置 number_format
+        qty = order.get("quoted_qty") or order.get("inquiry_qty") or 0
+        try:
+            qty = int(qty) if qty else 0
+        except:
+            qty = 0
         ws1.cell(row, 5).value = qty
-        if qty:
-            ws1.cell(row, 5).number_format = '#,##0'
+        ws1.cell(row, 5).number_format = '#,##0'
 
         ws1.cell(row, 6).value = order.get("delivery_date", "") or ""
 
-        price_usd = order.get("calculated_price_usd", "") or ""
+        # Unit Price USD: 无值时写 0，始终设置 number_format
+        price_usd = order.get("calculated_price_usd") or 0
+        try:
+            price_usd = float(price_usd) if price_usd else 0
+        except:
+            price_usd = 0
         ws1.cell(row, 7).value = price_usd
-        if price_usd:
-            ws1.cell(row, 7).number_format = '#,##0.000'
+        ws1.cell(row, 7).number_format = '#,##0.000'
 
-        if qty and price_usd:
-            ws1.cell(row, 8).value = f"=G{row}*E{row}"
-            ws1.cell(row, 8).number_format = '#,##0.000'
+        # Total Amount: 始终写入公式
+        ws1.cell(row, 8).value = f"=G{row}*E{row}"
+        ws1.cell(row, 8).number_format = '#,##0.000'
 
     # ---- 3. 计算 Total 行位置 ----
     last_data_row = first_data_row + data_count - 1
@@ -2159,9 +2183,10 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
         ws.cell(row, 8).number_format = '#,##0.0'
 
     # ---- 3. 完整拼接 Footer 内容（复制值、样式、合并单元格、行高、图片）----
+    # JP-2 模板结构: Row 1=Total Amount, Row 3-8=TERMS, Row 10-11=BANK, Row 19=THANK YOU
     last_data_row = first_data_row + data_count - 1
     footer_start_row = last_data_row + 2
-    footer_template_start = 11
+    footer_template_start = 1  # JP模板从Row 1开始（Total Amount行）
 
     for src_row_idx in range(footer_template_start, ws_footer.max_row + 1):
         dest_row_idx = footer_start_row + (src_row_idx - footer_template_start)
