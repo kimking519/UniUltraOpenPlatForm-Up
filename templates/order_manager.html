@@ -415,7 +415,7 @@
         <table class="data-table" id="orderManagerTable">
             <thead>
                 <tr>
-                    <th style="width: 30px;"><input type="checkbox" id="select_all" onclick="toggleSelectAll(this.checked)"></th>
+                    <th style="width: 30px;"><input type="checkbox" id="select_all"></th>
                     <th>日期</th>
                     <th>客户订单号</th>
                     <th>客户名</th>
@@ -1005,6 +1005,14 @@ function showLinkLogModal(summary, logContent, details) {
 <script>
     window.addEventListener('DOMContentLoaded', () => {
         initColumnDragger('orderManagerTable', 'order_manager_column_order');
+
+        // 用addEventListener绑定全选事件（避免列拖拽交换后事件丢失）
+        const selectAllCheckbox = document.getElementById('select_all');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = this.checked);
+            });
+        }
     });
 </script>
 {% endblock %}
