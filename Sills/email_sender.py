@@ -18,6 +18,7 @@ from Sills.db_email_log import add_log
 from Sills.db_email_account import (
     get_account_by_id, can_send_today, increment_sent_count
 )
+from Sills.db_contact import update_contact_marketing_status
 from Sills.crypto_utils import decrypt_password as aes_decrypt
 
 
@@ -286,6 +287,16 @@ class EmailSenderWorker:
                     sent_count += 1
                     account_sent_counts[self.current_account_index] += 1
                     increment_sent_count(current_account['account_id'])
+
+                    # 更新联系人营销状态（send_count++, last_sent_at）
+                    if contact_id:
+                        update_contact_marketing_status(contact_id, 'sent')
+                    else:
+                        # 如果没有contact_id，尝试通过email查找并更新
+                        from Sills.db_contact import get_contact_by_email
+                        existing_contact = get_contact_by_email(email_addr)
+                        if existing_contact and existing_contact.get('contact_id'):
+                            update_contact_marketing_status(existing_contact['contact_id'], 'sent')
 
                     # 更新进度（累加原有进度）
                     update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
