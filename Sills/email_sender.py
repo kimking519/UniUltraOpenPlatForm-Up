@@ -22,6 +22,41 @@ from Sills.db_contact import update_contact_marketing_status
 from Sills.crypto_utils import decrypt_password as aes_decrypt
 
 
+def save_sent_email_to_mail(send_result, account_id=None):
+    """将发送成功的邮件保存到uni_mail表
+
+    Args:
+        send_result: send_single_email返回的结果字典
+        account_id: 发件账号ID
+
+    Returns:
+        bool: 是否保存成功
+    """
+    from Sills.db_mail_core import save_email
+
+    try:
+        mail_data = {
+            'subject': send_result.get('subject', ''),
+            'from_addr': PRIMARY_EMAIL,  # 显示的发件人（主账号）
+            'from_name': '',
+            'to_addr': send_result.get('to_email', ''),
+            'cc_addr': FIXED_CC_EMAIL,
+            'content': '',
+            'html_content': send_result.get('body', ''),
+            'sent_at': datetime.now().isoformat(),
+            'is_sent': 1,
+            'is_read': 1,  # 已发送邮件标记为已读
+            'message_id': send_result.get('message_id', ''),
+            'sync_status': 'completed',
+            'account_id': account_id
+        }
+        save_email(mail_data)
+        return True
+    except Exception as e:
+        print(f"[Worker] 保存到uni_mail失败: {e}")
+        return False
+
+
 # 固定CC收件人
 FIXED_CC_EMAIL = "jinzheng519@163.com"
 # 报告接收邮箱
@@ -113,7 +148,11 @@ class EmailSenderWorker:
             os.environ.update(proxy_backup)
 
     def send_single_email(self, server, to_email, company_name=""):
-        """发送单封邮件（支持代理发送）"""
+        """发送单封邮件（支持代理发送）
+
+        Returns:
+            dict: {'success': bool, 'message_id': str, 'subject': str, 'body': str}
+        """
         account = self.get_current_account()
         if not account:
             raise ValueError("没有可用的发件人账号")
@@ -147,6 +186,16 @@ class EmailSenderWorker:
 
         # 发送邮件（实际SMTP认证用的是当前账号的邮箱）
         server.sendmail(email, [to_email, FIXED_CC_EMAIL], message.as_string())
+
+        # 返回发送结果，用于保存到uni_mail
+        return {
+            'success': True,
+            'message_id': message.get('Message-ID', ''),
+            'subject': subject,
+            'body': body,
+            'from_email': email,
+            'to_email': to_email
+        }
 
     def is_in_schedule_time(self):
         """检查当前是否在发送时间段内"""
@@ -284,16 +333,21 @@ class EmailSenderWorker:
                     continue
 
                 try:
-                    self.send_single_email(server, email_addr, company_name)
+                    send_result = self.send_single_email(server, email_addr, company_name)
                     # 获取当前账号信息用于记录
                     current_account_id = current_account.get('account_id')
                     current_account_email = current_account.get('email')
+
                     # 重试模式：更新之前失败的日志状态为成功
                     if self.retry_mode:
                         from Sills.db_email_log import update_log_status
                         update_log_status(self.task_id, email_addr, 'sent', None, current_account_id, current_account_email)
                     else:
                         add_log(self.task_id, contact_id, email_addr, company_name, 'sent', None, current_account_id, current_account_email)
+
+                    # 保存到uni_mail表（确保邮件系统数据一致性）
+                    if send_result.get('success'):
+                        save_sent_email_to_mail(send_result, current_account_id)
                     sent_count += 1
                     account_sent_counts[self.current_account_index] += 1
                     increment_sent_count(current_account['account_id'])
@@ -311,7 +365,7 @@ class EmailSenderWorker:
                     # 更新进度（累加原有进度）
                     update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
 
-                    print(f"[Worker] {mode_str} 已发送 {base_sent + sent_count}/{total} 到 {email_addr} (账号{self.current_account_index + 1})")
+                    print(f"[Worker] {mode_str} [{current_account_email}] 已发送 {base_sent + sent_count}/{total} 到 {email_addr} (账号{self.current_account_index + 1})")
 
                     # 发送间隔(使用任务配置的间隔，避免过快)
                     send_interval = self.task.get('send_interval', 2) or 2
