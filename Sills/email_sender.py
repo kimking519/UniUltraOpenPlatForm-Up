@@ -328,15 +328,19 @@ class EmailSenderWorker:
     def send_report_email(self, sent_count, failed_count, skipped_count=0, accounts_summary=""):
         """发送任务完成报告（使用主账号发送）"""
         try:
-            server = self.connect_smtp()
+            # 使用主账号发送报告
+            primary_account = self.accounts[0] if self.accounts else None
+            if not primary_account:
+                print("[Worker] 无可用账号，跳过发送报告")
+                return
+
+            server = self.connect_smtp(primary_account)
 
             mode_str = "(重试)" if self.retry_mode else ""
             subject = f"[开发信管理] 任务完成报告{mode_str} - {self.task['task_name']}"
             skip_info = f"<p><strong style=\"color: orange;\">跳过(已发送):</strong> {skipped_count}</p>" if skipped_count > 0 else ""
             accounts_info = f"<p><strong>各账号发送:</strong> {accounts_summary}</p>" if accounts_summary else ""
 
-            # 获取主账号信息
-            primary_account = self.accounts[0] if self.accounts else {}
             primary_email = primary_account.get('email', 'unknown')
 
             body = f"""
