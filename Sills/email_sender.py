@@ -334,12 +334,17 @@ class EmailSenderWorker:
             subject = f"[开发信管理] 任务完成报告{mode_str} - {self.task['task_name']}"
             skip_info = f"<p><strong style=\"color: orange;\">跳过(已发送):</strong> {skipped_count}</p>" if skipped_count > 0 else ""
             accounts_info = f"<p><strong>各账号发送:</strong> {accounts_summary}</p>" if accounts_summary else ""
+
+            # 获取主账号信息
+            primary_account = self.accounts[0] if self.accounts else {}
+            primary_email = primary_account.get('email', 'unknown')
+
             body = f"""
             <html>
             <body>
             <h2>邮件任务完成报告</h2>
             <p><strong>任务名称:</strong> {self.task['task_name']}</p>
-            <p><strong>发件人:</strong> {self.account['email']}</p>
+            <p><strong>发件人:</strong> {primary_email}</p>
             <p><strong>发送模式:</strong> {mode_str if self.retry_mode else "正常发送"}</p>
             <p><strong>发送时间:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <hr>
@@ -361,8 +366,8 @@ class EmailSenderWorker:
             message['To'] = REPORT_EMAIL
             message['Cc'] = FIXED_CC_EMAIL
 
-            # 报告邮件使用实际发件人账号发送
-            email = self.account['email']
+            # 报告邮件使用主账号发送
+            email = primary_email
             if email.lower() == PRIMARY_EMAIL.lower():
                 message['From'] = email
             else:
