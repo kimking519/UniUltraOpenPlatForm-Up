@@ -1387,20 +1387,30 @@ def _init_db_sqlite():
     clear_cache()
 
 
-def get_paginated_list(table_name, page=1, page_size=10, search_kwargs=None):
+def get_paginated_list(table_name, page=1, page_size=10, search_kwargs=None, where_clause=None, where_params=None):
     """
     Generic pagination and fuzzy search
-    search_kwargs: {column_name: value}
+    search_kwargs: {column_name: value} - fuzzy search with LIKE
+    where_clause: custom WHERE clause for exact filtering
+    where_params: params for where_clause
     """
     offset = (page - 1) * page_size
     query = f"SELECT * FROM {table_name}"
     params = []
 
+    conditions = []
+
     if search_kwargs:
-        conditions = []
         for col, val in search_kwargs.items():
             conditions.append(f"{col} LIKE ?")
             params.append(f"%{val}%")
+
+    if where_clause:
+        conditions.append(where_clause)
+        if where_params:
+            params.extend(where_params)
+
+    if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
     count_query = f"SELECT COUNT(*) FROM ({query})"
