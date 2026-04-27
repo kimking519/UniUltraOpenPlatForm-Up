@@ -2424,8 +2424,9 @@ async def api_order_manager_generate_pi_ci_kr(request: Request, current_user: di
 
             offer_ids = [o['offer_id'] for o in offers]
 
-            # 生成 PI（传入customer_order_no作为invoice_no）
-            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+            # 生成 PI（传入customer_order_no作为invoice_no，order_date作为invoice_date）
+            order_date = manager.get('order_date', '')
+            pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
             if pi_success:
                 # 重命名文件使用客户订单号
                 old_path = pi_result.get('excel_path', '')
@@ -2659,13 +2660,14 @@ async def api_order_manager_generate_pi(request: Request, current_user: dict = D
             if not currency_type:
                 currency_type = "KRW"
 
-            # 根据币种生成 PI（传入customer_order_no作为invoice_no）
+            # 根据币种生成 PI（传入customer_order_no作为invoice_no，order_date作为invoice_date）
+            order_date = manager.get('order_date', '')
             if currency_type == "KRW":
-                pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+                pi_success, pi_result = generate_pi_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
             elif currency_type == "USD":
-                pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+                pi_success, pi_result = generate_pi_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
             elif currency_type == "JPY":
-                pi_success, pi_result = generate_pi_jp_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+                pi_success, pi_result = generate_pi_jp_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
 
             if pi_success:
                 old_path = pi_result.get('excel_path', '')

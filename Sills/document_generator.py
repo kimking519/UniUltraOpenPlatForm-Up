@@ -940,7 +940,7 @@ def generate_pi_us(order_ids, output_base=None, template_dir=None):
     return _generate_pi_us_excel(orders, template_dir, output_path, invoice_no)
 
 
-def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
+def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no, invoice_date=None):
     """
     生成PI-US Excel文件 - 双模板拼接方式
 
@@ -953,6 +953,10 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
     data_count = len(orders)
     first_order = orders[0]
     now = datetime.now()
+
+    # 如果未传入invoice_date，使用当前日期
+    if not invoice_date:
+        invoice_date = now.strftime("%Y-%m-%d")
 
     # 模板文件路径
     template1_path = os.path.join(template_dir, "Proforma_Invoice_US - 1.xlsx")
@@ -972,7 +976,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no):
 
     # ---- 1. 填写头部信息 ----
     ws1.cell(8, 4).value = invoice_no
-    ws1.cell(9, 4).value = now.strftime("%Y-%m-%d")
+    ws1.cell(9, 4).value = invoice_date
 
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
     ws1.cell(12, 3).value = cli_name_en
@@ -1592,7 +1596,7 @@ def _generate_koquote_excel_legacy(offers, template_path, output_path, exchange_
 # 基于报价的 PI/CI 生成函数
 # ============================================================
 
-def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
+def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
     """
     基于报价生成 Proforma Invoice (KRW版本)
 
@@ -1601,6 +1605,7 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None, invo
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
         invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
+        invoice_date: 发票日期（可选，默认使用当前日期）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -1661,16 +1666,16 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None, invo
                 offer["calculated_price_kwr"] = 0
 
     # 复用订单PI生成逻辑，适配报价字段
-    return _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no)
+    return _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no, invoice_date=invoice_date)
 
 
-def _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no):
+def _generate_pi_kr_excel_from_offers(offers, template_dir, output_path, invoice_no, invoice_date=None):
     """基于报价生成PI-KR Excel文件 - Header + Footer 简单拼接方式"""
     # 直接使用 header+footer 拼接方式
-    return _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no)
+    return _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no, invoice_date=invoice_date)
 
 
-def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no):
+def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, invoice_no, invoice_date=None):
     """基于报价生成PI Excel文件 - Header + Footer模板拼接方式
 
     模板结构 (KR版本):
@@ -1694,6 +1699,10 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
     first_offer = offers[0]
     now = datetime.now()
 
+    # 如果未传入invoice_date，使用当前日期
+    if not invoice_date:
+        invoice_date = now.strftime("%Y-%m-%d")
+
     # 加载 Header 和 Footer 模板
     header_path = os.path.join(template_dir, "Proforma_Invoice_KR - 1.xlsx")
     footer_path = os.path.join(template_dir, "Proforma_Invoice_KR - 2.xlsx")
@@ -1713,7 +1722,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
     # Invoice No.: D8 (Row 8, Col 4)
     ws.cell(8, 4).value = invoice_no
     # Date: D9 (Row 9, Col 4)
-    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
+    ws.cell(9, 4).value = invoice_date
 
     # 客户信息
     cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
@@ -1869,7 +1878,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
     }
 
 
-def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
+def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
     """
     基于报价生成 Proforma Invoice (USD版本)
 
@@ -1878,6 +1887,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, i
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
         invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
+        invoice_date: 发票日期（可选，默认使用当前日期）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -1957,7 +1967,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, i
         }
         adapted_offers.append(adapted)
 
-    return _generate_pi_us_excel(adapted_offers, template_dir, output_path, invoice_no)
+    return _generate_pi_us_excel(adapted_offers, template_dir, output_path, invoice_no, invoice_date=invoice_date)
 
 
 def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
@@ -2054,7 +2064,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, i
     return _generate_ci_us_excel(adapted_offers, template_dir, output_path, invoice_no, invoice_date=invoice_date)
 
 
-def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
+def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
     """
     基于报价生成 Proforma Invoice (JPY日元版本)
 
@@ -2063,6 +2073,7 @@ def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, i
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
         invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
+        invoice_date: 发票日期（可选，默认使用当前日期）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -2134,10 +2145,10 @@ def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, i
         }
         adapted_offers.append(adapted)
 
-    return _generate_pi_jp_excel(adapted_offers, template_dir, output_path, invoice_no)
+    return _generate_pi_jp_excel(adapted_offers, template_dir, output_path, invoice_no, invoice_date=invoice_date)
 
 
-def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
+def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no, invoice_date=None):
     """基于报价生成PI-JP Excel文件 - Header + Footer 模板拼接方式
 
     模板结构 (JP版本):
@@ -2161,6 +2172,10 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
     first_offer = offers[0]
     now = datetime.now()
 
+    # 如果未传入invoice_date，使用当前日期
+    if not invoice_date:
+        invoice_date = now.strftime("%Y-%m-%d")
+
     # 加载 Header 和 Footer 模板
     header_path = os.path.join(template_dir, "Proforma_Invoice_JP - 1.xlsx")
     footer_path = os.path.join(template_dir, "Proforma_Invoice_JP - 2.xlsx")
@@ -2178,7 +2193,7 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no):
 
     # ---- 1. 写入头部信息 ----
     ws.cell(8, 4).value = invoice_no
-    ws.cell(9, 4).value = now.strftime("%Y-%m-%d")
+    ws.cell(9, 4).value = invoice_date
 
     cli_name_en = first_offer.get("cli_name_en", "") or first_offer.get("cli_name", "")
     ws.cell(12, 3).value = cli_name_en
