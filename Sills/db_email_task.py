@@ -113,6 +113,26 @@ def get_active_task():
         return None
 
 
+def get_interrupted_tasks():
+    """获取所有状态为 running 的中断任务（服务器重启后需要恢复）
+
+    Returns:
+        list: 中断任务列表
+    """
+    with get_db_connection() as conn:
+        rows = conn.execute("""
+            SELECT t.*
+            FROM uni_email_task t
+            WHERE t.status = 'running'
+            ORDER BY t.started_at DESC
+        """).fetchall()
+        tasks = []
+        for row in rows:
+            task = {k: ("" if v is None else v) for k, v in dict(row).items()}
+            tasks.append(task)
+        return tasks
+
+
 def has_running_task():
     """检查是否有正在进行的任务"""
     with get_db_connection() as conn:

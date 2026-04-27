@@ -95,12 +95,58 @@ def start_auto_backup():
     backup_thread.start()
 
 
+def resume_interrupted_tasks():
+    """恢复服务器重启时中断的邮件任务
+
+    将状态为 running 但实际没有活跃发送线程的任务改为 paused，
+    并自动恢复发送。
+    """
+    from Sills.db_email_task import get_interrupted_tasks, start_task
+    from Sills.email_sender import start_email_worker
+
+    try:
+        # 获取所有状态为 running 的任务（这些任务在重启时中断）
+        interrupted_tasks = get_interrupted_tasks()
+
+        if not interrupted_tasks:
+            print("[Startup] 没有中断的邮件任务")
+            return
+
+        print(f"[Startup] 发现 {len(interrupted_tasks)} 个中断的邮件任务，正在恢复...")
+
+        for task in interrupted_tasks:
+            task_id = task.get('task_id')
+            task_name = task.get('task_name', '未知任务')
+
+            # 检查是否有已完成的发送记录（说明任务之前正在执行）
+            sent_count = task.get('sent_count', 0)
+            total_count = task.get('total_count', 0)
+
+            if sent_count < total_count:
+                # 任务未完成，恢复执行
+                print(f"[Startup] 恢复任务: {task_name} ({task_id}), 进度: {sent_count}/{total_count}")
+                start_task(task_id)
+                start_email_worker(task_id)
+            else:
+                # 任务已完成但状态未更新，修正为 completed
+                from Sills.db_email_task import complete_task
+                complete_task(task_id)
+                print(f"[Startup] 任务已完成: {task_name} ({task_id})")
+
+    except Exception as e:
+        print(f"[Startup] 恢复邮件任务失败: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # Startup
     init_db()
     start_auto_backup()
+
+    # 检查并恢复中断的邮件任务
+    resume_interrupted_tasks()
+
     yield
     # Shutdown (如果需要清理资源，可以在这里添加)
 
@@ -721,7 +767,7 @@ async def order_update_status_api(order_id: str = Form(...), field: str = Form(.
 async def cli_update_api(cli_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
     if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无权限"}
-    allowed_fields = ['cli_name', 'cli_full_name', 'cli_name_en', 'contact_name', 'address', 'region', 'credit_level', 'margin_rate', 'emp_id', 'website', 'payment_terms', 'email', 'phone', 'remark']
+    allowed_fields = ['cli_name', 'cli_full_name', 'cli_name_en', 'contact_name', 'address', 'region', 'credit_level', 'margin_rate', 'emp_id', 'website', 'payment_terms', 'email', 'send_mail', 'phone', 'remark']
     if field not in allowed_fields:
         return {"success": False, "message": "非法字段"}
     
@@ -1401,6 +1447,34 @@ async def offer_batch_delete_api(request: Request, current_user: dict = Depends(
     ids = data.get("ids", [])
     success, msg = batch_delete_offer(ids)
     return {"success": success, "message": msg}
+
+
+@app.post("/api/offer/duplicate")
+async def offer_duplicate_api(request: Request, current_user: dict = Depends(login_required)):
+    """批量重插报价（复制已勾选的报价）"""
+    from Sills.db_offer import batch_duplicate_offers
+    data = await request.json()
+    ids = data.get("ids", [])
+
+    if not ids:
+        return {"success": False, "message": "请先选择要重插的报价"}
+
+    emp_id = current_user.get('emp_id', '000')
+    success_count, failed_count, new_ids = batch_duplicate_offers(ids, emp_id)
+
+    if failed_count == 0:
+        return {
+            "success": True,
+            "message": f"成功重插 {success_count} 条报价",
+            "new_ids": new_ids
+        }
+    else:
+        return {
+            "success": True,
+            "message": f"成功 {success_count} 条，失败 {failed_count} 条",
+            "new_ids": new_ids
+        }
+
 
 @app.post("/api/offer/batch_price_increase")
 async def offer_batch_price_increase_api(request: Request, current_user: dict = Depends(login_required)):
@@ -5473,8 +5547,10 @@ async def api_prospect_convert(request: Request, current_user: dict = Depends(lo
     if not prospect_id:
         return {"success": False, "message": "缺少prospect_id"}
 
-    ok, msg = convert_prospect_to_cli(prospect_id)
-    return {"success": ok, "message": msg}
+    ok, result = convert_prospect_to_cli(prospect_id)
+    if ok and isinstance(result, dict):
+        return {"success": True, "message": "转化成功", **result}
+    return {"success": ok, "message": result}
 
 
 @app.post("/api/prospect/refresh_counts")

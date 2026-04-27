@@ -1942,6 +1942,64 @@
             } catch (e) {
                 showToast('下载模板失败', 'error');
             }
+        },
+
+        // 转化为正式客户
+        async convert(prospect_id) {
+            // 先获取 prospect 信息显示在确认框
+            try {
+                const res = await fetch(`/api/prospect/${prospect_id}`);
+                const result = await res.json();
+                if (!result.success) {
+                    showToast('获取数据失败', 'error');
+                    return;
+                }
+                const prospect = result.prospect;
+                const prospectName = prospect.prospect_name || '未知客户';
+                const domain = prospect.domain || '未知域名';
+
+                // 显示确认框 - 操作不可逆警告
+                const confirmed = confirm(
+                    `⚠️ 操作不可逆！\n\n` +
+                    `即将将待开发客户转化为正式客户：\n` +
+                    `• 客户名称：${prospectName}\n` +
+                    `• 域名：${domain}\n\n` +
+                    `转化后将执行以下操作：\n` +
+                    `1. 创建新客户记录 (uni_cli)\n` +
+                    `2. 更新待开发客户状态为 'converted'\n` +
+                    `3. 关联该域名下的所有联系人到新客户\n\n` +
+                    `确定要继续吗？`
+                );
+
+                if (!confirmed) return;
+
+                // 再次确认
+                const doubleConfirm = confirm('⚠️ 再次确认：此操作无法撤销，确定转化？');
+                if (!doubleConfirm) return;
+
+                showToast('正在转化...', 'info');
+
+                // 调用转化 API
+                const convertRes = await fetch('/api/prospect/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prospect_id })
+                });
+                const convertResult = await convertRes.json();
+
+                if (convertResult.success) {
+                    showToast(`转化成功！创建客户: ${convertResult.cli_name || prospectName}，关联联系人: ${convertResult.contacts_linked || 0} 个`, 'success');
+                    this.load(this.currentPage);
+                    // 同时刷新联系人列表（如果有的话）
+                    if (typeof ContactManager !== 'undefined' && ContactManager.load) {
+                        ContactManager.load();
+                    }
+                } else {
+                    showToast('转化失败: ' + (convertResult.message || '未知错误'), 'error');
+                }
+            } catch (e) {
+                showToast('转化失败: ' + e.message, 'error');
+            }
         }
     };
 

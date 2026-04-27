@@ -351,18 +351,29 @@ def convert_prospect_to_cli(prospect_id):
             """, (cli_id, prospect_id))
             conn.commit()
 
-        # 更新关联联系人的cli_id（支持www前缀模糊匹配）
-        if prospect['domain']:
-            domain = prospect['domain'].lower().strip()
-            clean_domain = domain.replace('www.', '') if domain.startswith('www.') else domain
-            conn.execute("""
-                UPDATE uni_contact
-                SET cli_id = ?
-                WHERE (LOWER(domain) = ? OR LOWER(domain) = ?) AND (cli_id IS NULL OR cli_id = '')
-            """, (cli_id, domain, clean_domain))
-            conn.commit()
+            # 更新关联联系人的cli_id（支持www前缀模糊匹配）
+            contacts_linked = 0
+            if prospect['domain']:
+                domain = prospect['domain'].lower().strip()
+                clean_domain = domain.replace('www.', '') if domain.startswith('www.') else domain
+                # 先统计要关联的联系人数量
+                contacts_linked = conn.execute("""
+                    SELECT COUNT(*) FROM uni_contact
+                    WHERE (LOWER(domain) = ? OR LOWER(domain) = ?) AND (cli_id IS NULL OR cli_id = '')
+                """, (domain, clean_domain)).fetchone()[0]
+                # 更新联系人的cli_id
+                conn.execute("""
+                    UPDATE uni_contact
+                    SET cli_id = ?
+                    WHERE (LOWER(domain) = ? OR LOWER(domain) = ?) AND (cli_id IS NULL OR cli_id = '')
+                """, (cli_id, domain, clean_domain))
+                conn.commit()
 
-        return True, f"转化成功，CLI ID: {cli_id}"
+            return True, {
+                "cli_id": cli_id,
+                "cli_name": prospect['prospect_name'],
+                "contacts_linked": contacts_linked
+            }
     except Exception as e:
         return False, str(e)
 

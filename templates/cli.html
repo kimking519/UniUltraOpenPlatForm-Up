@@ -217,7 +217,7 @@
     </div>
     <!-- 表格容器 -->
     <div class="table-container" id="tableContainer" style="overflow-x: auto;">
-        <table class="data-table" id="cliTable" style="min-width: 1600px;">
+        <table class="data-table" id="cliTable" style="min-width: 1700px;">
             <thead>
                 <tr>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
@@ -236,6 +236,7 @@
                     <th>网站</th>
                     <th>账期</th>
                     <th>邮箱</th>
+                    <th>发送邮箱</th>
                     <th>电话</th>
                     <th>备注</th>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
@@ -259,7 +260,7 @@
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'contact_name')" {% endif %}>{{ item.contact_name or '' }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'address')" {% endif %}>{{ item.address or '' }}</td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'address')" {% endif %} style="white-space: pre-wrap; word-break: break-word;">{{ item.address or '' }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'region')" {% endif %}>{{ item.region }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
@@ -274,11 +275,13 @@
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'payment_terms')" {% endif %}>{{ item.payment_terms }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'email')" {% endif %}>{{ item.email }}</td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'email')" {% endif %} style="white-space: pre-wrap; word-break: break-word;">{{ item.email }}</td>
+                    <td {% if current_user.rule=='3' or current_user.rule=='0'
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'send_mail')" {% endif %} style="white-space: pre-wrap; word-break: break-word;">{{ item.send_mail or '' }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'phone')" {% endif %}>{{ item.phone }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'remark')" {% endif %}>{{ item.remark }}</td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'remark')" {% endif %} style="white-space: pre-wrap; word-break: break-word;">{{ item.remark }}</td>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
                     <td style="text-align: center;">
                         <button class="btn"
@@ -290,7 +293,7 @@
                 {% endfor %}
                 {% if not items %}
                 <tr>
-                    <td colspan="{% if current_user.rule == '3' or current_user.rule == '0' %}17{% else %}15{% endif %}"
+                    <td colspan="{% if current_user.rule == '3' or current_user.rule == '0' %}18{% else %}16{% endif %}"
                         style="text-align: center; color: var(--secondary);">暂无数据</td>
                 </tr>
                 {% endif %}
@@ -373,7 +376,11 @@
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                 <input type="text" name="phone" placeholder="电话" style="padding: 0.5rem;">
-                <input type="email" name="email" placeholder="邮箱" style="padding: 0.5rem;">
+                <input type="email" name="email" placeholder="邮箱（PI专用）" style="padding: 0.5rem;">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
+                <input type="text" name="send_mail" placeholder="发送邮箱（批量发信用，多个邮箱用逗号分隔）" style="padding: 0.5rem;">
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
@@ -433,11 +440,22 @@
     }
 
     function makeEditable(td, cli_id, field) {
-        if (td.querySelector('input') || td.querySelector('select')) return;
+        if (td.querySelector('input') || td.querySelector('textarea')) return;
         const isSpan = td.querySelector('span') !== null;
         const originalValue = (isSpan ? td.querySelector('span').innerText : td.innerText).trim();
-        td.innerHTML = `<input type="text" value="${originalValue}" style="width: 100%; min-width: 80px; padding: 4px; box-sizing: border-box;">`;
-        const input = td.querySelector('input');
+
+        // 多行字段使用 textarea
+        const multilineFields = ['send_mail', 'remark', 'address', 'email'];
+        const isMultiline = multilineFields.includes(field);
+
+        if (isMultiline) {
+            // textarea 支持多行
+            td.innerHTML = `<textarea style="width: 100%; min-width: 120px; padding: 4px; box-sizing: border-box; resize: vertical; min-height: 40px; font-size: inherit; font-family: inherit;">${originalValue}</textarea>`;
+        } else {
+            td.innerHTML = `<input type="text" value="${originalValue}" style="width: 100%; min-width: 80px; padding: 4px; box-sizing: border-box;">`;
+        }
+
+        const input = td.querySelector(isMultiline ? 'textarea' : 'input');
         input.focus();
 
         input.onblur = function () {
@@ -457,7 +475,18 @@
                 body: formData
             }).then(res => res.json()).then(data => {
                 if (data.success) {
-                    td.innerHTML = isSpan ? `<span style="color: var(--primary); font-weight: bold;">${newValue}</span>` : newValue;
+                    // 恢复显示，保留换行样式
+                    if (isSpan) {
+                        td.innerHTML = `<span style="color: var(--primary); font-weight: bold;">${newValue}</span>`;
+                    } else {
+                        // 多行字段需要保持 pre-wrap 样式
+                        if (isMultiline) {
+                            td.innerHTML = '';
+                            td.textContent = newValue;
+                        } else {
+                            td.innerHTML = newValue;
+                        }
+                    }
                     td.style.backgroundColor = '#dcfce7';
                     setTimeout(() => td.style.backgroundColor = 'transparent', 1000);
                 } else {
@@ -468,9 +497,31 @@
         };
 
         input.onkeydown = function (e) {
-            if (e.key === 'Enter') input.blur();
-            if (e.key === 'Escape') {
-                td.innerHTML = isSpan ? `<span style="color: var(--primary); font-weight: bold;">${originalValue}</span>` : originalValue;
+            if (isMultiline) {
+                // 多行字段：Enter 保存，Ctrl+Enter 换行
+                if (e.key === 'Enter') {
+                    if (e.ctrlKey) {
+                        // Ctrl+Enter: 手动插入换行符
+                        e.preventDefault();
+                        const pos = input.selectionStart;
+                        const text = input.value;
+                        input.value = text.substring(0, pos) + '\n' + text.substring(input.selectionEnd);
+                        input.selectionStart = input.selectionEnd = pos + 1;
+                    } else {
+                        // Enter: 保存
+                        e.preventDefault();
+                        input.blur();
+                    }
+                }
+                if (e.key === 'Escape') {
+                    td.innerHTML = isSpan ? `<span style="color: var(--primary); font-weight: bold;">${originalValue}</span>` : originalValue;
+                }
+            } else {
+                // 单行字段：Enter 保存
+                if (e.key === 'Enter') input.blur();
+                if (e.key === 'Escape') {
+                    td.innerHTML = isSpan ? `<span style="color: var(--primary); font-weight: bold;">${originalValue}</span>` : originalValue;
+                }
             }
         };
     }

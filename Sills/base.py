@@ -446,6 +446,19 @@ def _init_db_postgresql():
             conn.rollback()
             print(f"[DB] uni_cli 营销字段迁移: {e}")
 
+        # 迁移：uni_cli 表添加 send_mail 字段
+        try:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'uni_cli' AND column_name = 'send_mail'
+            """)
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE uni_cli ADD COLUMN send_mail TEXT")
+                print("[DB] 迁移：uni_cli 表已添加 send_mail 字段")
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] uni_cli send_mail 字段迁移: {e}")
+
         # 迁移：uni_order_manager_rel 表从 order_id 改为 offer_id
         try:
             # 检查是否存在 order_id 列
@@ -1323,6 +1336,13 @@ def _init_db_sqlite():
         try:
             conn.execute("ALTER TABLE uni_cli ADD COLUMN has_order INTEGER DEFAULT 0 CHECK(has_order IN (0,1))")
             print("[DB] 迁移完成：uni_cli 添加 has_order 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_cli 添加 send_mail 列（批量发送邮件用，与 email 字段分开）
+        try:
+            conn.execute("ALTER TABLE uni_cli ADD COLUMN send_mail TEXT")
+            print("[DB] 迁移完成：uni_cli 添加 send_mail 列")
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 

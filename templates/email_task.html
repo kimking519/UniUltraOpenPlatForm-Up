@@ -280,6 +280,10 @@
                 <option value="4+">4次以上</option>
             </select>
             <input type="number" id="newGroupLastSentDays" placeholder="未联系天数" min="1" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); cursor: pointer;">
+                <input type="checkbox" id="newGroupIncludeConverted" style="width: 14px; height: 14px;">
+                包含已转客户
+            </label>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
             <button class="btn btn-primary btn-sm" onclick="addGroup()">添加</button>
@@ -345,6 +349,10 @@
                 <option value="4+">4次以上</option>
             </select>
             <input type="number" id="editGroupLastSentDays" placeholder="未联系天数" min="1" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); cursor: pointer;">
+                <input type="checkbox" id="editGroupIncludeConverted" style="width: 14px; height: 14px;">
+                包含已转客户
+            </label>
         </div>
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
             <button class="btn" onclick="closeEditGroupModal()">取消</button>
@@ -585,6 +593,7 @@
                         if (criteria.country) parts.push('国家:' + criteria.country);
                         if (criteria.domain) parts.push('域名:' + criteria.domain);
                         if (criteria.has_cli) parts.push('已关联客户');
+                        if (criteria.include_converted) parts.push('含已转客户');
                         if (criteria.send_status !== undefined) parts.push(criteria.send_status == 0 ? '未发送' : '已发送');
                         if (criteria.read_status !== undefined) parts.push(criteria.read_status == 0 ? '未读' : '已读');
                         if (criteria.bounce_status !== undefined) parts.push(criteria.bounce_status == 0 ? '未退信' : '已退信');
@@ -952,6 +961,7 @@
         const domain = document.getElementById('newGroupDomain').value;
         const countries = getSelectedCountries('newGroupCountryList');
         const hasCli = document.getElementById('newGroupHasCli').checked;
+        const includeConverted = document.getElementById('newGroupIncludeConverted').checked;
         const sendStatus = document.getElementById('newGroupSendStatus').value;
         const readStatus = document.getElementById('newGroupReadStatus').value;
         const bounceStatus = document.getElementById('newGroupBounceStatus').value;
@@ -961,6 +971,7 @@
         if (countries.length > 0) filterCriteria.countries = countries;
         if (domain) filterCriteria.domain = domain;
         if (hasCli) filterCriteria.has_cli = true;
+        if (includeConverted) filterCriteria.include_converted = true;
         if (sendStatus) filterCriteria.send_status = parseInt(sendStatus);
         if (readStatus) filterCriteria.read_status = parseInt(readStatus);
         if (bounceStatus) filterCriteria.bounce_status = parseInt(bounceStatus);
@@ -981,6 +992,7 @@
                 document.getElementById('newGroupDomain').value = '';
                 document.querySelectorAll('#newGroupCountryList input[type="checkbox"]').forEach(cb => cb.checked = false);
                 document.getElementById('newGroupHasCli').checked = false;
+                document.getElementById('newGroupIncludeConverted').checked = false;
                 document.getElementById('newGroupSendStatus').value = '';
                 document.getElementById('newGroupReadStatus').value = '';
                 document.getElementById('newGroupBounceStatus').value = '';
@@ -1034,6 +1046,7 @@
         document.getElementById('editGroupDomain').value = '';
         document.querySelectorAll('#editGroupCountryList input[type="checkbox"]').forEach(cb => cb.checked = false);
         document.getElementById('editGroupHasCli').checked = false;
+        document.getElementById('editGroupIncludeConverted').checked = false;
         document.getElementById('editGroupSendStatus').value = '';
         document.getElementById('editGroupReadStatus').value = '';
         document.getElementById('editGroupBounceStatus').value = '';
@@ -1049,6 +1062,7 @@
                 if (criteria.countries) setSelectedCountries('editGroupCountryList', criteria.countries);
                 if (criteria.country) setSelectedCountries('editGroupCountryList', [criteria.country]); // 兼容旧格式
                 if (criteria.has_cli) document.getElementById('editGroupHasCli').checked = true;
+                if (criteria.include_converted) document.getElementById('editGroupIncludeConverted').checked = true;
                 if (criteria.send_status !== undefined) document.getElementById('editGroupSendStatus').value = criteria.send_status;
                 if (criteria.read_status !== undefined) document.getElementById('editGroupReadStatus').value = criteria.read_status;
                 if (criteria.bounce_status !== undefined) document.getElementById('editGroupBounceStatus').value = criteria.bounce_status;
@@ -1082,6 +1096,7 @@
         const domain = document.getElementById('editGroupDomain').value;
         const countries = getSelectedCountries('editGroupCountryList');
         const hasCli = document.getElementById('editGroupHasCli').checked;
+        const includeConverted = document.getElementById('editGroupIncludeConverted').checked;
         const sendStatus = document.getElementById('editGroupSendStatus').value;
         const readStatus = document.getElementById('editGroupReadStatus').value;
         const bounceStatus = document.getElementById('editGroupBounceStatus').value;
@@ -1091,6 +1106,7 @@
         if (countries.length > 0) filterCriteria.countries = countries;
         if (domain) filterCriteria.domain = domain;
         if (hasCli) filterCriteria.has_cli = true;
+        if (includeConverted) filterCriteria.include_converted = true;
         if (sendStatus) filterCriteria.send_status = parseInt(sendStatus);
         if (readStatus) filterCriteria.read_status = parseInt(readStatus);
         if (bounceStatus) filterCriteria.bounce_status = parseInt(bounceStatus);

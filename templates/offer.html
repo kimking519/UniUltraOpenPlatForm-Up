@@ -306,6 +306,10 @@
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                     复制组合
                 </button>
+                <button class="dropdown-item" onclick="duplicateSelectedOffers()" style="color: #8B5CF6;">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    重插报价
+                </button>
                 <button class="dropdown-item" onclick="toggleModal('importModal')">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                     批量导入
@@ -1004,6 +1008,36 @@
                     else alert('批量删除失败: ' + data.message);
                 });
         }
+    }
+
+    function duplicateSelectedOffers() {
+        const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            alert('请先选择要重插的报价记录');
+            return;
+        }
+
+        if (!confirm(`确定要重插选中的 ${selected.length} 条报价吗？\n\n重插后将创建新的报价记录，状态为"询价中"，已转为"未转"。`)) {
+            return;
+        }
+
+        fetch('/api/offer/duplicate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selected })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    window.location.reload();
+                } else {
+                    alert('重插失败: ' + data.message);
+                }
+            })
+            .catch(err => {
+                alert('请求失败: ' + err.message);
+            });
     }
 
     async function batchToOrder() {

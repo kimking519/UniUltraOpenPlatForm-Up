@@ -198,9 +198,14 @@ def count_contacts_by_criteria(criteria):
         where_clauses.append("cli_id = ?")
         params.append(criteria['cli_id'])
 
-    # 是否关联客户（勾选）
+    # 是否关联客户（勾选）- 筛选已关联客户的联系人
     if criteria.get('has_cli'):
         where_clauses.append("cli_id IS NOT NULL AND cli_id != ''")
+    else:
+        # 默认排除已转化客户的联系人（开发信场景）
+        # 只有显式勾选 include_converted 时才包含已转化的联系人
+        if not criteria.get('include_converted'):
+            where_clauses.append("(cli_id IS NULL OR cli_id = '')")
 
     # 国家筛选（支持单选和多选）
     # 国家筛选需要通过 uni_prospect 表关联，因为 uni_contact.country 都是空的
@@ -301,9 +306,14 @@ def get_group_contacts(group_id, page=1, page_size=100):
         where_clauses.append("c.cli_id = ?")
         params.append(criteria['cli_id'])
 
-    # 是否关联客户（勾选）
+    # 是否关联客户（勾选）- 筛选已关联客户的联系人
     if criteria.get('has_cli'):
         where_clauses.append("c.cli_id IS NOT NULL AND c.cli_id != ''")
+    else:
+        # 默认排除已转化客户的联系人（开发信场景）
+        # 只有显式勾选 include_converted 时才包含已转化的联系人
+        if not criteria.get('include_converted'):
+            where_clauses.append("(c.cli_id IS NULL OR c.cli_id = '')")
 
     # 国家筛选（支持单选和多选）
     # 国家筛选需要通过 uni_prospect 表关联，因为 uni_contact.country 都是空的
@@ -887,9 +897,9 @@ def get_cli_group_contacts(criteria, page=1, page_size=100):
     where_sql = "WHERE " + " AND ".join(where_clauses)
 
     with get_db_connection() as conn:
-        # 获取所有符合条件的客户
+        # 获取所有符合条件的客户（使用 send_mail 字段用于批量发送）
         rows = conn.execute(f"""
-            SELECT cli_id, cli_name, cli_name_en, contact_name, email, region, credit_level, address, phone
+            SELECT cli_id, cli_name, cli_name_en, contact_name, send_mail, region, credit_level, address, phone
             FROM uni_cli {where_sql}
             ORDER BY cli_name
         """, params).fetchall()
@@ -898,7 +908,7 @@ def get_cli_group_contacts(criteria, page=1, page_size=100):
         all_contacts = []
         for r in rows:
             cli = dict(r)
-            email_str = cli.get('email', '') or ''
+            email_str = cli.get('send_mail', '') or ''
             # 分割逗号（中英文）、回车分隔的邮箱
             emails = [e.strip().lower() for e in re.split(r'[，,\n\r]+', email_str) if e.strip() and '@' in e.strip()]
 

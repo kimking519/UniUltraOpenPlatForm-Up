@@ -320,6 +320,104 @@ def batch_delete_offer(offer_ids):
             return False, "删除失败：部分记录已被后续流程（如销售订单/采购记录）引用，无法直接删除。"
         return False, str(e)
 
+
+def duplicate_offer(offer_id, emp_id):
+    """复制/重插一条报价记录
+
+    Args:
+        offer_id: 原报价ID
+        emp_id: 当前员工ID
+
+    Returns:
+        (success, message): 成功时返回新报价ID
+    """
+    try:
+        with get_db_connection() as conn:
+            # 获取原报价数据
+            row = conn.execute("""
+                SELECT offer_date, quote_id, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
+                       inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb,
+                       price_kwr, price_usd, price_jpy, platform, vendor_id, date_code, delivery_date,
+                       offer_statement, remark, status, target_price_rmb, is_transferred
+                FROM uni_offer WHERE offer_id = ?
+            """, (offer_id,)).fetchone()
+
+            if not row:
+                return False, "报价不存在"
+
+            data = dict(row)
+
+            # 生成新的报价ID
+            last_offer = conn.execute(
+                "SELECT offer_id FROM uni_offer WHERE offer_id LIKE 'b%' ORDER BY offer_id DESC LIMIT 1"
+            ).fetchone()
+            if last_offer:
+                try:
+                    last_num = int(last_offer['offer_id'][1:])
+                    new_num = last_num + 1
+                except:
+                    new_num = 1
+            else:
+                new_num = 1
+            new_offer_id = f"b{new_num:05d}"
+
+            # 使用今天的日期
+            new_offer_date = datetime.now().strftime("%Y-%m-%d")
+
+            # 插入新报价（状态改为询价中，已转改为未转）
+            conn.execute("""
+                INSERT INTO uni_offer (
+                    offer_id, offer_date, quote_id, cli_id, inquiry_mpn, quoted_mpn, inquiry_brand, quoted_brand,
+                    inquiry_qty, actual_qty, quoted_qty, cost_price_rmb, offer_price_rmb,
+                    price_kwr, price_usd, price_jpy, platform, vendor_id, date_code, delivery_date,
+                    emp_id, offer_statement, remark, status, target_price_rmb, is_transferred
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                new_offer_id, new_offer_date,
+                data.get('quote_id'), data.get('cli_id'),
+                data.get('inquiry_mpn'), data.get('quoted_mpn'),
+                data.get('inquiry_brand'), data.get('quoted_brand'),
+                data.get('inquiry_qty'), data.get('actual_qty'), data.get('quoted_qty'),
+                data.get('cost_price_rmb'), data.get('offer_price_rmb'),
+                data.get('price_kwr'), data.get('price_usd'), data.get('price_jpy'),
+                data.get('platform'), data.get('vendor_id'),
+                data.get('date_code'), data.get('delivery_date'),
+                emp_id, data.get('offer_statement'), data.get('remark'),
+                '询价中',  # 状态改为询价中
+                data.get('target_price_rmb'),
+                '未转'    # 已转改为未转
+            ))
+            conn.commit()
+
+            return True, new_offer_id
+    except Exception as e:
+        return False, str(e)
+
+
+def batch_duplicate_offers(offer_ids, emp_id):
+    """批量复制报价记录
+
+    Args:
+        offer_ids: 报价ID列表
+        emp_id: 当前员工ID
+
+    Returns:
+        (success_count, failed_count, new_ids): 成功数、失败数、新报价ID列表
+    """
+    success_count = 0
+    failed_count = 0
+    new_ids = []
+
+    for offer_id in offer_ids:
+        ok, result = duplicate_offer(offer_id, emp_id)
+        if ok:
+            success_count += 1
+            new_ids.append(result)
+        else:
+            failed_count += 1
+
+    return success_count, failed_count, new_ids
+
 def batch_import_offer_text(text, emp_id):
     import io, csv
     from datetime import datetime
