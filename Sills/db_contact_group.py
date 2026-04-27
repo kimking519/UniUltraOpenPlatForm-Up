@@ -576,7 +576,7 @@ def get_static_group_contacts(group_id):
 
 
 def get_group_contacts_all_types(group_id, page=1, page_size=100):
-    """获取联系人组内的联系人列表（支持动态组+手动邮件合并）
+    """获取联系人组内的联系人列表（支持动态组+静态组+客户组+手动邮件合并）
 
     Args:
         group_id: 组ID
@@ -596,6 +596,11 @@ def get_group_contacts_all_types(group_id, page=1, page_size=100):
         # 静态组：从email_list获取
         contacts = get_static_group_contacts(group_id)
         return contacts, len(contacts)
+    elif group_type == 'cli_group':
+        # 客户组：从uni_cli获取
+        criteria = json.loads(group.get('filter_criteria', '{}') or '{}')
+        contacts, total = get_cli_group_contacts(criteria, page=page, page_size=page_size)
+        return contacts, total
     else:
         # 动态组：筛选条件 + 手动邮件合并
         # 1. 从筛选条件获取联系人（使用传入的page_size）
@@ -772,6 +777,225 @@ def get_group_manual_emails(group_id):
         return []
 
     return json.loads(group.get('manual_emails', '[]') or '[]')
+
+
+# ==================== 客户组功能（从uni_cli获取） ====================
+
+def get_cli_regions():
+    """获取uni_cli中所有的region列表"""
+    with get_db_connection() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT region FROM uni_cli
+            WHERE region IS NOT NULL AND region != ''
+            ORDER BY region
+        """).fetchall()
+        return [r[0] for r in rows if r[0]]
+
+
+def get_cli_credit_levels():
+    """获取uni_cli中所有的credit_level列表"""
+    with get_db_connection() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT credit_level FROM uni_cli
+            WHERE credit_level IS NOT NULL AND credit_level != ''
+            ORDER BY credit_level
+        """).fetchall()
+        return [r[0] for r in rows if r[0]]
+
+
+def count_cli_group_contacts(criteria):
+    """根据筛选条件统计客户组联系人数量
+
+    Args:
+        criteria: dict {credit_levels: [], regions: [], cli_name: ""}
+
+    Returns:
+        int 邮箱数量（分割后的）
+    """
+    where_clauses = ["email IS NOT NULL AND email != ''"]
+    params = []
+
+    # 信用等级筛选（多选）
+    credit_levels = criteria.get('credit_levels', [])
+    if credit_levels and len(credit_levels) > 0:
+        placeholders = ','.join(['?' for _ in credit_levels])
+        where_clauses.append(f"credit_level IN ({placeholders})")
+        params.extend(credit_levels)
+
+    # 区域筛选（多选）
+    regions = criteria.get('regions', [])
+    if regions and len(regions) > 0:
+        placeholders = ','.join(['?' for _ in regions])
+        where_clauses.append(f"region IN ({placeholders})")
+        params.extend(regions)
+
+    # 客户名称搜索
+    cli_name = criteria.get('cli_name', '')
+    if cli_name:
+        where_clauses.append("cli_name LIKE ?")
+        params.append(f"%{cli_name}%")
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    with get_db_connection() as conn:
+        # 获取所有email并分割统计
+        rows = conn.execute(f"SELECT email FROM uni_cli {where_sql}", params).fetchall()
+        total_emails = 0
+        for r in rows:
+            email_str = r[0] or ''
+            # 分割逗号分隔的邮箱
+            emails = [e.strip().lower() for e in email_str.split(',') if e.strip() and '@' in e.strip()]
+            total_emails += len(emails)
+        return total_emails
+
+
+def get_cli_group_contacts(criteria, page=1, page_size=100):
+    """获取客户组的联系人列表
+
+    Args:
+        criteria: dict {credit_levels: [], regions: [], cli_name: ""}
+        page: 页码
+        page_size: 每页数量
+
+    Returns:
+        (contacts_list, total) tuple
+    """
+    where_clauses = ["email IS NOT NULL AND email != ''"]
+    params = []
+
+    # 信用等级筛选（多选）
+    credit_levels = criteria.get('credit_levels', [])
+    if credit_levels and len(credit_levels) > 0:
+        placeholders = ','.join(['?' for _ in credit_levels])
+        where_clauses.append(f"credit_level IN ({placeholders})")
+        params.extend(credit_levels)
+
+    # 区域筛选（多选）
+    regions = criteria.get('regions', [])
+    if regions and len(regions) > 0:
+        placeholders = ','.join(['?' for _ in regions])
+        where_clauses.append(f"region IN ({placeholders})")
+        params.extend(regions)
+
+    # 客户名称搜索
+    cli_name = criteria.get('cli_name', '')
+    if cli_name:
+        where_clauses.append("cli_name LIKE ?")
+        params.append(f"%{cli_name}%")
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    with get_db_connection() as conn:
+        # 获取所有符合条件的客户
+        rows = conn.execute(f"""
+            SELECT cli_id, cli_name, cli_name_en, contact_name, email, region, credit_level, address, phone
+            FROM uni_cli {where_sql}
+            ORDER BY cli_name
+        """, params).fetchall()
+
+        # 分割邮箱并构建联系人列表
+        all_contacts = []
+        for r in rows:
+            cli = dict(r)
+            email_str = cli.get('email', '') or ''
+            emails = [e.strip().lower() for e in email_str.split(',') if e.strip() and '@' in e.strip()]
+
+            for email in emails:
+                all_contacts.append({
+                    'contact_id': '',  # 客户组没有contact_id
+                    'cli_id': cli.get('cli_id', ''),
+                    'email': email,
+                    'company': cli.get('cli_name', ''),
+                    'contact_name': cli.get('contact_name', ''),
+                    'country': cli.get('region', ''),
+                    'region': cli.get('region', ''),
+                    'credit_level': cli.get('credit_level', ''),
+                    'phone': cli.get('phone', ''),
+                    'address': cli.get('address', ''),
+                    'is_bounced': 0,
+                    'send_count': 0,
+                    'source': 'cli_group'
+                })
+
+        total = len(all_contacts)
+        offset = (page - 1) * page_size
+        paginated = all_contacts[offset:offset + page_size]
+
+        return paginated, total
+
+
+def add_cli_group(group_name, criteria, description=""):
+    """添加客户组
+
+    Args:
+        group_name: 组名称
+        criteria: dict {credit_levels: [], regions: [], cli_name: ""}
+        description: 组描述
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        if not group_name or not group_name.strip():
+            return False, "组名称不能为空"
+
+        group_id = get_next_group_id()
+        criteria_json = json.dumps(criteria) if criteria else ""
+
+        # 计算联系人数量
+        contact_count = count_cli_group_contacts(criteria)
+
+        with get_db_connection() as conn:
+            conn.execute("""
+                INSERT INTO uni_contact_group (group_id, group_name, description, group_type, filter_criteria, contact_count)
+                VALUES (?, ?, ?, 'cli_group', ?, ?)
+            """, (group_id, group_name.strip(), description, criteria_json, contact_count))
+            conn.commit()
+
+        return True, f"客户组 {group_id} 创建成功，包含 {contact_count} 个邮箱"
+    except Exception as e:
+        return False, str(e)
+
+
+def update_cli_group(group_id, group_name=None, criteria=None, description=None):
+    """更新客户组"""
+    try:
+        updates = []
+        params = []
+
+        if group_name:
+            updates.append("group_name = ?")
+            params.append(group_name.strip())
+
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+
+        if criteria is not None:
+            updates.append("filter_criteria = ?")
+            params.append(json.dumps(criteria) if criteria else "")
+            # 重新计算数量
+            contact_count = count_cli_group_contacts(criteria)
+            updates.append("contact_count = ?")
+            params.append(contact_count)
+
+        if not updates:
+            return True, "无需更新"
+
+        updates.append("updated_at = NOW()")
+        params.append(group_id)
+
+        sql = f"UPDATE uni_contact_group SET {', '.join(updates)} WHERE group_id = ? AND group_type = 'cli_group'"
+
+        with get_db_connection() as conn:
+            result = conn.execute(sql, params)
+            conn.commit()
+            if result.rowcount == 0:
+                return False, "客户组不存在"
+
+        return True, "更新成功"
+    except Exception as e:
+        return False, str(e)
 
 
 def get_all_groups_contacts_all_types(group_ids):

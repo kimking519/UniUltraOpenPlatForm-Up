@@ -5480,6 +5480,85 @@ async def api_group_update(request: Request, current_user: dict = Depends(login_
     return {"success": success, "message": message}
 
 
+# ==================== 客户组管理 ====================
+
+@app.get("/api/cli_group/options")
+async def api_cli_group_options(current_user: dict = Depends(login_required)):
+    """获取客户组筛选选项（region和credit_level列表）"""
+    from Sills.db_contact_group import get_cli_regions, get_cli_credit_levels
+    regions = get_cli_regions()
+    credit_levels = get_cli_credit_levels()
+    return {"success": True, "regions": regions, "credit_levels": credit_levels}
+
+
+@app.post("/api/cli_group/count")
+async def api_cli_group_count(request: Request, current_user: dict = Depends(login_required)):
+    """预览客户组筛选条件的联系人数量"""
+    from Sills.db_contact_group import count_cli_group_contacts
+    data = await request.json()
+    criteria = {
+        'credit_levels': data.get('credit_levels', []),
+        'regions': data.get('regions', []),
+        'cli_name': data.get('cli_name', '')
+    }
+    count = count_cli_group_contacts(criteria)
+    return {"success": True, "count": count}
+
+
+@app.post("/api/cli_group/add")
+async def api_cli_group_add(request: Request, current_user: dict = Depends(login_required)):
+    """添加客户组"""
+    from Sills.db_contact_group import add_cli_group
+    data = await request.json()
+    group_name = data.get('group_name', '')
+    criteria = {
+        'credit_levels': data.get('credit_levels', []),
+        'regions': data.get('regions', []),
+        'cli_name': data.get('cli_name', '')
+    }
+    description = data.get('description', '')
+
+    success, message = add_cli_group(group_name, criteria, description)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/cli_group/update")
+async def api_cli_group_update(request: Request, current_user: dict = Depends(login_required)):
+    """更新客户组"""
+    from Sills.db_contact_group import update_cli_group
+    data = await request.json()
+    group_id = data.get('group_id', '')
+    group_name = data.get('group_name')
+    criteria = {
+        'credit_levels': data.get('credit_levels', []),
+        'regions': data.get('regions', []),
+        'cli_name': data.get('cli_name', '')
+    } if data.get('credit_levels') or data.get('regions') or data.get('cli_name') else None
+    description = data.get('description')
+
+    success, message = update_cli_group(group_id, group_name, criteria, description)
+    return {"success": success, "message": message}
+
+
+@app.get("/api/cli_group/{group_id}/preview")
+async def api_cli_group_preview(
+    group_id: str,
+    page: int = 1,
+    page_size: int = 100,
+    current_user: dict = Depends(login_required)
+):
+    """预览客户组联系人"""
+    from Sills.db_contact_group import get_group_by_id, get_cli_group_contacts
+    import json
+    group = get_group_by_id(group_id)
+    if not group or group.get('group_type') != 'cli_group':
+        return {"success": False, "message": "客户组不存在"}
+
+    criteria = json.loads(group.get('filter_criteria', '{}') or '{}')
+    contacts, total = get_cli_group_contacts(criteria, page, page_size)
+    return {"success": True, "contacts": contacts, "total": total}
+
+
 @app.get("/api/group/{group_id}/contacts")
 async def api_group_contacts(
     group_id: str,

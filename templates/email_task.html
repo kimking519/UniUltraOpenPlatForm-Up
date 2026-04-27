@@ -207,6 +207,35 @@
             <button class="btn btn-ghost btn-sm" onclick="clearStaticGroupForm()">清空</button>
         </div>
     </div>
+    <!-- 添加客户组 -->
+    <div class="settings-section">
+        <h3>添加客户组（从现有客户获取邮箱）</h3>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
+            <input type="text" id="cliGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+            <input type="text" id="cliGroupCliName" placeholder="客户名称搜索" style="width: 140px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+        </div>
+        <div style="display: flex; gap: 15px; align-items: flex-start; margin-bottom: 8px;">
+            <div>
+                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">信用等级（多选）：</span>
+                <div id="cliGroupCreditLevelList" style="display: flex; flex-wrap: wrap; gap: 4px;">
+                    <!-- 动态加载 -->
+                </div>
+            </div>
+            <div>
+                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">所属区域（多选）：</span>
+                <div id="cliGroupRegionList" style="display: flex; flex-wrap: wrap; gap: 4px;">
+                    <!-- 动态加载 -->
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-primary btn-sm" onclick="previewCliGroupCount()">预览数量</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadCliGroupOptions()">刷新选项</button>
+            <button class="btn btn-primary btn-sm" onclick="addCliGroup()">创建客户组</button>
+            <span id="cliGroupPreviewCount" style="font-size: 12px; color: var(--text-muted);"></span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：从客户表（uni_cli）的email字段获取邮箱，支持逗号分隔的多邮箱</div>
+    </div>
     <!-- 添加筛选条件组 -->
     <div class="settings-section">
         <h3>添加筛选条件组</h3>
@@ -1141,9 +1170,127 @@
         });
     }
 
+    // ==================== 客户组功能 ====================
+
+    // 加载客户组筛选选项
+    async function loadCliGroupOptions() {
+        try {
+            const res = await fetch('/api/cli_group/options');
+            const data = await res.json();
+
+            // 渲染信用等级复选框
+            const creditContainer = document.getElementById('cliGroupCreditLevelList');
+            if (creditContainer && data.credit_levels) {
+                creditContainer.innerHTML = '';
+                data.credit_levels.forEach(level => {
+                    creditContainer.innerHTML += `
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-main); cursor: pointer; padding: 2px 6px; border-radius: 4px; background: var(--bg-main);">
+                            <input type="checkbox" value="${level}" checked style="width: 14px; height: 14px;">
+                            ${level}
+                        </label>`;
+                });
+            }
+
+            // 渲染区域复选框
+            const regionContainer = document.getElementById('cliGroupRegionList');
+            if (regionContainer && data.regions) {
+                regionContainer.innerHTML = '';
+                data.regions.forEach(region => {
+                    regionContainer.innerHTML += `
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-main); cursor: pointer; padding: 2px 6px; border-radius: 4px; background: var(--bg-main);">
+                            <input type="checkbox" value="${region}" checked style="width: 14px; height: 14px;">
+                            ${region}
+                        </label>`;
+                });
+            }
+        } catch (e) {
+            console.error('加载客户组选项失败', e);
+        }
+    }
+
+    // 获取选中的信用等级
+    function getSelectedCreditLevels() {
+        const container = document.getElementById('cliGroupCreditLevelList');
+        if (!container) return [];
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    }
+
+    // 获取选中的区域
+    function getSelectedCliRegions() {
+        const container = document.getElementById('cliGroupRegionList');
+        if (!container) return [];
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+        return Array.from(checkboxes).map(cb => cb.value);
+    }
+
+    // 预览客户组数量
+    async function previewCliGroupCount() {
+        const cliName = document.getElementById('cliGroupCliName').value;
+        const creditLevels = getSelectedCreditLevels();
+        const regions = getSelectedCliRegions();
+
+        try {
+            const res = await fetch('/api/cli_group/count', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cli_name: cliName,
+                    credit_levels: creditLevels,
+                    regions: regions
+                })
+            });
+            const data = await res.json();
+            document.getElementById('cliGroupPreviewCount').textContent = `预计邮箱数: ${data.count}`;
+        } catch (e) {
+            console.error('预览数量失败', e);
+        }
+    }
+
+    // 创建客户组
+    async function addCliGroup() {
+        const groupName = document.getElementById('cliGroupName').value.trim();
+        const cliName = document.getElementById('cliGroupCliName').value;
+        const creditLevels = getSelectedCreditLevels();
+        const regions = getSelectedCliRegions();
+
+        if (!groupName) {
+            alert('请输入组名称');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/cli_group/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    group_name: groupName,
+                    cli_name: cliName,
+                    credit_levels: creditLevels,
+                    regions: regions
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message);
+                document.getElementById('cliGroupName').value = '';
+                document.getElementById('cliGroupCliName').value = '';
+                document.getElementById('cliGroupPreviewCount').textContent = '';
+                loadGroups();
+                loadGroupsForTask();
+            } else {
+                alert('失败: ' + data.message);
+            }
+        } catch (e) {
+            console.error('创建客户组失败', e);
+            alert('创建失败');
+        }
+    }
+
     // 页面初始化 - 自动检查运行中的任务并启动轮询
     async function initPage() {
         await loadCountries();
+        await loadCliGroupOptions();
         await loadAccounts();
         await loadGroupsForTask();
         await loadGroups();
