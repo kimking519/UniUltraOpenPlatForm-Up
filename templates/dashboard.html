@@ -150,6 +150,79 @@
         height: 20px;
         color: var(--primary);
     }
+
+    /* 汇率卡片样式 */
+    .rate-card {
+        background: var(--card-bg);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        border: var(--glass-border);
+        border-radius: var(--radius-lg);
+        padding: 1.25rem;
+        margin-top: 1.5rem;
+    }
+
+    .rate-card h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-main);
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .rate-card h3 svg {
+        width: 20px;
+        height: 20px;
+        color: var(--primary);
+    }
+
+    .rate-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+
+    .rate-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        background: rgba(99, 102, 241, 0.05);
+        border-radius: var(--radius);
+        border: 1px solid rgba(99, 102, 241, 0.1);
+    }
+
+    .rate-label {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+
+    .rate-values {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .rate-base {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-main);
+    }
+
+    .rate-suggested {
+        font-size: 0.85rem;
+        color: var(--accent);
+        padding: 0.25rem 0.5rem;
+        background: rgba(16, 185, 129, 0.1);
+        border-radius: var(--radius-sm);
+    }
+
+    .rate-suggested span {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+    }
 </style>
 
 <div class="dashboard-header">
@@ -193,6 +266,139 @@
         <div class="card-value">¥{{ "%.2f"|format(stats.order_sum) }}</div>
     </div>
 </div>
+
+<!-- 汇率展示卡片 -->
+<div class="rate-card animate-fadeInUp">
+    <h3>
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span>实时汇率</span>
+        <span id="rateUpdateTime" style="font-size: 0.8rem; color: var(--text-muted); margin-left: auto;"></span>
+        <button class="btn btn-sm btn-primary" onclick="refreshRates()" style="margin-left: 0.5rem; padding: 0.25rem 0.5rem;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            刷新
+        </button>
+        <button class="btn btn-sm btn-accent" onclick="saveRates()" style="margin-left: 0.25rem; padding: 0.25rem 0.5rem;">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+            </svg>
+            保存
+        </button>
+    </h3>
+    <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">
+        1 RMB 对应外币 | 建议: 韩元/日元×1.025, 美元/欧元×0.975
+    </p>
+    <div class="rate-grid" id="rateGrid">
+        <!-- 汇率数据通过JavaScript动态加载 -->
+        <div class="rate-item" style="justify-content: center; color: var(--text-muted);">
+            <span>正在加载实时汇率...</span>
+        </div>
+    </div>
+</div>
+
+<script>
+// 页面加载时自动获取汇率
+document.addEventListener('DOMContentLoaded', function() {
+    refreshRates();
+});
+
+async function refreshRates() {
+    const rateGrid = document.getElementById('rateGrid');
+    const updateTimeEl = document.getElementById('rateUpdateTime');
+
+    rateGrid.innerHTML = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);"><span>正在获取实时汇率...</span></div>';
+
+    try {
+        const response = await fetch('/api/exchange/fetch_latest');
+        const result = await response.json();
+
+        if (result.success) {
+            const rates = result.exchange_rates;
+            const suggested = result.suggested_rates;
+
+            let html = '';
+
+            // KRW
+            if (rates.krw) {
+                html += `
+                    <div class="rate-item">
+                        <div class="rate-label">1 RMB → 韩元 (KRW)</div>
+                        <div class="rate-values">
+                            <div class="rate-base" style="color: #10B981;">${rates.krw}</div>
+                            ${suggested.krw ? `<div class="rate-suggested"><span>建议:</span> ${suggested.krw}</div>` : ''}
+                        </div>
+                    </div>`;
+            }
+
+            // JPY
+            if (rates.jpy) {
+                html += `
+                    <div class="rate-item">
+                        <div class="rate-label">1 RMB → 日元 (JPY)</div>
+                        <div class="rate-values">
+                            <div class="rate-base" style="color: #10B981;">${rates.jpy}</div>
+                            ${suggested.jpy ? `<div class="rate-suggested"><span>建议:</span> ${suggested.jpy}</div>` : ''}
+                        </div>
+                    </div>`;
+            }
+
+            // USD to RMB
+            if (rates.usd_to_rmb) {
+                html += `
+                    <div class="rate-item">
+                        <div class="rate-label">1 美元 (USD) → RMB</div>
+                        <div class="rate-values">
+                            <div class="rate-base" style="color: #10B981;">${rates.usd_to_rmb}</div>
+                            ${suggested.usd_to_rmb ? `<div class="rate-suggested"><span>建议:</span> ${suggested.usd_to_rmb}</div>` : ''}
+                        </div>
+                    </div>`;
+            }
+
+            // EUR to RMB
+            if (rates.eur_to_rmb) {
+                html += `
+                    <div class="rate-item">
+                        <div class="rate-label">1 欧元 (EUR) → RMB</div>
+                        <div class="rate-values">
+                            <div class="rate-base" style="color: #10B981;">${rates.eur_to_rmb}</div>
+                            ${suggested.eur_to_rmb ? `<div class="rate-suggested"><span>建议:</span> ${suggested.eur_to_rmb}</div>` : ''}
+                        </div>
+                    </div>`;
+            }
+
+            if (!html) {
+                html = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);">暂无汇率数据</div>';
+            }
+
+            rateGrid.innerHTML = html;
+            updateTimeEl.textContent = rates.update_time || '';
+
+        } else {
+            rateGrid.innerHTML = `<div class="rate-item" style="justify-content: center; color: #EF4444;"><span>获取失败: ${result.error || '未知错误'}</span></div>`;
+        }
+    } catch (error) {
+        rateGrid.innerHTML = `<div class="rate-item" style="justify-content: center; color: #EF4444;"><span>请求失败: ${error.message}</span></div>`;
+    }
+}
+
+async function saveRates() {
+    try {
+        const response = await fetch('/api/exchange/save_latest', { method: 'POST' });
+        const result = await response.json();
+
+        if (result.success) {
+            alert('汇率已保存到数据库！\n\n更新时间: ' + result.update_time);
+        } else {
+            alert('保存失败: ' + result.message);
+        }
+    } catch (error) {
+        alert('请求失败: ' + error.message);
+    }
+}
+</script>
 
 <div class="card welcome-card animate-fadeInUp stagger-4">
     <h2>欢迎来到 UniUltra 开放平台</h2>

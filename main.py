@@ -305,21 +305,45 @@ async def login_required(request: Request, current_user: dict = Depends(get_curr
 async def index(request: Request, current_user: dict = Depends(get_current_user)):
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
-        
+
     with get_db_connection() as conn:
         cli_count = conn.execute("SELECT COUNT(*) FROM uni_cli").fetchone()[0]
         emp_count = conn.execute("SELECT COUNT(*) FROM uni_emp").fetchone()[0]
         order_sum = conn.execute("SELECT COALESCE(SUM(paid_amount), 0) FROM uni_order").fetchone()[0]
-        
+
+        # 获取各币种汇率 (存储的是 1 RMB = X 外币)
+        krw_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+        jpy_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=3 ORDER BY record_date DESC LIMIT 1").fetchone()
+        usd_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+        eur_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=4 ORDER BY record_date DESC LIMIT 1").fetchone()
+
+        # 汇率数据 (无数据则不显示)
+        exchange_rates = {
+            "krw": float(krw_row[0]) if krw_row else None,
+            "jpy": float(jpy_row[0]) if jpy_row else None,
+            "usd_to_rmb": round(1 / float(usd_row[0]), 4) if usd_row else None,  # 反向: 1 USD = X RMB
+            "eur_to_rmb": round(1 / float(eur_row[0]), 4) if eur_row else None,  # 反向: 1 EUR = X RMB
+        }
+
+        # 建议汇率 (韩元日元乘以1.025，美元欧元乘以0.975)
+        suggested_rates = {
+            "krw": round(exchange_rates["krw"] * 1.025, 2) if exchange_rates["krw"] else None,
+            "jpy": round(exchange_rates["jpy"] * 1.025, 2) if exchange_rates["jpy"] else None,
+            "usd_to_rmb": round(exchange_rates["usd_to_rmb"] * 0.975, 4) if exchange_rates["usd_to_rmb"] else None,
+            "eur_to_rmb": round(exchange_rates["eur_to_rmb"] * 0.975, 4) if exchange_rates["eur_to_rmb"] else None,
+        }
+
     return templates.TemplateResponse("dashboard.html", {
-        "request": request, 
+        "request": request,
         "active_page": "dashboard",
         "current_user": current_user,
         "stats": {
             "cli_count": cli_count,
             "emp_count": emp_count,
             "order_sum": order_sum
-        }
+        },
+        "exchange_rates": exchange_rates,
+        "suggested_rates": suggested_rates
     })
 
 @app.get("/favicon.ico")
@@ -1241,6 +1265,42 @@ async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
     from Sills.base import get_exchange_rates
     krw, usd, jpy = get_exchange_rates()
     return {"success": True, "krw": krw, "usd": usd, "jpy": jpy}
+
+@app.get("/api/exchange/fetch_latest")
+async def fetch_latest_exchange_rates_api(current_user: dict = Depends(login_required)):
+    """从网络获取实时汇率并返回"""
+    from Sills.exchange_fetcher import get_realtime_rates_with_suggested
+    result = get_realtime_rates_with_suggested()
+    return result
+
+@app.post("/api/exchange/save_latest")
+async def save_latest_exchange_rates_api(current_user: dict = Depends(login_required)):
+    """从网络获取实时汇率并保存到数据库"""
+    from Sills.exchange_fetcher import fetch_exchange_rates_from_api, save_exchange_rates_to_db
+
+    success, rates = fetch_exchange_rates_from_api()
+    if not success:
+        return {"success": False, "message": rates.get("error")}
+
+    save_success, save_msg = save_exchange_rates_to_db(rates)
+    if not save_success:
+        return {"success": False, "message": save_msg}
+
+    # 计算建议汇率
+    suggested_rates = {
+        "krw": round(rates["krw"] * 1.025, 2) if rates["krw"] else None,
+        "jpy": round(rates["jpy"] * 1.025, 2) if rates["jpy"] else None,
+        "usd_to_rmb": round(rates["usd_to_rmb"] * 0.975, 4) if rates["usd_to_rmb"] else None,
+        "eur_to_rmb": round(rates["eur_to_rmb"] * 0.975, 4) if rates["eur_to_rmb"] else None,
+    }
+
+    return {
+        "success": True,
+        "message": save_msg,
+        "exchange_rates": rates,
+        "suggested_rates": suggested_rates,
+        "update_time": rates.get("update_time")
+    }
 
 @app.get("/api/server/env")
 async def get_server_env_api():
@@ -2810,6 +2870,28 @@ async def api_order_manager_generate_ci(request: Request, current_user: dict = D
     return {
         "success": success_count > 0,
         "message": f"成功生成 {success_count} 个CI文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
+        "output_dir": output_dir,
+        "generated_files": generated_files,
+        "errors": errors
+    }
+
+
+@app.post("/api/order_manager/generate_contract")
+async def api_order_manager_generate_contract(request: Request, current_user: dict = Depends(login_required)):
+    """批量生成采购合同"""
+    from Sills.contract_generator import generate_contract_batch
+
+    data = await request.json()
+    manager_ids = data.get('manager_ids', [])
+
+    if not manager_ids:
+        return {"success": False, "message": "请选择客户订单"}
+
+    success_count, errors, generated_files, output_dir = generate_contract_batch(manager_ids)
+
+    return {
+        "success": success_count > 0,
+        "message": f"成功生成 {success_count} 个合同文件" + (f" (失败 {len(errors)} 条)" if errors else ""),
         "output_dir": output_dir,
         "generated_files": generated_files,
         "errors": errors

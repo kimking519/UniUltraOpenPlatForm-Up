@@ -389,7 +389,7 @@
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 生成CI
             </button>
-            <button class="dropdown-item" onclick="alert('合同生成功能暂未实现')" style="color: #F59E0B;">
+            <button class="dropdown-item" onclick="batchGenerateContract()" style="color: #F59E0B;">
                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                 生成合同
             </button>
@@ -843,6 +843,43 @@ async function batchGenerateCI() {
 
     try {
         const response = await fetch('/api/order_manager/generate_ci', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manager_ids: ids })
+        });
+        const result = await response.json();
+
+        document.body.removeChild(processingMsg);
+
+        if (result.success) {
+            alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
+        } else {
+            alert('生成失败: ' + result.message + (result.errors ? '\n' + result.errors.join('\n') : ''));
+        }
+    } catch (error) {
+        document.body.removeChild(processingMsg);
+        console.error('Error:', error);
+        alert('请求失败: ' + error.message);
+    }
+}
+
+async function batchGenerateContract() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('请先选择要生成合同的客户订单');
+        return;
+    }
+    if (!confirm(`确定要为选中的 ${checkboxes.length} 个客户订单生成采购合同吗？`)) return;
+
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    const processingMsg = document.createElement('div');
+    processingMsg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px;border-radius:8px;z-index:9999;';
+    processingMsg.textContent = '正在生成合同，请稍候...';
+    document.body.appendChild(processingMsg);
+
+    try {
+        const response = await fetch('/api/order_manager/generate_contract', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ manager_ids: ids })
