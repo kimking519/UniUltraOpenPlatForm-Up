@@ -31,7 +31,7 @@
     }
     .header-search input {
         padding: 0.4rem 0.6rem;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         border: 1px solid var(--border);
         border-radius: var(--radius);
         background: var(--card-bg);
@@ -67,12 +67,6 @@
         color: var(--text-secondary);
         white-space: nowrap;
     }
-    .action-divider {
-        width: 1px;
-        height: 24px;
-        background: var(--border);
-        margin: 0 0.25rem;
-    }
     .btn-group {
         display: flex;
         gap: 0.5rem;
@@ -87,8 +81,69 @@
         box-shadow: var(--shadow);
         overflow: hidden;
     }
-    .data-card .data-table {
+
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
         font-size: 0.85rem;
+    }
+
+    .data-table th {
+        background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
+        padding: 0.4rem 0.5rem;
+        text-align: left;
+        font-size: 0.86rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #1a1a1a;
+        border-bottom: 2px solid #94a3b8;
+        border-right: 1px solid #cbd5e1;
+        white-space: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .data-table th:last-child {
+        border-right: none;
+    }
+
+    .data-table td {
+        padding: 0.35rem 0.4rem;
+        border-bottom: 1px solid #e2e8f0;
+        border-right: 1px solid #e2e8f0;
+    }
+
+    .data-table td:last-child {
+        border-right: none;
+    }
+
+    .data-table tbody tr:nth-child(odd) {
+        background: #f1f5f9;
+    }
+
+    .data-table tbody tr:nth-child(even) {
+        background: #ffffff;
+    }
+
+    [data-theme="dark"] .data-table th {
+        background: linear-gradient(180deg, rgba(51, 65, 85, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%);
+        border-bottom: 2px solid #475569;
+        border-right: 1px solid #475569;
+    }
+
+    [data-theme="dark"] .data-table td {
+        border-bottom: 1px solid #334155;
+        border-right: 1px solid #334155;
+    }
+
+    [data-theme="dark"] .data-table tbody tr:nth-child(odd) {
+        background: rgba(51, 65, 85, 0.5);
+    }
+
+    [data-theme="dark"] .data-table tbody tr:nth-child(even) {
+        background: rgba(30, 41, 59, 0.3);
     }
 </style>
 
@@ -112,6 +167,8 @@
                 <option value="20" {% if page_size == 20 %}selected{% endif %}>20</option>
                 <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
                 <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+                <option value="500" {% if page_size == 500 %}selected{% endif %}>500</option>
+                <option value="1000" {% if page_size == 1000 %}selected{% endif %}>1000</option>
             </select>
             <span>条</span>
         </div>
@@ -147,12 +204,17 @@
 </div>
 
 <div class="data-card">
-    <div class="table-container" style="overflow-x: auto;">
-        <table class="data-table" id="cliTable">
+    <!-- 顶部滚动条 -->
+    <div id="topScrollContainer" style="overflow-x: auto; overflow-y: hidden; height: 16px; border-bottom: 1px solid var(--border);">
+        <div id="topScrollContent" style="height: 1px;"></div>
+    </div>
+    <!-- 表格容器 -->
+    <div class="table-container" id="tableContainer" style="overflow-x: auto;">
+        <table class="data-table" id="cliTable" style="min-width: 1600px;">
             <thead>
                 <tr>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
-                    <th style="width: 40px;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"></th>
+                    <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"></th>
                     {% endif %}
                     <th>客户编号</th>
                     <th>客户名称</th>
@@ -170,7 +232,7 @@
                     <th>电话</th>
                     <th>备注</th>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
-                    <th>操作</th>
+                    <th style="width: 80px;">操作</th>
                     {% endif %}
                 </tr>
             </thead>
@@ -178,12 +240,11 @@
                 {% for item in items %}
                 <tr>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
-                    <td><input type="checkbox" class="row-checkbox" value="{{ item.cli_id }}"></td>
+                    <td style="text-align: center;"><input type="checkbox" class="row-checkbox" value="{{ item.cli_id }}"></td>
                     {% endif %}
                     <td style="font-weight: 700;">{{ item.cli_id }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'cli_name')" {% endif %}>{{ item.cli_name
-                        }}</td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'cli_name')" {% endif %}>{{ item.cli_name }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'cli_full_name')" {% endif %}>{{ item.cli_full_name or '' }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
@@ -193,34 +254,26 @@
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'address')" {% endif %}>{{ item.address or '' }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'region')" {% endif %}>{{ item.region }}
-                    </td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'region')" {% endif %}>{{ item.region }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
                         %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'credit_level')" {% endif %}><span
                             style="color: var(--primary); font-weight: bold;">{{ item.credit_level }}</span></td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'margin_rate')" {% endif %}>{{
-                        item.margin_rate }}</td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'margin_rate')" {% endif %}>{{ item.margin_rate }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'emp_id')" {% endif %}>{{ item.emp_id }}
-                    </td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'emp_id')" {% endif %}>{{ item.emp_id }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'website')" {% endif %}>{{ item.website }}
-                    </td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'website')" {% endif %}>{{ item.website }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'payment_terms')" {% endif %}>{{
-                        item.payment_terms }}</td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'payment_terms')" {% endif %}>{{ item.payment_terms }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'email')" {% endif %}>{{ item.email }}
-                    </td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'email')" {% endif %}>{{ item.email }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'phone')" {% endif %}>{{ item.phone }}
-                    </td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'phone')" {% endif %}>{{ item.phone }}</td>
                     <td {% if current_user.rule=='3' or current_user.rule=='0'
-                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'remark')" {% endif %}>{{ item.remark }}
-                    </td>
+                        %}ondblclick="makeEditable(this, '{{ item.cli_id }}', 'remark')" {% endif %}>{{ item.remark }}</td>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
-                    <td>
+                    <td style="text-align: center;">
                         <button class="btn"
                             style="padding: 0.3rem 0.6rem; font-size: 0.8rem; background: #ef4444; color: white;"
                             onclick="deleteCli('{{ item.cli_id }}')">删除</button>
@@ -256,6 +309,24 @@
     function changePageSize(size) {
         window.location.href = `/cli?page=1&page_size=${size}&search={{ search }}`;
     }
+    // 同步滚动
+    const tableContainer = document.getElementById('tableContainer');
+    const topScrollContainer = document.getElementById('topScrollContainer');
+    const topScrollContent = document.getElementById('topScrollContent');
+
+    // 设置顶部滚动条宽度
+    function syncScrollWidth() {
+        topScrollContent.style.width = tableContainer.scrollWidth + 'px';
+    }
+    syncScrollWidth();
+
+    // 同步滚动
+    topScrollContainer.addEventListener('scroll', () => {
+        tableContainer.scrollLeft = topScrollContainer.scrollLeft;
+    });
+    tableContainer.addEventListener('scroll', () => {
+        topScrollContainer.scrollLeft = tableContainer.scrollLeft;
+    });
     </script>
 </div>
 
@@ -415,7 +486,6 @@
     }
 
     function exportCli() {
-        // 直接下载导出文件
         window.location.href = '/api/cli/export';
     }
 
