@@ -750,7 +750,7 @@ def get_all_manager_orders_for_purchase(manager_ids):
         placeholders = ','.join(['?'] * len(manager_ids))
         rows = conn.execute(f"""
             SELECT o.offer_id, o.quoted_mpn as inquiry_mpn, o.quoted_brand as buy_brand, o.offer_price_rmb as price_rmb, o.price_usd,
-                   o.cost_price_rmb, q.cli_id, c.cli_name,
+                   o.cost_price_rmb, COALESCE(o.cli_id, q.cli_id) as cli_id, c.cli_name,
                    o.quoted_qty, o.date_code, o.delivery_date,
                    v.vendor_id, v.vendor_name, r.manager_id, m.customer_order_no,
                    CASE WHEN bu.buy_id IS NOT NULL THEN 1 ELSE 0 END as is_purchased
@@ -758,7 +758,7 @@ def get_all_manager_orders_for_purchase(manager_ids):
             JOIN uni_offer o ON r.offer_id = o.offer_id
             JOIN uni_order_manager m ON r.manager_id = m.manager_id
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
-            LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
+            LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
             LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
             LEFT JOIN uni_order ord ON ord.offer_id = o.offer_id
             LEFT JOIN uni_buy bu ON bu.order_id = ord.order_id
