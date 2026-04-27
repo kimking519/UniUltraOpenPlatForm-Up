@@ -563,11 +563,20 @@ async def vendor_delete_api(vendor_id: str = Form(...), current_user: dict = Dep
     return {"success": success, "message": msg}
 
 @app.get("/cli", response_class=HTMLResponse)
-async def cli_page(request: Request, page: int = 1, page_size: int = 20, search: str = "", current_user: dict = Depends(login_required)):
-    # 限制每页最多100条
-    page_size = min(max(1, page_size), 100)
+async def cli_page(request: Request, page: int = 1, page_size: int = 20, search: str = "", credit_level: str = "", current_user: dict = Depends(login_required)):
+    # 限制每页最多1000条
+    page_size = min(max(1, page_size), 1000)
     search_kwargs = {"cli_name": search} if search else None
-    result = get_paginated_list("uni_cli", page=page, page_size=page_size, search_kwargs=search_kwargs)
+
+    # 添加信用等级筛选
+    where_clause = None
+    where_params = []
+    if credit_level:
+        where_clause = "credit_level = ?"
+        where_params.append(credit_level)
+
+    result = get_paginated_list("uni_cli", page=page, page_size=page_size, search_kwargs=search_kwargs,
+                                where_clause=where_clause, where_params=where_params)
 
     # Needs employees for dropdown
     employees, _ = get_emp_list(page=1, page_size=1000)
@@ -575,7 +584,7 @@ async def cli_page(request: Request, page: int = 1, page_size: int = 20, search:
     return templates.TemplateResponse("cli.html", {
         "request": request, "active_page": "cli", "current_user": current_user,
         "items": result["items"], "total_pages": result["total_pages"], "total_count": result["total_count"],
-        "page": page, "page_size": page_size, "search": search, "employees": employees
+        "page": page, "page_size": page_size, "search": search, "credit_level": credit_level, "employees": employees
     })
 
 @app.post("/cli/add")

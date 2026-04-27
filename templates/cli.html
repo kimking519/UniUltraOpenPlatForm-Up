@@ -157,7 +157,14 @@
     <!-- 搜索框放到标题后面 -->
     <form action="/cli" method="get" class="header-search" style="display: flex; align-items: center; gap: 0.5rem;">
         <input type="text" name="search" value="{{ search }}" placeholder="搜索客户编号或名称...">
-        <button type="submit" class="btn btn-primary btn-sm">搜索</button>
+        <select name="credit_level" style="padding: 0.4rem; font-size: 0.85rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card-bg); color: var(--text-main);">
+            <option value="">全部等级</option>
+            <option value="A" {% if credit_level == 'A' %}selected{% endif %}>A</option>
+            <option value="B" {% if credit_level == 'B' %}selected{% endif %}>B</option>
+            <option value="C" {% if credit_level == 'C' %}selected{% endif %}>C</option>
+            <option value="D" {% if credit_level == 'D' %}selected{% endif %}>D</option>
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm" style="min-width: 60px; white-space: nowrap;">搜索</button>
         <input type="hidden" name="page_size" value="{{ page_size }}">
     </form>
     <div class="page-actions">
@@ -299,7 +306,7 @@
         {% if total_pages > 1 %}
         <div style="display: flex; gap: 0.5rem;">
             {% for p in range(1, total_pages + 1) %}
-            <a href="/cli?page={{ p }}&page_size={{ page_size }}&search={{ search }}" class="btn {% if p == page %}btn-primary{% endif %}"
+            <a href="/cli?page={{ p }}&page_size={{ page_size }}&search={{ search }}&credit_level={{ credit_level }}" class="btn {% if p == page %}btn-primary{% endif %}"
                 style="text-decoration: none; padding: 0.5rem 1rem; border: 1px solid var(--border);">{{ p }}</a>
             {% endfor %}
         </div>
@@ -307,7 +314,7 @@
     </div>
     <script>
     function changePageSize(size) {
-        window.location.href = `/cli?page=1&page_size=${size}&search={{ search }}`;
+        window.location.href = `/cli?page=1&page_size=${size}&search={{ search }}&credit_level={{ credit_level }}`;
     }
     // 同步滚动
     const tableContainer = document.getElementById('tableContainer');
