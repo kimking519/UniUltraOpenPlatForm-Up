@@ -2,11 +2,13 @@
 客户管理路由模块
 """
 from fastapi import APIRouter, Request, Form, Depends, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+import io
+from datetime import datetime
 
 from Sills.base import get_paginated_list
 from Sills.db_emp import get_emp_list
-from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli, batch_delete_cli
+from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli, batch_delete_cli, export_cli_to_excel
 from Sills.db_order import get_order_list
 from routes.auth import login_required, get_current_user, templates
 
@@ -137,6 +139,31 @@ async def cli_batch_delete_api(request: Request, current_user: dict = Depends(lo
         "failed_count": failed_count,
         "message": msg
     }
+
+
+@api_router.get("/api/cli/export")
+async def cli_export_api(current_user: dict = Depends(login_required)):
+    """导出客户数据到Excel"""
+    from urllib.parse import quote
+
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    filename = f"cli_export_{timestamp}.xlsx"
+
+    # 使用内存流
+    output = io.BytesIO()
+    success, result = export_cli_to_excel(output)
+
+    if not success:
+        return {"success": False, "message": result}
+
+    output.seek(0)
+    encoded_filename = quote(filename)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+    )
 
 
 @api_router.get("/api/cli/list")

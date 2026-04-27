@@ -2445,8 +2445,9 @@ async def api_order_manager_generate_pi_ci_kr(request: Request, current_user: di
             else:
                 errors.append(f"{customer_order_no} PI生成失败: {pi_result}")
 
-            # 生成 CI（传入customer_order_no作为invoice_no）
-            ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+            # 生成 CI（传入customer_order_no作为invoice_no，order_date作为invoice_date）
+            order_date = manager.get('order_date', '')
+            ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
             if ci_success:
                 # 重命名文件使用客户订单号
                 old_path = ci_result.get('excel_path', '')
@@ -2771,13 +2772,14 @@ async def api_order_manager_generate_ci(request: Request, current_user: dict = D
             if not currency_type:
                 currency_type = "KRW"
 
-            # 根据币种生成 CI（传入customer_order_no作为invoice_no）
+            # 根据币种生成 CI（传入customer_order_no作为invoice_no，order_date作为invoice_date）
+            order_date = manager.get('order_date', '')
             if currency_type == "KRW":
-                ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+                ci_success, ci_result = generate_ci_kr_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
             elif currency_type == "USD":
-                ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+                ci_success, ci_result = generate_ci_us_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
             elif currency_type == "JPY":
-                ci_success, ci_result = generate_ci_jp_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no)
+                ci_success, ci_result = generate_ci_jp_from_offers(offer_ids, output_base=output_dir, invoice_no=customer_order_no, invoice_date=order_date)
 
             if ci_success:
                 old_path = ci_result.get('excel_path', '')

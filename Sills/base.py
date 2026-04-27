@@ -1368,6 +1368,14 @@ def _init_db_sqlite():
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 
+        # 迁移：为 uni_email_log 添加 account_id 列（记录每条发送使用的账号）
+        try:
+            conn.execute("ALTER TABLE uni_email_log ADD COLUMN account_id TEXT")
+            conn.execute("ALTER TABLE uni_email_log ADD COLUMN account_email TEXT")
+            print("[DB] 迁移完成：uni_email_log 添加 account_id/account_email 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
         conn.execute("""
             INSERT INTO uni_emp (emp_id, emp_name, account, password, rule)
             VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')

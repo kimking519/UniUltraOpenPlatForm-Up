@@ -243,3 +243,112 @@ def batch_delete_cli(cli_ids):
         conn.commit()
 
     return deleted_count, failed_count, "批量删除完成"
+
+
+def export_cli_to_excel(output_path=None):
+    """导出客户数据到Excel
+
+    Args:
+        output_path: 输出文件路径或BytesIO对象（可选，默认自动生成）
+
+    Returns:
+        (success, file_path_or_bytesio) tuple
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from datetime import datetime
+        import io
+
+        with get_db_connection() as conn:
+            clients = conn.execute("""
+                SELECT cli_id, cli_name, cli_full_name, cli_name_en, contact_name,
+                       address, region, credit_level, margin_rate, emp_id, website,
+                       payment_terms, email, phone, remark, domain,
+                       is_contacted, has_inquiry, has_order, created_at
+                FROM uni_cli
+                ORDER BY created_at DESC
+            """).fetchall()
+
+        if not clients:
+            return False, "没有客户数据"
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "客户数据"
+
+        # 设置表头样式
+        header_fill = PatternFill(start_color='4F81BD', end_color='4F81BD', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF')
+        header_alignment = Alignment(horizontal='center', vertical='center')
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        headers = [
+            '客户编号', '客户名称', '公司全名', '公司英文名', '联系人',
+            '地址', '所属区域', '信用等级', '利润率(%)', '负责员工',
+            '网站', '账期', '邮箱', '电话', '备注', '域名',
+            '有联系人', '有询价', '有订单', '创建时间'
+        ]
+
+        # 写入表头
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+
+        # 写入数据
+        for row_idx, client in enumerate(clients, 2):
+            data = [
+                client[0] or '',   # cli_id
+                client[1] or '',   # cli_name
+                client[2] or '',   # cli_full_name
+                client[3] or '',   # cli_name_en
+                client[4] or '',   # contact_name
+                client[5] or '',   # address
+                client[6] or '',   # region
+                client[7] or '',   # credit_level
+                client[8] or 0,    # margin_rate
+                client[9] or '',   # emp_id
+                client[10] or '',  # website
+                client[11] or '',  # payment_terms
+                client[12] or '',  # email
+                client[13] or '',  # phone
+                client[14] or '',  # remark
+                client[15] or '',  # domain
+                '是' if client[16] else '否',  # is_contacted
+                '是' if client[17] else '否',  # has_inquiry
+                '是' if client[18] else '否',  # has_order
+                client[19] or ''   # created_at
+            ]
+
+            for col, value in enumerate(data, 1):
+                cell = ws.cell(row=row_idx, column=col, value=value)
+                cell.border = thin_border
+                cell.alignment = Alignment(vertical='center')
+
+        # 调整列宽
+        column_widths = [12, 20, 30, 25, 15, 30, 10, 10, 12, 12, 25, 15, 30, 20, 30, 25, 10, 10, 10, 20]
+        for col, width in enumerate(column_widths, 1):
+            col_letter = chr(64 + col) if col <= 26 else 'A' + chr(64 + col - 26)
+            ws.column_dimensions[col_letter].width = width
+
+        # 判断输出类型
+        if isinstance(output_path, io.BytesIO):
+            wb.save(output_path)
+            return True, output_path
+        else:
+            if not output_path:
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                output_path = f"cli_export_{timestamp}.xlsx"
+            wb.save(output_path)
+            return True, output_path
+
+    except Exception as e:
+        return False, str(e)

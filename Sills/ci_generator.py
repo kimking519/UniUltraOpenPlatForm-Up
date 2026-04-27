@@ -169,7 +169,7 @@ def get_orders_for_ci(order_ids):
         return [dict(r) for r in rows]
 
 
-def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_filename="CI_template_header.xlsx", footer_filename="CI_template_footer.xlsx", full_template_filename=None):
+def generate_ci_excel(orders, template_dir, output_path, invoice_no, invoice_date=None, header_filename="CI_template_header.xlsx", footer_filename="CI_template_footer.xlsx", full_template_filename=None):
     """
     使用模板生成CI Excel文件 - Header + Footer 简单拼接方式
 
@@ -178,6 +178,7 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
         template_dir: 模板目录路径
         output_path: 输出文件路径
         invoice_no: 发票编号
+        invoice_date: 发票日期（可选，默认使用当前日期）
         header_filename: Header模板文件名
         footer_filename: Footer模板文件名
         full_template_filename: 已废弃，不再使用
@@ -195,6 +196,10 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
     first_order = orders[0]
     now = datetime.now()
 
+    # 如果未传入invoice_date，使用当前日期
+    if not invoice_date:
+        invoice_date = now.strftime("%Y-%m-%d")
+
     # 只使用 Header + Footer 拼接方式
     header_path = os.path.join(template_dir, header_filename)
     footer_path = os.path.join(template_dir, footer_filename)
@@ -208,8 +213,6 @@ def generate_ci_excel(orders, template_dir, output_path, invoice_no, header_file
     ws = wb.active
 
     # 填写头部信息
-    invoice_date = now.strftime("%Y-%m-%d")
-
     ws['B2'] = invoice_no
     ws['F2'] = invoice_date
 
@@ -536,7 +539,7 @@ def generate_ci_kr(order_ids, output_base=None, template_dir=None):
                              full_template_filename="CI_template.xlsx")
 
 
-def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
+def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
     """
     基于报价生成韩国版 Commercial Invoice
 
@@ -545,6 +548,7 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None, i
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
         invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
+        invoice_date: 发票日期（可选，默认使用当前日期）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -622,11 +626,13 @@ def generate_ci_kr_from_offers(offer_ids, output_base=None, template_dir=None, i
             "email": offer.get("email", ""),
             "phone": offer.get("phone", ""),
             "address": offer.get("address", ""),
+            "region": offer.get("region", ""),
         }
         adapted_offers.append(adapted)
 
     # 生成 CI（使用完整模板保留印章图片）
     return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no,
+                             invoice_date=invoice_date,
                              full_template_filename="CI_template.xlsx")
 
 
@@ -676,7 +682,7 @@ def get_offers_for_ci_with_currency(offer_ids):
         return [dict(r) for r in rows]
 
 
-def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
+def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
     """
     基于报价生成日元版 Commercial Invoice
 
@@ -685,6 +691,7 @@ def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None, i
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
         invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
+        invoice_date: 发票日期（可选，默认使用当前日期）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -755,11 +762,13 @@ def generate_ci_jp_from_offers(offer_ids, output_base=None, template_dir=None, i
             "email": offer.get("email", ""),
             "phone": offer.get("phone", ""),
             "address": offer.get("address", ""),
+            "region": offer.get("region", ""),
         }
         adapted_offers.append(adapted)
 
     # 生成 CI-JP（使用完整模板保留印章图片）
     return generate_ci_excel(adapted_offers, template_dir, output_path, invoice_no,
+                             invoice_date=invoice_date,
                              header_filename="CI_template_header_JP.xlsx",
                              footer_filename="CI_template_footer_JP.xlsx",
                              full_template_filename="CI_template_JP.xlsx")

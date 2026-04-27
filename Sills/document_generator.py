@@ -222,16 +222,20 @@ def generate_ci_us(order_ids, output_base=None, template_dir=None):
     invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
 
     # 生成文档
-    return _generate_ci_us_excel(orders, template_dir, output_path, invoice_no)
+    return _generate_ci_us_excel(orders, template_dir, output_path, invoice_no, invoice_date=None)
 
 
-def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
+def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no, invoice_date=None):
     """生成美元版CI Excel文件 - Header + Footer 简单拼接方式"""
     import shutil
 
     data_count = len(orders)
     first_order = orders[0]
     now = datetime.now()
+
+    # 如果未传入invoice_date，使用当前日期
+    if not invoice_date:
+        invoice_date = now.strftime("%Y-%m-%d")
 
     # 只使用 Header + Footer 拼接方式
     header_path = os.path.join(template_dir, "CI_template_header_US.xlsx")
@@ -247,7 +251,7 @@ def _generate_ci_us_excel(orders, template_dir, output_path, invoice_no):
 
     # 填写头部信息
     ws['B2'] = invoice_no
-    ws['F2'] = now.strftime("%Y-%m-%d")
+    ws['F2'] = invoice_date
 
     cli_name_en = first_order.get("cli_name_en", "") or first_order.get("cli_name", "")
     ws['B9'] = cli_name_en
@@ -1956,7 +1960,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, i
     return _generate_pi_us_excel(adapted_offers, template_dir, output_path, invoice_no)
 
 
-def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
+def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None, invoice_date=None):
     """
     基于报价生成美元版 Commercial Invoice
 
@@ -1965,6 +1969,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, i
         output_base: 输出基础目录（可选）
         template_dir: 模板目录（可选）
         invoice_no: 发票编号（可选，默认自动生成 UNI%Y%m%d 格式）
+        invoice_date: 发票日期（可选，默认使用当前日期）
 
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
@@ -2046,7 +2051,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, i
         }
         adapted_offers.append(adapted)
 
-    return _generate_ci_us_excel(adapted_offers, template_dir, output_path, invoice_no)
+    return _generate_ci_us_excel(adapted_offers, template_dir, output_path, invoice_no, invoice_date=invoice_date)
 
 
 def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, invoice_no=None):
