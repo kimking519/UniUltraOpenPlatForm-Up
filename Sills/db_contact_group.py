@@ -5,6 +5,7 @@
 """
 import sqlite3
 import json
+import re
 from datetime import datetime
 from Sills.base import get_db_connection
 from Sills.db_contact import get_contact_by_email
@@ -843,8 +844,8 @@ def count_cli_group_contacts(criteria):
         total_emails = 0
         for r in rows:
             email_str = r[0] or ''
-            # 分割逗号分隔的邮箱
-            emails = [e.strip().lower() for e in email_str.split(',') if e.strip() and '@' in e.strip()]
+            # 分割逗号（中英文）、回车分隔的邮箱
+            emails = [e.strip().lower() for e in re.split(r'[，,\n\r]+', email_str) if e.strip() and '@' in e.strip()]
             total_emails += len(emails)
         return total_emails
 
@@ -898,7 +899,8 @@ def get_cli_group_contacts(criteria, page=1, page_size=100):
         for r in rows:
             cli = dict(r)
             email_str = cli.get('email', '') or ''
-            emails = [e.strip().lower() for e in email_str.split(',') if e.strip() and '@' in e.strip()]
+            # 分割逗号（中英文）、回车分隔的邮箱
+            emails = [e.strip().lower() for e in re.split(r'[，,\n\r]+', email_str) if e.strip() and '@' in e.strip()]
 
             for email in emails:
                 all_contacts.append({
