@@ -460,6 +460,42 @@
     </div>
 </div>
 
+<!-- 删除确认弹框 -->
+<div id="deleteModal" class="modal-overlay" style="display:none;">
+    <div class="card" style="width: 400px;">
+        <h3>确认删除</h3>
+        <p id="deleteModalText" style="margin-top: 1rem;">确定删除该订单吗？</p>
+        <div style="margin-top: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" id="cascadeDelete">
+                <span>级联删除（同时删除关联采购记录）</span>
+            </label>
+        </div>
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button class="btn btn-danger" onclick="confirmDelete()">确认删除</button>
+            <button class="btn" onclick="hideDeleteModal()">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 批量删除确认弹框 -->
+<div id="batchDeleteModal" class="modal-overlay" style="display:none;">
+    <div class="card" style="width: 400px;">
+        <h3>确认批量删除</h3>
+        <p id="batchDeleteModalText" style="margin-top: 1rem;">确定删除选中的订单吗？</p>
+        <div style="margin-top: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" id="batchCascadeDelete">
+                <span>级联删除（同时删除关联采购记录）</span>
+            </label>
+        </div>
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button class="btn btn-danger" onclick="confirmBatchDelete()">确认删除</button>
+            <button class="btn" onclick="hideBatchDeleteModal()">取消</button>
+        </div>
+    </div>
+</div>
+
 <style>
     .modal-overlay {
         position: fixed;
@@ -637,14 +673,29 @@
     async function batchDelete() {
         const ids = getSelectedIds();
         if (ids.length === 0) return alert('请选择要删除的记录');
-        if (!confirm(`确定删除选中的 ${ids.length} 个订单吗？`)) return;
+
+        pendingBatchDeleteIds = ids;
+        document.getElementById('batchDeleteModalText').innerText = `确定删除选中的 ${ids.length} 个订单吗？`;
+        document.getElementById('batchCascadeDelete').checked = false;
+        document.getElementById('batchDeleteModal').style.display = 'flex';
+    }
+
+    function hideBatchDeleteModal() {
+        pendingBatchDeleteIds = null;
+        document.getElementById('batchDeleteModal').style.display = 'none';
+    }
+
+    async function confirmBatchDelete() {
+        if (!pendingBatchDeleteIds || pendingBatchDeleteIds.length === 0) return;
+        const cascade = document.getElementById('batchCascadeDelete').checked;
 
         const resp = await fetch('/api/order/batch_delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids })
+            body: JSON.stringify({ ids: pendingBatchDeleteIds, cascade: cascade })
         });
         const res = await resp.json();
+        hideBatchDeleteModal();
         if (res.success) window.location.reload();
         else alert(res.message);
     }
@@ -821,14 +872,37 @@
         else alert(res.message);
     }
 
-    async function deleteOrder(orderId) {
-        if (!confirm('确定删除订单 ' + orderId + ' 吗？')) return;
+    // 删除订单相关变量和函数
+    let pendingDeleteOrderId = null;
+    let pendingBatchDeleteIds = null;
+
+    function showDeleteModal(orderId) {
+        pendingDeleteOrderId = orderId;
+        document.getElementById('deleteModalText').innerText = `确定删除订单 ${orderId} 吗？`;
+        document.getElementById('cascadeDelete').checked = false;
+        document.getElementById('deleteModal').style.display = 'flex';
+    }
+
+    function hideDeleteModal() {
+        pendingDeleteOrderId = null;
+        document.getElementById('deleteModal').style.display = 'none';
+    }
+
+    async function confirmDelete() {
+        if (!pendingDeleteOrderId) return;
+        const cascade = document.getElementById('cascadeDelete').checked;
         const formData = new FormData();
-        formData.append('order_id', orderId);
+        formData.append('order_id', pendingDeleteOrderId);
+        formData.append('cascade', cascade ? 'true' : 'false');
         const resp = await fetch('/api/order/delete', { method: 'POST', body: formData });
         const res = await resp.json();
+        hideDeleteModal();
         if (res.success) window.location.reload();
         else alert(res.message);
+    }
+
+    async function deleteOrder(orderId) {
+        showDeleteModal(orderId);
     }
 
     async function batchConvertToBuy() {

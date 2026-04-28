@@ -83,11 +83,13 @@ def generate_contract_from_manager(manager_id, output_dir=None):
     # 3. 设置输出目录
     if not output_dir:
         output_dir = _get_default_output_dir()
-
-    # 按日期创建子目录
-    date_dir = datetime.now().strftime("%Y%m%d")
-    final_output_dir = os.path.join(output_dir, cli_name, date_dir)
-    os.makedirs(final_output_dir, exist_ok=True)
+        # 单独生成时，按日期创建子目录
+        date_dir = datetime.now().strftime("%Y%m%d")
+        final_output_dir = os.path.join(output_dir, cli_name, date_dir)
+        os.makedirs(final_output_dir, exist_ok=True)
+    else:
+        # 批量生成时，直接使用传入的目录（已由 batch 函数创建）
+        final_output_dir = output_dir
 
     # 4. 加载模板并生成合同
     try:
@@ -135,8 +137,8 @@ def _generate_contract_excel(customer_order_no, order_date, offers, output_dir, 
     header_template_rows = 26   # Header模板总行数
 
     # 删除 Header 模板中的示例数据行（22-26行），保留表头21行
-    # 先复制第21行（表头）的样式
-    header_row_21_styles = _copy_row_styles(header_ws, 21)
+    # 先复制第22行（数据行示例）的样式，用于数据行（白色背景）
+    header_row_22_styles = _copy_row_styles(header_ws, 22)
 
     # 删除22-26行
     for _ in range(5):  # 删除5行（22-26）
@@ -150,87 +152,94 @@ def _generate_contract_excel(customer_order_no, order_date, offers, output_dir, 
         # 插入新行
         header_ws.insert_rows(insert_row)
 
-        # 应用样式（从第21行复制）
-        _apply_row_styles(header_ws, insert_row, header_row_21_styles)
+        # 应用样式（从第22行复制，白色背景）
+        _apply_row_styles(header_ws, insert_row, header_row_22_styles)
 
         # 填充数据
-        quoted_mpn = offer.get('quoted_mpn', offer.get('inquiry_mpn', ''))
-        quoted_brand = offer.get('quoted_brand', offer.get('inquiry_brand', ''))
-        actual_qty = offer.get('actual_qty', offer.get('quoted_qty', 0))
-        offer_price_rmb = offer.get('offer_price_rmb', 0)
-        cost_price_rmb = offer.get('cost_price_rmb', 0)
+        quoted_mpn = offer.get('quoted_mpn') or offer.get('inquiry_mpn', '')
+        quoted_brand = offer.get('quoted_brand') or offer.get('inquiry_brand', '')
+        actual_qty = offer.get('actual_qty') or offer.get('quoted_qty') or offer.get('inquiry_qty', 0)
+        # 合同使用成本价（cost_price_rmb），而不是报价（offer_price_rmb）
+        cost_price_rmb = offer.get('cost_price_rmb') or 0
 
-        # 金额 = 数量 × 成本价
+        # 金额 = 数量 × 含税单价（成本价）
         amount = actual_qty * cost_price_rmb if actual_qty and cost_price_rmb else 0
         total_amount += amount
 
-        # 填入各列
+        # 填入各列 (F列=含税单价, G列=金额=数量×含税单价)
         header_ws.cell(row=insert_row, column=1, value=idx)  # A: 序号
         header_ws.cell(row=insert_row, column=2, value=quoted_mpn)  # B: 型号
         header_ws.cell(row=insert_row, column=3, value=quoted_brand)  # C: 品牌
         header_ws.cell(row=insert_row, column=4, value='pcs')  # D: 单位
         header_ws.cell(row=insert_row, column=5, value=actual_qty)  # E: 数量
-        header_ws.cell(row=insert_row, column=6, value=round(offer_price_rmb, 1))  # F: 含税单价(精度1位)
-        header_ws.cell(row=insert_row, column=7, value=round(cost_price_rmb, 4))  # G: 成本价(RMB)
-        header_ws.cell(row=insert_row, column=8, value=round(amount, 2))  # H: 金额
+        header_ws.cell(row=insert_row, column=6, value=round(cost_price_rmb, 1))  # F: 含税单价(成本价，精度1位)
+        header_ws.cell(row=insert_row, column=7, value=round(amount, 1))  # G: 金额=数量×含税单价
+        header_ws.cell(row=insert_row, column=8, value='')  # H: 备注
 
     # Header部分的最后一行（数据结束行）
     header_end_row = 21 + data_rows_needed
 
-    # 合并 Footer 模板到 Header
+    # 合并 Footer 模板到 Header（参考PI生成代码）
     # Footer 模板的第1行对应最终文件的第 header_end_row + 1 行
     footer_start_row = header_end_row + 1
 
-    # 复制 Footer 的所有内容和样式
-    for row_idx, row in enumerate(footer_ws.iter_rows(min_row=1, max_row=footer_ws.max_row), start=footer_start_row):
-        for col_idx, cell in enumerate(row, start=1):
-            target_cell = header_ws.cell(row=row_idx, column=col_idx)
+    # 复制 Footer 的所有行（值、样式）
+    for src_row in range(1, footer_ws.max_row + 1):
+        dst_row = footer_start_row + src_row - 1
+        for col in range(1, 9):
+            src_cell = footer_ws.cell(row=src_row, column=col)
+            dst_cell = header_ws.cell(row=dst_row, column=col)
 
             # 复制值
-            if cell.value:
-                target_cell.value = cell.value
+            dst_cell.value = src_cell.value
 
             # 复制样式
-            if cell.font:
-                target_cell.font = copy(cell.font)
-            if cell.alignment:
-                target_cell.alignment = copy(cell.alignment)
-            if cell.border:
-                target_cell.border = copy(cell.border)
-            if cell.fill:
-                target_cell.fill = copy(cell.fill)
+            if src_cell.has_style:
+                dst_cell.font = copy(src_cell.font)
+                dst_cell.border = copy(src_cell.border)
+                dst_cell.fill = copy(src_cell.fill)
+                dst_cell.number_format = src_cell.number_format
+                dst_cell.alignment = copy(src_cell.alignment)
 
-            # 复制单元格格式（数字格式）
-            if cell.number_format and cell.number_format != 'General':
-                target_cell.number_format = cell.number_format
+        # 复制行高
+        if footer_ws.row_dimensions[src_row].height:
+            header_ws.row_dimensions[dst_row].height = footer_ws.row_dimensions[src_row].height
+
+    # 复制 Footer 的合并单元格（调整行号）
+    for merged_range in footer_ws.merged_cells.ranges:
+        new_min_row = footer_start_row + merged_range.min_row - 1
+        new_max_row = footer_start_row + merged_range.max_row - 1
+        new_range = f"{openpyxl.utils.get_column_letter(merged_range.min_col)}{new_min_row}:{openpyxl.utils.get_column_letter(merged_range.max_col)}{new_max_row}"
+        try:
+            header_ws.merge_cells(new_range)
+        except:
+            pass
 
     # 复制 Footer 中的图片（印章）
     for img in footer_ws._images:
-        # 创建图片副本并调整位置
-        new_img = copy(img)
-        # 调整 anchor 行号（Footer第1行变为 header_end_row + 1 行）
-        # openpyxl 的图片锚点需要调整
-        try:
-            # TwoCellAnchor 类型
-            if hasattr(new_img.anchor, '_from'):
-                # 调整起始位置
-                new_img.anchor._from.row += header_end_row
-            if hasattr(new_img.anchor, 'to'):
-                # 调整结束位置
-                new_img.anchor.to.row += header_end_row
-        except:
-            pass  # 图片位置调整失败时跳过
+        from copy import deepcopy
+        new_img = deepcopy(img)
+        if hasattr(img, 'anchor') and hasattr(img.anchor, '_from'):
+            new_img.anchor._from.row = footer_start_row + img.anchor._from.row - 1
+            if hasattr(img.anchor, 'to'):
+                new_img.anchor.to.row = footer_start_row + img.anchor.to.row - 1
         header_ws.add_image(new_img)
 
-    # 填充 Footer 的 F1（金额总和）
-    # F1 在 Footer 模板中是第1行，合并后是 footer_start_row 行
-    header_ws.cell(row=footer_start_row, column=6, value=round(total_amount, 1))
+    # 更新数据（只修改值，不改变样式）
+    # Footer第1行 = footer_start_row
+    # F列：合计金额公式
+    sum_formula = f"=SUM(G22:G{header_end_row})"
+    header_ws.cell(row=footer_start_row, column=6).value = sum_formula
 
-    # 更新 Footer 中的日期（如果有日期字段）
-    # Footer 中有签章日期（F29），更新为当前日期
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    header_ws.cell(row=footer_start_row + 28, column=6, value=current_date)  # F29 = 签章日期
-    header_ws.cell(row=footer_start_row + 28, column=2, value=current_date)  # B29 = 签章日期
+    # Footer第2行 = footer_start_row + 1
+    # D列：大写金额
+    chinese_amount = _number_to_chinese(total_amount)
+    header_ws.cell(row=footer_start_row + 1, column=4).value = chinese_amount
+
+    # Footer中的订单日期更新
+    # B29和F29填写订单日期（不是当前日期）
+    header_ws.cell(row=footer_start_row + 28, column=2).value = order_date  # B29
+    header_ws.cell(row=footer_start_row + 28, column=6).value = order_date  # F29
 
     # 保存文件
     filename = f"采购合同_{cli_name}_{customer_order_no}.xlsx"
@@ -280,6 +289,90 @@ def _apply_row_styles(ws, row_num, styles):
             cell.fill = style['fill']
         if 'number_format' in style:
             cell.number_format = style['number_format']
+
+
+def _number_to_chinese(num):
+    """
+    将数字转换为中文大写金额
+    例如: 10080 -> "壹万零捌拾元整"
+    """
+    if num is None or num == 0:
+        return "零元整"
+
+    # 中文数字字符
+    chinese_nums = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
+    chinese_units = ['', '拾', '佰', '仟']
+    chinese_big_units = ['', '万', '亿']
+
+    # 处理小数部分（角分）
+    num_float = float(num)
+    integer_part = int(num_float)
+    decimal_part = round(num_float - integer_part, 2)
+
+    # 转换整数部分
+    result = ""
+
+    if integer_part > 0:
+        # 分组处理（每4位一组，从低位到高位）
+        groups = []
+        temp = integer_part
+        while temp > 0:
+            groups.append(temp % 10000)
+            temp = temp // 10000
+
+        for i, group in enumerate(groups):
+            if group == 0:
+                continue
+
+            group_str = ""
+            # 处理四位数字：仟、佰、拾、个
+            digits = [group // 1000, (group // 100) % 10, (group // 10) % 10, group % 10]
+
+            for j, digit in enumerate(digits):
+                if digit > 0:
+                    group_str += chinese_nums[digit] + chinese_units[3 - j]
+                elif group_str and not group_str.endswith('零'):
+                    group_str += '零'
+
+            # 移除末尾多余的零
+            while group_str.endswith('零'):
+                group_str = group_str[:-1]
+
+            # 高位组（万位、亿位）与低位组之间需要零的情况
+            # 当低位组（groups[更小的索引]）的最高位为零时（即低位组 < 1000）
+            if i > 0:
+                # 检查所有更低位组是否有非零值且最高位为零
+                need_zero = False
+                for lower_i in range(i):
+                    if groups[lower_i] > 0 and groups[lower_i] < 1000:
+                        need_zero = True
+                        break
+                if need_zero and result and not result.startswith('零'):
+                    result = '零' + result
+
+            result = group_str + chinese_big_units[i] + result
+
+        # 移除开头多余的零
+        while result.startswith('零'):
+            result = result[1:]
+
+        # 添加"元"
+        result += "元"
+
+    # 处理小数部分
+    if decimal_part > 0:
+        jiao = int(decimal_part * 10)
+        fen = int(round(decimal_part * 100) % 10)
+
+        if jiao > 0:
+            result += chinese_nums[jiao] + "角"
+        if fen > 0:
+            result += chinese_nums[fen] + "分"
+    else:
+        # 没有小数部分，整数末尾加"整"
+        result += "整"
+
+    return result
 
 
 # ============================================================

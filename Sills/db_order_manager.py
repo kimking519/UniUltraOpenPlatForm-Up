@@ -178,20 +178,44 @@ def update_manager(manager_id, data):
         return False, f"数据库错误：{str(e)}"
 
 
-def delete_manager(manager_id):
-    """删除客户订单（级联删除关联的报价订单）"""
+def delete_manager(manager_id, cascade=False):
+    """删除客户订单
+    cascade=False: 检查引用，有则拒绝删除
+    cascade=True: 级联删除关联的报价、销售订单、采购记录
+    """
     try:
         with get_db_connection() as conn:
             # 获取关联的报价订单ID列表
             offer_ids = conn.execute("SELECT offer_id FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,)).fetchall()
             offer_ids = [row[0] for row in offer_ids]
 
-            # 删除关联的报价订单
             if offer_ids:
-                placeholders = ','.join(['?'] * len(offer_ids))
-                conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({placeholders})", offer_ids)
+                offer_placeholders = ','.join(['?'] * len(offer_ids))
 
-            # 删除关联记录（CASCADE也会自动删除，但手动删除更明确）
+                # 检查报价是否被销售订单引用
+                order_refs = conn.execute(f"SELECT order_id FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids).fetchall()
+                order_ids = [row[0] for row in order_refs]
+
+                if order_ids and not cascade:
+                    return False, f"无法删除：关联的报价被 {len(order_ids)} 条销售订单引用，请勾选【级联删除】选项"
+
+                if cascade:
+                    # 级联删除：先删除采购记录 -> 销售订单 -> 报价
+                    if order_ids:
+                        order_placeholders = ','.join(['?'] * len(order_ids))
+                        conn.execute(f"DELETE FROM uni_buy WHERE order_id IN ({order_placeholders})", order_ids)
+                        conn.execute(f"DELETE FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids)
+
+                    conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
+                else:
+                    # 不级联删除：只能删除未被引用的报价
+                    # 找出未被引用的报价
+                    unreferenced_offers = [oid for oid in offer_ids if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ?", (oid,)).fetchone()]
+                    if unreferenced_offers:
+                        unreferenced_placeholders = ','.join(['?'] * len(unreferenced_offers))
+                        conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({unreferenced_placeholders})", unreferenced_offers)
+
+            # 删除关联记录
             conn.execute("DELETE FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,))
 
             # 删除附件记录
@@ -200,7 +224,9 @@ def delete_manager(manager_id):
             # 删除客户订单
             conn.execute("DELETE FROM uni_order_manager WHERE manager_id = ?", (manager_id,))
             conn.commit()
-        return True, f"删除成功（同时删除了 {len(offer_ids)} 条关联报价）"
+
+        deleted_count = len(offer_ids) if cascade else len([oid for oid in offer_ids if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ?", (oid,)).fetchone()])
+        return True, f"删除成功（同时删除了 {deleted_count} 条关联报价）"
     except Exception as e:
         return False, f"数据库错误：{str(e)}"
 
@@ -474,8 +500,11 @@ def batch_import_manager(text, cli_id=None):
     return batch_import_manager_from_rows(rows_data, cli_id)
 
 
-def batch_delete_managers(manager_ids):
-    """批量删除客户订单（级联删除关联的报价订单）"""
+def batch_delete_managers(manager_ids, cascade=False):
+    """批量删除客户订单
+    cascade=False: 检查引用，有则拒绝删除
+    cascade=True: 级联删除关联的报价、销售订单、采购记录
+    """
     if not manager_ids:
         return True, "无选中记录"
     try:
@@ -486,10 +515,33 @@ def batch_delete_managers(manager_ids):
             offer_ids = conn.execute(f"SELECT offer_id FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids).fetchall()
             offer_ids = [row[0] for row in offer_ids]
 
-            # 删除关联的报价订单
             if offer_ids:
                 offer_placeholders = ','.join(['?'] * len(offer_ids))
-                conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
+
+                # 检查报价是否被销售订单引用
+                order_refs = conn.execute(f"SELECT order_id FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids).fetchall()
+                order_ids = [row[0] for row in order_refs]
+
+                if order_ids and not cascade:
+                    return False, f"无法删除：关联的报价被 {len(order_ids)} 条销售订单引用，请勾选【级联删除】选项"
+
+                if cascade:
+                    # 级联删除：先删除采购记录 -> 销售订单 -> 报价
+                    if order_ids:
+                        order_placeholders = ','.join(['?'] * len(order_ids))
+                        conn.execute(f"DELETE FROM uni_buy WHERE order_id IN ({order_placeholders})", order_ids)
+                        conn.execute(f"DELETE FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids)
+
+                    conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
+                else:
+                    # 不级联删除：只能删除未被引用的报价
+                    unreferenced_offers = []
+                    for oid in offer_ids:
+                        if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ?", (oid,)).fetchone():
+                            unreferenced_offers.append(oid)
+                    if unreferenced_offers:
+                        unreferenced_placeholders = ','.join(['?'] * len(unreferenced_offers))
+                        conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({unreferenced_placeholders})", unreferenced_offers)
 
             # 删除关联记录
             conn.execute(f"DELETE FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids)
@@ -500,7 +552,7 @@ def batch_delete_managers(manager_ids):
             # 删除客户订单
             conn.execute(f"DELETE FROM uni_order_manager WHERE manager_id IN ({placeholders})", manager_ids)
             conn.commit()
-        return True, f"成功删除 {len(manager_ids)} 条客户订单（同时删除了 {len(offer_ids)} 条关联报价）"
+        return True, f"成功删除 {len(manager_ids)} 条客户订单"
     except Exception as e:
         return False, str(e)
 

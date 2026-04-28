@@ -601,6 +601,29 @@
     </div>
 </div>
 
+<!-- 删除确认弹框 -->
+<div id="deleteModal" class="modal">
+    <div class="modal-content" style="width: 400px;">
+        <div class="modal-header">
+            <h2>确认删除</h2>
+            <button class="modal-close" onclick="hideDeleteModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="deleteModalText">确定删除此客户订单吗？</p>
+            <div style="margin-top: 1rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="cascadeDelete">
+                    <span>级联删除（同时删除关联报价、销售订单、采购记录）</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" onclick="doDelete()">确认删除</button>
+            <button class="btn btn-secondary" onclick="hideDeleteModal()">取消</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // 筛选功能
 function applyFilter() {
@@ -674,25 +697,43 @@ async function toggleStatus(managerId, field, value) {
     }
 }
 
-// 删除
-async function deleteItem(managerId) {
-    // 先获取关联数量
-    const checkResponse = await fetch(`/api/order_manager/${managerId}/orders`);
-    const orders = await checkResponse.json();
-    const relCount = orders.length;
+// 删除相关变量和函数
+let pendingDeleteId = null;
+let pendingBatchDeleteIds = null;
 
-    if (relCount > 0) {
-        alert(`无法删除：该客户订单关联了 ${relCount} 条销售订单，请先移除关联`);
-        return;
+function showDeleteModal(managerId) {
+    pendingDeleteId = managerId;
+    pendingBatchDeleteIds = null;
+    document.getElementById('deleteModalText').innerText = '确定删除此客户订单吗？';
+    document.getElementById('cascadeDelete').checked = false;
+    document.getElementById('deleteModal').style.display = 'flex';
+}
+
+function hideDeleteModal() {
+    pendingDeleteId = null;
+    pendingBatchDeleteIds = null;
+    document.getElementById('deleteModal').style.display = 'none';
+}
+
+async function doDelete() {
+    if (pendingBatchDeleteIds && pendingBatchDeleteIds.length > 0) {
+        await confirmBatchDelete();
+    } else if (pendingDeleteId) {
+        await confirmDelete();
     }
+}
 
-    if (!confirm('确定要删除此客户订单吗？')) return;
+async function confirmDelete() {
+    if (!pendingDeleteId) return;
+    const cascade = document.getElementById('cascadeDelete').checked;
 
     const formData = new FormData();
-    formData.append('manager_id', managerId);
+    formData.append('manager_id', pendingDeleteId);
+    formData.append('cascade', cascade ? 'true' : 'false');
 
     const response = await fetch('/api/order_manager/delete', { method: 'POST', body: formData });
     const result = await response.json();
+    hideDeleteModal();
     if (result.success) {
         location.reload();
     } else {
@@ -700,23 +741,39 @@ async function deleteItem(managerId) {
     }
 }
 
+// 删除
+async function deleteItem(managerId) {
+    showDeleteModal(managerId);
+}
+
 // 批量删除
-async function batchDelete() {
+function showBatchDeleteModal() {
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     if (checkboxes.length === 0) {
         alert('请先选择要删除的记录');
         return;
     }
-    if (!confirm(`确定要删除选中的 ${checkboxes.length} 条记录吗？`)) return;
+    pendingBatchDeleteIds = Array.from(checkboxes).map(cb => cb.value);
+    document.getElementById('deleteModalText').innerText = `确定删除选中的 ${checkboxes.length} 条客户订单吗？`;
+    document.getElementById('cascadeDelete').checked = false;
+    document.getElementById('deleteModal').style.display = 'flex';
+}
 
-    const ids = Array.from(checkboxes).map(cb => cb.value);
+async function batchDelete() {
+    showBatchDeleteModal();
+}
+
+async function confirmBatchDelete() {
+    if (!pendingBatchDeleteIds || pendingBatchDeleteIds.length === 0) return;
+    const cascade = document.getElementById('cascadeDelete').checked;
 
     const response = await fetch('/api/order_manager/batch_delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids: pendingBatchDeleteIds, cascade: cascade })
     });
     const result = await response.json();
+    hideDeleteModal();
     if (result.success) {
         location.reload();
     } else {

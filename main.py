@@ -1891,9 +1891,9 @@ async def api_order_update(order_id: str = Form(...), field: str = Form(...), va
     return {"success": ok, "message": msg}
 
 @app.post("/api/order/delete")
-async def api_order_delete(order_id: str = Form(...), current_user: dict = Depends(login_required)):
+async def api_order_delete(order_id: str = Form(...), cascade: str = Form(""), current_user: dict = Depends(login_required)):
     if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
-    ok, msg = delete_order(order_id)
+    ok, msg = delete_order(order_id, cascade=(cascade == "true" or cascade == "1"))
     return {"success": ok, "message": msg}
 
 @app.post("/api/order/batch_delete")
@@ -1901,7 +1901,8 @@ async def api_order_batch_delete(request: Request, current_user: dict = Depends(
     if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
     data = await request.json()
     ids = data.get("ids", [])
-    ok, msg = batch_delete_order(ids)
+    cascade = data.get("cascade", False)
+    ok, msg = batch_delete_order(ids, cascade=cascade)
     return {"success": ok, "message": msg}
 
 @app.post("/api/order/export_csv")
@@ -2208,9 +2209,9 @@ async def api_order_manager_update(manager_id: str = Form(...), field: str = For
     return {"success": ok, "message": msg}
 
 @app.post("/api/order_manager/delete")
-async def api_order_manager_delete(manager_id: str = Form(...), current_user: dict = Depends(login_required)):
+async def api_order_manager_delete(manager_id: str = Form(...), cascade: str = Form(""), current_user: dict = Depends(login_required)):
     if current_user['rule'] != '3': return {"success": False, "message": "无权限"}
-    ok, msg = delete_manager(manager_id)
+    ok, msg = delete_manager(manager_id, cascade=(cascade == "true" or cascade == "1"))
     return {"success": ok, "message": msg}
 
 @app.post("/api/order_manager/batch_delete")
@@ -2218,7 +2219,8 @@ async def api_order_manager_batch_delete(request: Request, current_user: dict = 
     if current_user['rule'] != '3': return {"success": False, "message": "仅管理员可删除"}
     data = await request.json()
     ids = data.get("ids", [])
-    ok, msg = batch_delete_managers(ids)
+    cascade = data.get("cascade", False)
+    ok, msg = batch_delete_managers(ids, cascade=cascade)
     return {"success": ok, "message": msg}
 
 @app.post("/api/order_manager/batch_link_transactions")

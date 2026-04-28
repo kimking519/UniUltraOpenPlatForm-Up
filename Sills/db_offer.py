@@ -299,12 +299,23 @@ def update_offer(offer_id, data):
         return False, str(e)
 
 def delete_offer(offer_id):
+    """删除报价记录，如果被订单引用则拒绝删除"""
     try:
         with get_db_connection() as conn:
+            # 检查是否被订单引用
+            order_ref = conn.execute(
+                "SELECT order_id FROM uni_order WHERE offer_id = ? LIMIT 1",
+                (offer_id,)
+            ).fetchone()
+            if order_ref:
+                return False, f"删除失败：报价已被订单 {order_ref['order_id']} 引用，请先删除关联订单。"
+
             conn.execute("DELETE FROM uni_offer WHERE offer_id = ?", (offer_id,))
             conn.commit()
             return True, "删除成功"
     except Exception as e:
+        if "FOREIGN KEY constraint failed" in str(e):
+            return False, "删除失败：报价已被后续流程引用，无法直接删除。"
         return False, str(e)
 
 def batch_delete_offer(offer_ids):

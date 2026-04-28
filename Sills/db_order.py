@@ -317,17 +317,21 @@ def batch_convert_from_offer(offer_ids, cli_id=None):
     except Exception as e:
         return False, str(e)
 
-def batch_delete_order(order_ids):
+def batch_delete_order(order_ids, cascade=False):
+    """批量删除订单，cascade=True时先删除关联采购记录"""
     if not order_ids: return True, "无选中记录"
     try:
         with get_db_connection() as conn:
             placeholders = ','.join(['?'] * len(order_ids))
+            if cascade:
+                # 先删除关联的采购记录
+                conn.execute(f"DELETE FROM uni_buy WHERE order_id IN ({placeholders})", order_ids)
             conn.execute(f"DELETE FROM uni_order WHERE order_id IN ({placeholders})", order_ids)
             conn.commit()
             return True, "批量删除成功"
     except Exception as e:
         if "FOREIGN KEY constraint failed" in str(e):
-            return False, "删除失败：部分记录已被 [采购记录]引用，无法直接删除。"
+            return False, "删除失败：部分记录已被采购记录引用。请勾选【级联删除】选项。"
         return False, str(e)
 
 def update_order_status(order_id, field, value):
@@ -362,15 +366,19 @@ def update_order(order_id, data):
     except Exception as e:
         return False, str(e)
 
-def delete_order(order_id):
+def delete_order(order_id, cascade=False):
+    """删除订单，cascade=True时先删除关联采购记录"""
     try:
         with get_db_connection() as conn:
+            if cascade:
+                # 先删除关联的采购记录
+                conn.execute("DELETE FROM uni_buy WHERE order_id = ?", (order_id,))
             conn.execute("DELETE FROM uni_order WHERE order_id = ?", (order_id,))
             conn.commit()
             return True, "删除成功"
     except Exception as e:
         if "FOREIGN KEY constraint failed" in str(e):
-            return False, "删除失败：记录已被 [采购记录]引用，无法直接删除。"
+            return False, "删除失败：订单已被采购记录引用。请勾选【级联删除】选项。"
         return False, str(e)
 
 def get_order_by_id(order_id):

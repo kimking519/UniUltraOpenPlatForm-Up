@@ -251,6 +251,17 @@
         <input type="date" id="start_date" value="{{ start_date }}">
         <input type="date" id="end_date" value="{{ end_date }}">
         <input type="text" id="search_input" value="{{ search }}" placeholder="采购单/型号/供应商...">
+        <div class="page-size-control" style="display: flex; flex-direction: row; align-items: center; gap: 0.25rem; flex-shrink: 0;">
+            <span style="white-space: nowrap;">每页</span>
+            <select id="page_size" onchange="changePageSize(this.value)" style="width: 60px;">
+                <option value="20" {% if page_size == 20 %}selected{% endif %}>20</option>
+                <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+                <option value="500" {% if page_size == 500 %}selected{% endif %}>500</option>
+                <option value="1000" {% if page_size == 1000 %}selected{% endif %}>1000</option>
+            </select>
+            <span style="white-space: nowrap;">条</span>
+        </div>
     </div>
     <!-- 按钮整合到加号下拉菜单 -->
     <div class="page-actions-dropdown">
@@ -379,15 +390,15 @@
         </table>
     </div>
 
-<div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center;">
+<div class="pagination" style="margin-top: 1rem; display: flex; gap: 0.5rem; justify-content: center; align-items: center;">
     {% if page is defined and page > 1 %}
-    <a href="/buy?page={{ page-1 }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_shipped={{ is_shipped }}"
+    <a href="/buy?page={{ page-1 }}&page_size={{ page_size }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_shipped={{ is_shipped }}"
         class="btn">上一页</a>
     {% endif %}
     <span>第 {{ page if page is defined else 1 }} / {{ total_pages if total_pages is defined else 1 }} 页 (共 {{ total if
         total is defined else 0 }} 条)</span>
     {% if page is defined and total_pages is defined and page < total_pages %} <a
-        href="/buy?page={{ page+1 }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_shipped={{ is_shipped }}"
+        href="/buy?page={{ page+1 }}&page_size={{ page_size }}&search={{ search }}&order_id={{ order_id }}&cli_id={{ cli_id }}&start_date={{ start_date }}&end_date={{ end_date }}&is_shipped={{ is_shipped }}"
         class="btn">下一页</a>
         {% endif %}
 </div>
@@ -539,7 +550,18 @@
         const search = document.getElementById('search_input').value;
         const start = document.getElementById('start_date').value;
         const end = document.getElementById('end_date').value;
-        window.location.href = `/buy?order_id=${ord}&cli_id=${cli}&is_shipped=${shipped}&search=${search}&start_date=${start}&end_date=${end}`;
+        const pageSize = document.getElementById('page_size')?.value || 20;
+        window.location.href = `/buy?order_id=${ord}&cli_id=${cli}&is_shipped=${shipped}&search=${search}&start_date=${start}&end_date=${end}&page_size=${pageSize}`;
+    }
+
+    function changePageSize(size) {
+        const cli = document.getElementById('filter_cli').value;
+        const ord = document.getElementById('filter_order').value;
+        const shipped = document.getElementById('filter_shipped').value;
+        const search = document.getElementById('search_input').value;
+        const start = document.getElementById('start_date').value;
+        const end = document.getElementById('end_date').value;
+        window.location.href = `/buy?page=1&page_size=${size}&order_id=${ord}&cli_id=${cli}&is_shipped=${shipped}&search=${search}&start_date=${start}&end_date=${end}`;
     }
 
     function toggleSelectAll(checked) {
