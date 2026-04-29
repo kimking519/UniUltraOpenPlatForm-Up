@@ -6,6 +6,7 @@ Contract Generator - 合同生成模块
 
 import os
 import platform
+import random
 from datetime import datetime
 from copy import copy
 
@@ -242,7 +243,8 @@ def _generate_contract_excel(customer_order_no, order_date, offers, output_dir, 
     header_ws.cell(row=footer_start_row + 28, column=6).value = order_date  # F29
 
     # 保存文件
-    filename = f"采购合同_{cli_name}_{customer_order_no}.xlsx"
+    random_num = random.randint(0, 999999)
+    filename = f"采购合同_UnicornTech_{customer_order_no}_{random_num:06d}.xlsx"
     excel_path = os.path.join(output_dir, filename)
     header_wb.save(excel_path)
     header_wb.close()

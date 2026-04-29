@@ -489,122 +489,60 @@
 
 <!-- Add Modal -->
 <div id="addModal" class="modal-overlay" style="display: none;">
-    <div class="card" style="width: 700px; max-height: 90vh; overflow-y: auto;">
+    <div class="card" style="width: 500px; max-height: 90vh; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
             <h3 style="margin: 0;">新增报价</h3>
             <button class="btn" onclick="toggleModal('addModal')" style="padding: 0.2rem 0.5rem;">&times;</button>
         </div>
 
-        <!-- Smart Inherit Section -->
-        <div
-            style="margin-bottom: 1rem; padding: 1rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
-            <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">智能带入需求 (选填)</p>
-            <div style="display: flex; gap: 0.5rem;">
-                <input type="text" id="quoteIdInput" placeholder="输入需求编号 (如 Q2025...)"
-                    style="flex: 1; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                <button type="button" class="btn btn-primary" onclick="loadQuoteData()">加载需求数据</button>
-            </div>
-            <p id="inheritMsg"
-                style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
-        </div>
-
-        <form action="/offer/add" method="post" style="display: flex; flex-direction: column; gap: 1rem;">
-            <input type="hidden" name="quote_id" id="formQuoteId">
-
-            <div style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价型号 (Inquiry MPN)*</label>
-                    <input type="text" name="inquiry_mpn" id="formInquiryMpn" required
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价型号 (Quoted MPN)</label>
-                    <input type="text" name="quoted_mpn" id="formQuotedMpn"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价品牌</label>
-                    <input type="text" name="inquiry_brand" id="formInquiryBrand"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价品牌</label>
-                    <input type="text" name="quoted_brand" id="formQuotedBrand"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">询价数量</label>
-                    <input type="number" name="inquiry_qty" id="formInquiryQty" value="0"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">实际数量</label>
-                    <input type="number" name="actual_qty" id="formActualQty" value="0"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价数量</label>
-                    <input type="number" name="quoted_qty" id="formQuotedQty" value="0"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">成本价(¥)</label>
-                    <input type="number" step="0.0001" name="cost_price_rmb" value="0.0"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价(¥)</label>
-                    <input type="number" step="0.0001" name="offer_price_rmb" value="0.0"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">供应商</label>
-                    <select name="vendor_id"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                        <option value="">-- 请选择供应商 --</option>
-                        {% for v in vendor_list %}
-                        <option value="{{ v.vendor_id }}">{{ v.vendor_name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-
-            <div style="display: flex; gap: 1rem;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">批号 (DC)</label>
-                    <input type="text" name="date_code"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期 (LT)</label>
-                    <input type="text" name="delivery_date"
-                        style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
-                </div>
-            </div>
-
+        <form id="addOfferForm" onsubmit="submitAddOffer(event)" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- 客户选择（选填） -->
             <div>
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">报价语句</label>
-                <input type="text" name="offer_statement"
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">客户（选填）</label>
+                <select name="cli_id" id="formCliId"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="">-- 请选择客户 --</option>
+                    {% for c in cli_list %}
+                    <option value="{{ c.cli_id }}">{{ c.cli_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- 型号（必填） -->
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">型号 *</label>
+                <input type="text" name="mpn" id="formMpn" required placeholder="输入型号"
                     style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
             </div>
 
+            <!-- 品牌（必填） -->
             <div>
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">备注</label>
-                <textarea name="remark"
-                    style="width: 100%; height: 50px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;"></textarea>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">品牌 *</label>
+                <input type="text" name="brand" id="formBrand" required placeholder="输入品牌"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
             </div>
+
+            <!-- 数量（必填） -->
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">数量 *</label>
+                <input type="number" name="qty" id="formQty" required placeholder="输入数量" min="1"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+
+            <!-- 批号（选填，有默认值） -->
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">批号 (DC)</label>
+                <input type="text" name="date_code" id="formDateCode" value="3년내" placeholder="批号"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+
+            <!-- 交期（选填，有默认值） -->
+            <div>
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">交期 (LT)</label>
+                <input type="text" name="delivery_date" id="formDeliveryDate" value="1~3days" placeholder="交期"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px;">
+            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
                 <button type="button" class="btn" onclick="toggleModal('addModal')">取消</button>
                 <button type="submit" class="btn btn-primary">提交</button>
@@ -653,6 +591,54 @@
 </div>
 
 <script>
+    // 简化新增报价提交函数
+    function submitAddOffer(e) {
+        e.preventDefault();
+        const form = document.getElementById('addOfferForm');
+        const mpn = form.mpn.value.trim();
+        const brand = form.brand.value.trim();
+        const qty = form.qty.value;
+        const cli_id = form.cli_id.value || '';
+        const date_code = form.date_code.value.trim() || '3년내';
+        const delivery_date = form.delivery_date.value.trim() || '1~3days';
+
+        if (!mpn || !brand || !qty) {
+            alert('请填写必填项：型号、品牌、数量');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('inquiry_mpn', mpn);
+        formData.append('quoted_mpn', mpn);
+        formData.append('inquiry_brand', brand);
+        formData.append('quoted_brand', brand);
+        formData.append('inquiry_qty', qty);
+        formData.append('quoted_qty', qty);
+        formData.append('actual_qty', qty);
+        formData.append('date_code', date_code);
+        formData.append('delivery_date', delivery_date);
+        if (cli_id) formData.append('cli_id', cli_id);
+
+        fetch('/api/offer/add_simple', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert('添加成功！');
+                toggleModal('addModal');
+                window.location.reload();
+            } else {
+                alert('添加失败: ' + data.message);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('请求失败');
+        });
+    }
+
     // 顶部滚动条同步功能
     function initTopScrollSync() {
         const topScroll = document.getElementById('topScrollContainer');

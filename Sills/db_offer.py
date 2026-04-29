@@ -37,7 +37,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
     query = f"""
     SELECT o.*, v.vendor_name, e.emp_name, c.cli_name, COALESCE(o.cli_id, c.cli_id) as cli_id, c.margin_rate,
            o.status, o.target_price_rmb,
-           (COALESCE(o.inquiry_mpn, '') || ' | ' || COALESCE(o.inquiry_brand, '') || ' | ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' pcs') as combined_info,
+           (COALESCE(o.quoted_mpn, '') || ' | ' || COALESCE(o.quoted_brand, '') || ' | ' || COALESCE(CAST(o.quoted_qty AS TEXT), '') || ' pcs') as combined_info,
            ('Model: ' || COALESCE(o.quoted_mpn, '') || ' | ' ||
             'Brand: ' || COALESCE(o.quoted_brand, '') || ' | ' ||
             'Amount(pcs): ' || COALESCE(CAST(o.inquiry_qty AS TEXT), '') || ' | ' ||
@@ -103,6 +103,10 @@ def add_offer(data, emp_id, conn=None):
         vendor_id = data.get('vendor_id')
         if vendor_id and str(vendor_id).strip() == "":
             vendor_id = None
+
+        cli_id = data.get('cli_id')
+        if not cli_id or str(cli_id).strip() == "":
+            cli_id = None
 
         # Validation Logic
         must_close = False
@@ -211,7 +215,7 @@ def add_offer(data, emp_id, conn=None):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             params = (
-                offer_id, offer_date, quote_id, data.get('cli_id'),
+                offer_id, offer_date, quote_id, cli_id,
                 inquiry_mpn, quoted_mpn,
                 inquiry_brand, quoted_brand,
                 inquiry_qty, actual_qty, quoted_qty,
@@ -557,8 +561,8 @@ def get_offer_combined_info(offer_ids):
         with get_db_connection() as conn:
             placeholders = ','.join(['?'] * len(offer_ids))
             rows = conn.execute(f"""
-                SELECT offer_id, inquiry_mpn, inquiry_qty,
-                       COALESCE(inquiry_mpn, '') || ' | ' || COALESCE(inquiry_brand, '') || ' | ' || COALESCE(CAST(inquiry_qty AS TEXT), '') || ' pcs' as combined_info
+                SELECT offer_id, quoted_mpn, quoted_qty,
+                       COALESCE(quoted_mpn, '') || ' | ' || COALESCE(quoted_brand, '') || ' | ' || COALESCE(CAST(quoted_qty AS TEXT), '') || ' pcs' as combined_info
                 FROM uni_offer WHERE offer_id IN ({placeholders})
             """, offer_ids).fetchall()
             return [row['combined_info'] for row in rows]

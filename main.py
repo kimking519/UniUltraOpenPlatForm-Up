@@ -1411,7 +1411,11 @@ async def get_server_memory_api():
         return {"success": False, "message": str(e)}
 
 @app.post("/api/offer/update")
-async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(...), current_user: dict = Depends(login_required)):
+async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(None), current_user: dict = Depends(login_required)):
+    # 空值或空字符串统一处理
+    if value is None or value == '':
+        value = ''
+
     if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无修改权限"}
         
@@ -1422,6 +1426,10 @@ async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), va
         return {"success": False, "message": f"非法字段: {field}"}
         
     if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 'price_kwr', 'price_usd']:
+        # 允许清空字段（空字符串转为 None）
+        if value == '' or value is None:
+            success, msg = update_offer(offer_id, {field: None})
+            return {"success": success, "message": msg}
         try:
             val = float(value) if 'price' in field else int(value)
             success, msg = update_offer(offer_id, {field: val})
@@ -1437,6 +1445,41 @@ async def offer_delete_api(offer_id: str = Form(...), current_user: dict = Depen
     if current_user['rule'] != '3':
         return {"success": False, "message": "仅管理员可删除"}
     success, msg = delete_offer(offer_id)
+    return {"success": success, "message": msg}
+
+@app.post("/api/offer/add_simple")
+async def offer_add_simple_api(
+    inquiry_mpn: str = Form(...),
+    quoted_mpn: str = Form(...),
+    inquiry_brand: str = Form(...),
+    quoted_brand: str = Form(...),
+    inquiry_qty: int = Form(...),
+    quoted_qty: int = Form(...),
+    actual_qty: int = Form(...),
+    cli_id: str = Form(None),
+    date_code: str = Form('3년내'),
+    delivery_date: str = Form('1~3days'),
+    current_user: dict = Depends(login_required)
+):
+    """简化新增报价 API"""
+    if current_user['rule'] not in ['3', '0']:
+        return {"success": False, "message": "无添加权限"}
+
+    emp_id = current_user['emp_id']
+    data = {
+        'inquiry_mpn': inquiry_mpn,
+        'quoted_mpn': quoted_mpn,
+        'inquiry_brand': inquiry_brand,
+        'quoted_brand': quoted_brand,
+        'inquiry_qty': inquiry_qty,
+        'quoted_qty': quoted_qty,
+        'actual_qty': actual_qty,
+        'cli_id': cli_id or '',
+        'date_code': date_code,
+        'delivery_date': delivery_date
+    }
+
+    success, msg = add_offer(data, emp_id)
     return {"success": success, "message": msg}
 
 @app.post("/api/offer/batch_delete")
