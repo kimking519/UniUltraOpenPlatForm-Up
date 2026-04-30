@@ -1033,3 +1033,94 @@ def get_all_groups_contacts_all_types(group_ids):
                 all_contacts[email] = c
 
     return list(all_contacts.values())
+
+
+def refresh_all_groups_contact_count():
+    """全量刷新所有联系人组的联系人数量
+
+    根据组的类型重新计算contact_count:
+    - 动态组: 根据filter_criteria重新查询uni_contact
+    - 静态组: 统计email_list中的邮箱数量
+    - 客户组: 根据filter_criteria重新查询uni_cli
+
+    Returns:
+        (success, message, stats) tuple
+        stats: {"updated": int, "errors": int, "details": list}
+    """
+    try:
+        with get_db_connection() as conn:
+            groups = conn.execute(
+                "SELECT group_id, group_name, group_type, filter_criteria, email_list, manual_emails FROM uni_contact_group"
+            ).fetchall()
+
+        updated_count = 0
+        error_count = 0
+        details = []
+
+        for group in groups:
+            group_id = group[0]
+            group_name = group[1]
+            group_type = group[2] or 'dynamic'
+            filter_criteria_json = group[3] or ''
+            email_list_json = group[4] or ''
+            manual_emails_json = group[5] or ''
+
+            try:
+                new_count = 0
+
+                if group_type == 'static':
+                    # 静态组：统计email_list中的邮箱
+                    email_list = json.loads(email_list_json) if email_list_json else []
+                    new_count = len(email_list)
+
+                elif group_type == 'cli_group':
+                    # 客户组：根据筛选条件重新查询uni_cli
+                    criteria = json.loads(filter_criteria_json) if filter_criteria_json else {}
+                    new_count = count_cli_group_contacts(criteria)
+
+                else:
+                    # 动态组：根据筛选条件重新查询uni_contact + 手动邮件
+                    criteria = json.loads(filter_criteria_json) if filter_criteria_json else {}
+                    filter_count = count_contacts_by_criteria(criteria)
+
+                    # 加上手动邮件数量（去重）
+                    manual_emails = json.loads(manual_emails_json) if manual_emails_json else []
+                    manual_count = len(manual_emails)
+
+                    # 注意：可能有重叠，这里简单相加，实际获取时会去重
+                    new_count = filter_count + manual_count
+
+                # 更新数据库
+                with get_db_connection() as conn:
+                    conn.execute(
+                        "UPDATE uni_contact_group SET contact_count = ?, updated_at = NOW() WHERE group_id = ?",
+                        (new_count, group_id)
+                    )
+                    conn.commit()
+
+                updated_count += 1
+                details.append({
+                    "group_id": group_id,
+                    "group_name": group_name,
+                    "old_count": None,  # 不查询旧值，节省时间
+                    "new_count": new_count,
+                    "status": "success"
+                })
+
+            except Exception as e:
+                error_count += 1
+                details.append({
+                    "group_id": group_id,
+                    "group_name": group_name,
+                    "error": str(e),
+                    "status": "error"
+                })
+
+        return True, f"刷新完成：更新 {updated_count} 个组，失败 {error_count} 个", {
+            "updated": updated_count,
+            "errors": error_count,
+            "details": details
+        }
+
+    except Exception as e:
+        return False, str(e), {"updated": 0, "errors": 0, "details": []}

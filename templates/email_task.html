@@ -201,108 +201,112 @@
 
 <!-- 联系人组Tab -->
 <div id="groupTabContent" style="display: none;">
-    <!-- 创建手动邮件组 -->
-    <div class="settings-section">
-        <h3>创建手动邮件组（用于测试）</h3>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
-            <input type="text" id="staticGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <button class="btn btn-primary btn-sm" onclick="showAddEmailsModal()">添加邮件</button>
-            <span id="staticGroupEmailCount" style="font-size: 12px; color: var(--text-muted);">已添加 0 个邮件</span>
+    <!-- 添加联系人组 - 三个模块横向排列 -->
+    <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+        <!-- 创建手动邮件组 - 蓝色标识 -->
+        <div class="settings-section" style="flex: 1; min-width: 280px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid #3B82F6;">
+            <h3 style="margin: 0 0 10px 0; padding: 8px 12px; font-size: 14px; color: white; background: #3B82F6; border-radius: var(--radius);">📧 手动邮件组（测试用）</h3>
+            <input type="text" id="staticGroupName" placeholder="组名称" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); margin-bottom: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <button class="btn btn-primary btn-sm" onclick="showAddEmailsModal()">添加邮件</button>
+                <button class="btn btn-ghost btn-sm" onclick="clearStaticGroupForm()">清空</button>
+                <span id="staticGroupEmailCount" style="font-size: 12px; color: var(--text-muted);">已添加 0 个邮件</span>
+            </div>
+            <div id="staticGroupEmailList" style="max-height: 100px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--bg-main); display: none;">
+                <!-- 邮件列表显示区域 -->
+            </div>
+            <div style="margin-top: 12px;">
+                <button class="btn btn-primary" onclick="createStaticGroup()" style="width: 100%;">创建手动邮件组</button>
+            </div>
         </div>
-        <div id="staticGroupEmailList" style="margin-top: 8px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--bg-main); display: none;">
-            <!-- 邮件列表显示区域 -->
-        </div>
-        <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-            <button class="btn btn-primary btn-sm" onclick="createStaticGroup()">创建组</button>
-            <button class="btn btn-ghost btn-sm" onclick="clearStaticGroupForm()">清空</button>
-        </div>
-    </div>
-    <!-- 添加客户组 -->
-    <div class="settings-section">
-        <h3>添加客户组（从现有客户获取邮箱）</h3>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
-            <input type="text" id="cliGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <input type="text" id="cliGroupCliName" placeholder="客户名称搜索" style="width: 140px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-        </div>
-        <div style="display: flex; gap: 15px; align-items: flex-start; margin-bottom: 8px;">
-            <div>
-                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">信用等级（多选）：</span>
+        <!-- 添加客户组 - 绿色标识 -->
+        <div class="settings-section" style="flex: 1; min-width: 300px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid #22C55E;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0; padding: 8px 12px; font-size: 14px; color: white; background: #22C55E; border-radius: var(--radius);">👥 客户组（从现有客户）</h3>
+                <button class="btn btn-ghost btn-sm" onclick="loadCliGroupOptions()" title="刷新信用等级和区域选项">🔄</button>
+            </div>
+            <input type="text" id="cliGroupName" placeholder="组名称" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); margin-bottom: 8px;">
+            <input type="text" id="cliGroupCliName" placeholder="客户名称搜索（可选）" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); margin-bottom: 8px;">
+            <div style="margin-bottom: 8px;">
+                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">信用等级：</span>
                 <div id="cliGroupCreditLevelList" style="display: flex; flex-wrap: wrap; gap: 4px;">
                     <!-- 动态加载 -->
                 </div>
             </div>
-            <div>
-                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">所属区域（多选）：</span>
+            <div style="margin-bottom: 8px;">
+                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">所属区域：</span>
                 <div id="cliGroupRegionList" style="display: flex; flex-wrap: wrap; gap: 4px;">
                     <!-- 动态加载 -->
                 </div>
             </div>
-        </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-            <button class="btn btn-primary btn-sm" onclick="previewCliGroupCount()">预览数量</button>
-            <button class="btn btn-ghost btn-sm" onclick="loadCliGroupOptions()">刷新选项</button>
-            <button class="btn btn-primary btn-sm" onclick="addCliGroup()">创建客户组</button>
-            <span id="cliGroupPreviewCount" style="font-size: 12px; color: var(--text-muted);"></span>
-        </div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：从客户表（uni_cli）的email字段获取邮箱，支持逗号分隔的多邮箱</div>
-    </div>
-    <!-- 添加筛选条件组 -->
-    <div class="settings-section">
-        <h3>添加筛选条件组</h3>
-        <div style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 8px;">
-            <input type="text" id="newGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <input type="text" id="newGroupDomain" placeholder="域名筛选" style="width: 140px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
-                <div id="newGroupCountryList" style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 300px;">
-                    <!-- 国家复选框列表，动态加载 -->
-                </div>
-                <button class="btn btn-ghost btn-sm" onclick="loadCountries()" title="刷新国家列表">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                </button>
+            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <button class="btn btn-primary btn-sm" onclick="previewCliGroupCount()" style="max-width: 100px;">预览</button>
+                <span id="cliGroupPreviewCount" style="font-size: 12px; color: var(--text-muted);">预计邮箱数: </span>
+            </div>
+            <div style="margin-top: 12px;">
+                <button class="btn btn-primary" onclick="addCliGroup()" style="width: 100%;">创建客户组</button>
             </div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
-            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-main);">
-                <input type="checkbox" id="newGroupHasCli" style="width: 16px; height: 16px;">
-                已关联客户
-            </label>
-            <select id="newGroupSendStatus" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <option value="">发送状态</option>
-                <option value="0">未发送</option>
-                <option value="1">已发送</option>
-            </select>
-            <select id="newGroupReadStatus" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <option value="">已读状态</option>
-                <option value="0">未读</option>
-                <option value="1">已读</option>
-            </select>
-            <select id="newGroupBounceStatus" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <option value="">退信状态</option>
-                <option value="0">未退信</option>
-                <option value="1">已退信</option>
-            </select>
-            <select id="newGroupSendCount" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <option value="">发送次数</option>
-                <option value="0">0次</option>
-                <option value="1-3">1-3次</option>
-                <option value="4+">4次以上</option>
-            </select>
-            <input type="number" id="newGroupLastSentDays" placeholder="未联系天数" min="1" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); cursor: pointer;">
-                <input type="checkbox" id="newGroupIncludeConverted" style="width: 14px; height: 14px;">
-                包含已转客户
-            </label>
+        <!-- 添加筛选条件组 - 紫色标识 -->
+        <div class="settings-section" style="flex: 1.5; min-width: 350px; padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid #A855F7;">
+            <h3 style="margin: 0 0 10px 0; padding: 8px 12px; font-size: 14px; color: white; background: #A855F7; border-radius: var(--radius);">🔍 筛选条件组（动态）</h3>
+            <input type="text" id="newGroupName" placeholder="组名称" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main); margin-bottom: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
+                <input type="text" id="newGroupDomain" placeholder="域名筛选" style="flex: 1; min-width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <button class="btn btn-ghost btn-sm" onclick="loadCountries()" title="刷新国家列表">🔄</button>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <span style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">国家：</span>
+                <div id="newGroupCountryList" style="display: flex; flex-wrap: wrap; gap: 4px;">
+                    <!-- 国家复选框列表，动态加载 -->
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-main);">
+                    <input type="checkbox" id="newGroupHasCli" style="width: 16px; height: 16px;">
+                    已关联客户
+                </label>
+                <select id="newGroupSendStatus" style="width: 90px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <option value="">发送状态</option>
+                    <option value="0">未发送</option>
+                    <option value="1">已发送</option>
+                </select>
+                <select id="newGroupReadStatus" style="width: 90px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <option value="">已读状态</option>
+                    <option value="0">未读</option>
+                    <option value="1">已读</option>
+                </select>
+                <select id="newGroupBounceStatus" style="width: 90px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <option value="">退信状态</option>
+                    <option value="0">未退信</option>
+                    <option value="1">已退信</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px;">
+                <select id="newGroupSendCount" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                    <option value="">发送次数</option>
+                    <option value="0">0次</option>
+                    <option value="1-3">1-3次</option>
+                    <option value="4+">4次以上</option>
+                </select>
+                <input type="number" id="newGroupLastSentDays" placeholder="未联系天数" min="1" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); cursor: pointer;">
+                    <input type="checkbox" id="newGroupIncludeConverted" style="width: 14px; height: 14px;">
+                    包含已转客户
+                </label>
+            </div>
+            <span id="groupPreviewCount" style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px;"></span>
+            <div style="margin-top: 12px;">
+                <button class="btn btn-primary" onclick="addGroup()" style="width: 100%;">创建筛选条件组</button>
+            </div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-            <button class="btn btn-primary btn-sm" onclick="addGroup()">添加</button>
-            <span id="groupPreviewCount" style="font-size: 12px; color: var(--text-muted);"></span>
-        </div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：选择筛选条件后，组将自动包含符合条件的联系人</div>
     </div>
-    <div class="settings-section">
-        <h3>联系人组列表</h3>
+    <!-- 联系人组列表 - 放在下方 -->
+    <div class="settings-section" style="padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0; font-size: 15px; color: var(--text-main);">联系人组列表</h3>
+            <button class="btn btn-ghost btn-sm" onclick="refreshAllGroups()" title="刷新所有组的联系人数量">🔄 刷新数量</button>
+        </div>
         <div style="max-height: 400px; overflow-y: auto;">
             <table class="data-table">
                 <thead>
@@ -631,6 +635,31 @@
             });
         } catch (e) {
             console.error('加载组失败', e);
+        }
+    }
+
+    // 刷新所有组的联系人数量
+    async function refreshAllGroups() {
+        try {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = '刷新中...';
+
+            const res = await fetch('/api/group/refresh', { method: 'POST' });
+            const data = await res.json();
+
+            btn.disabled = false;
+            btn.textContent = '🔄 刷新数量';
+
+            if (data.success) {
+                alert(data.message);
+                await loadGroups();
+            } else {
+                alert('刷新失败: ' + data.message);
+            }
+        } catch (e) {
+            console.error('刷新联系人组失败:', e);
+            alert('刷新失败');
         }
     }
 

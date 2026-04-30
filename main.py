@@ -5771,7 +5771,7 @@ async def api_prospect_refresh_counts(current_user: dict = Depends(login_require
 
 from Sills.db_contact_group import (
     get_group_list, get_group_by_id, add_group, update_group, delete_group,
-    get_group_contacts, get_all_groups_contacts
+    get_group_contacts, get_all_groups_contacts, refresh_all_groups_contact_count
 )
 from Sills.db_email_account import (
     get_account_list, get_account_by_id, get_account_by_email,
@@ -5841,6 +5841,13 @@ async def api_group_update(request: Request, current_user: dict = Depends(login_
 
     success, message = update_group(group_id, group_name, filter_criteria)
     return {"success": success, "message": message}
+
+
+@app.post("/api/group/refresh")
+async def api_group_refresh(current_user: dict = Depends(login_required)):
+    """全量刷新所有联系人组的联系人数量"""
+    success, message, stats = refresh_all_groups_contact_count()
+    return {"success": success, "message": message, "stats": stats}
 
 
 # ==================== 客户组管理 ====================

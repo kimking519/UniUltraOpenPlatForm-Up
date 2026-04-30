@@ -1764,7 +1764,10 @@
                         <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">提示：选择筛选条件后，组将自动包含符合条件的联系人</div>
                     </div>
                     <div class="settings-section" style="padding: 15px; background: var(--card-bg); border-radius: var(--radius); border: 1px solid var(--border);">
-                        <h3 style="margin: 0 0 10px 0; font-size: 15px; color: var(--text-main);">联系人组列表</h3>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="margin: 0; font-size: 15px; color: var(--text-main);">联系人组列表</h3>
+                            <button class="btn btn-ghost btn-sm" onclick="EmailTaskManager.refreshGroups()" title="刷新所有组的联系人数量">🔄 刷新数量</button>
+                        </div>
                         <div style="max-height: 400px; overflow-y: auto;">
                             <table class="data-table" style="width: 100%; font-size: 13px;">
                                 <thead>
@@ -6014,6 +6017,31 @@
                 }
             } catch (e) {
                 console.error('加载联系人组失败:', e);
+            }
+        },
+
+        async refreshGroups() {
+            try {
+                const btn = event.target;
+                btn.disabled = true;
+                btn.textContent = '刷新中...';
+
+                const res = await fetch('/api/group/refresh', { method: 'POST' });
+                const data = await res.json();
+
+                btn.disabled = false;
+                btn.textContent = '🔄 刷新数量';
+
+                if (data.success) {
+                    alert(data.message);
+                    // 重新加载列表
+                    await this.loadGroups();
+                } else {
+                    alert('刷新失败: ' + data.message);
+                }
+            } catch (e) {
+                console.error('刷新联系人组失败:', e);
+                alert('刷新失败');
             }
         },
 
