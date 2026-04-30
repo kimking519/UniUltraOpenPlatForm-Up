@@ -4,9 +4,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Prevent flash on theme load - must be before CSS -->
+    <script>
+        (function() {
+            // Apply saved theme immediately before CSS loads
+            var savedTheme = localStorage.getItem('theme');
+            var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+
+            // Apply saved sidebar width immediately to prevent flash
+            var savedSidebarWidth = localStorage.getItem('sidebarWidth');
+            if (savedSidebarWidth) {
+                var style = document.createElement('style');
+                style.id = 'sidebar-width-init';
+                style.textContent = '.sidebar { width: ' + savedSidebarWidth + 'px !important; }';
+                document.head.appendChild(style);
+            }
+        })();
+    </script>
     <title>UniUltra 开放平台</title>
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}?v=2.0">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
     <style>
         /* Sidebar Enhancements */
         .sidebar {
@@ -779,7 +798,7 @@
                 <span>供应商表</span>
             </a>
 
-            <a href="/mail" class="menu-item {% if active_page == 'mail' %}active{% endif %}" target="_blank">
+            <a href="/mail" class="menu-item {% if active_page == 'mail' %}active{% endif %}">
                 <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
@@ -936,6 +955,11 @@
             if (savedWidth) {
                 sidebar.style.width = savedWidth + 'px';
                 updateSidebarState(parseInt(savedWidth));
+                // Remove temporary inline style after JS applies width
+                var initStyle = document.getElementById('sidebar-width-init');
+                if (initStyle) {
+                    initStyle.remove();
+                }
             }
 
             let isResizing = false;
@@ -978,16 +1002,9 @@
     <!-- Theme Toggle Script -->
     <script>
         (function() {
-            const savedTheme = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                updateThemeIcons(true);
-            } else {
-                document.documentElement.removeAttribute('data-theme');
-                updateThemeIcons(false);
-            }
+            // Theme was already set in head, just update icons
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            updateThemeIcons(isDark);
         })();
 
         function toggleTheme() {

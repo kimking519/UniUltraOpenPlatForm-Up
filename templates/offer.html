@@ -65,7 +65,7 @@
     .price-increase-group .btn {
         height: 32px;
         padding: 0.4rem 0.75rem;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -147,14 +147,14 @@
     .data-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.6rem;
+        font-size: 0.8rem;
     }
 
     .data-table th {
         background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
-        padding: 0.4rem 0.5rem;
+        padding: 0.5rem 0.6rem;
         text-align: left;
-        font-size: 0.86rem;
+        font-size: 0.9rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.03em;
@@ -172,7 +172,7 @@
     }
 
     .data-table td {
-        padding: 0.35rem 0.4rem;
+        padding: 0.4rem 0.5rem;
         border-bottom: 1px solid #e2e8f0;
         border-right: 1px solid #e2e8f0;
     }
@@ -247,8 +247,14 @@
         </select>
     </div>
     {% if current_user.rule == '3' or current_user.rule == '0' %}
-    <!-- 按钮组：加价保持可见，其他整合到加号下拉菜单 -->
+    <!-- 按钮组：新增报价、加价保持可见，其他整合到加号下拉菜单 -->
     <div class="page-actions-group">
+        <!-- 新增报价按钮 -->
+        <button class="btn btn-primary" onclick="toggleModal('addModal')" style="margin-right: 8px;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            新增报价
+        </button>
+        <!-- 加价控件 -->
         <div class="price-increase-group">
             <input type="number" id="priceIncreaseRatio" value="15" min="1" max="500" step="1" style="width: 70px; text-align: center;">
             <span style="margin: 0 8px; color: #666;">%</span>
@@ -313,10 +319,6 @@
                 <button class="dropdown-item" onclick="toggleModal('importModal')">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                     批量导入
-                </button>
-                <button class="dropdown-item" onclick="toggleModal('addModal')">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                    新增报价
                 </button>
                 {% if current_user.rule == '3' %}
                 <div class="dropdown-divider"></div>
@@ -496,6 +498,18 @@
         </div>
 
         <form id="addOfferForm" onsubmit="submitAddOffer(event)" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- 智能带入区块 -->
+            <div style="margin-bottom: 0.5rem; padding: 0.75rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
+                <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">智能带入 (选填)</p>
+                <textarea id="smartInput" placeholder="输入：型号 品牌 数量 客户（支持多行，任意分隔符）&#10;示例：&#10;STM32F103, ST, 100, Samsung&#10;LM358 TI 50&#10;NE555|TI|200"
+                    style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+                <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn btn-primary" onclick="parseSmartInput()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;">解析填入</button>
+                    <button type="button" class="btn" onclick="batchInsertSmart()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: var(--success); color: white;">直接插入</button>
+                </div>
+                <p id="smartMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
+            </div>
+
             <!-- 客户选择（选填） -->
             <div>
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">客户（选填）</label>
@@ -558,7 +572,7 @@
 
         <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--light); border-radius: 4px;">
             <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式一：上传 CSV 文件 (推荐)</p>
-            <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
+            <p style="font-size: 0.8rem; color: var(--secondary); margin-bottom: 1rem;">
                 1. 点击这里 <a href="/static/template_offer.csv" download
                     style="color: var(--primary); font-weight: 600;">下载 Excel 标准模板 (CSV格式)</a><br>
                 2. 在 Excel 中用该模板录入数据并保存<br>
@@ -574,7 +588,7 @@
 
         <div style="padding: 1rem; border: 1px solid var(--border); border-radius: 4px;">
             <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500;">方式二：粘贴文本导入</p>
-            <p style="font-size: 0.85rem; color: var(--secondary); margin-bottom: 1rem;">
+            <p style="font-size: 0.8rem; color: var(--secondary); margin-bottom: 1rem;">
                 格式要求与模板一致：<br>日期,询价型号,报价型号,询价品牌,报价品牌,询价数量,报价数量,目标价(RMB),成本价(RMB),报价(RMB),客户名称,批号,交期,备注,状态<br>
                 (注: 日期格式 yyyy-mm-dd，客户名称需先在系统中存在，状态可选：询价中/已报价/缺货)
             </p>
@@ -636,6 +650,159 @@
         .catch(err => {
             console.error(err);
             alert('请求失败');
+        });
+    }
+
+    // 智能带入解析函数
+    function parseSmartInput() {
+        const input = document.getElementById('smartInput').value.trim();
+        const msgEl = document.getElementById('smartMsg');
+
+        if (!input) {
+            msgEl.textContent = '请输入数据';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        // 获取第一行
+        const lines = input.split('\n').filter(l => l.trim());
+        if (lines.length === 0) {
+            msgEl.textContent = '请输入有效数据';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        const firstLine = lines[0].trim();
+
+        // 使用正则分割：支持逗号、空格、分号、斜杠、反斜杠、Tab、|、#、-、中文逗号等
+        const parts = firstLine.split(/[,，;；\\\/\t|]+/).filter(p => p.trim());
+
+        if (parts.length < 3) {
+            msgEl.textContent = '数据不足，至少需要：型号、品牌、数量';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        // 解析字段：型号、品牌、数量、客户（可选）
+        const mpn = parts[0].trim();
+        const brand = parts[1].trim();
+        // 数量只提取纯数字，移除单位和符号
+        const qty = parts[2].replace(/[^\d]/g, '').trim();
+        const cliName = parts.length > 3 ? parts[3].trim() : '';
+
+        // 填入表单
+        document.getElementById('formMpn').value = mpn;
+        document.getElementById('formBrand').value = brand;
+        document.getElementById('formQty').value = qty;
+
+        // 匹配客户名称（小写模糊匹配）
+        if (cliName) {
+            const cliSelect = document.getElementById('formCliId');
+            const options = cliSelect.options;
+            let found = false;
+            const searchName = cliName.toLowerCase();
+            for (let i = 0; i < options.length; i++) {
+                if (options[i].text.toLowerCase().includes(searchName)) {
+                    cliSelect.value = options[i].value;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                msgEl.textContent = `客户 "${cliName}" 未找到，已忽略`;
+                msgEl.style.color = 'var(--warning)';
+            }
+        }
+
+        // 显示解析结果
+        const resultMsg = `已填入：${mpn} | ${brand} | ${qty}` + (cliName ? ` | ${cliName}` : '');
+        msgEl.textContent = resultMsg;
+        msgEl.style.color = 'var(--success)';
+
+        // 如果有多行，提示剩余行数
+        if (lines.length > 1) {
+            msgEl.textContent += ` (剩余 ${lines.length - 1} 行未处理)`;
+        }
+    }
+
+    // 批量直接插入函数
+    function batchInsertSmart() {
+        const input = document.getElementById('smartInput').value.trim();
+        const msgEl = document.getElementById('smartMsg');
+
+        if (!input) {
+            msgEl.textContent = '请输入数据';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        const lines = input.split('\n').filter(l => l.trim());
+        if (lines.length === 0) {
+            msgEl.textContent = '请输入有效数据';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        msgEl.textContent = `正在插入 ${lines.length} 条数据...`;
+        msgEl.style.color = 'var(--primary)';
+
+        const cliSelect = document.getElementById('formCliId');
+        const cliOptions = cliSelect.options;
+        let successCount = 0;
+        let failCount = 0;
+        const promises = [];
+
+        lines.forEach((line, idx) => {
+            const parts = line.trim().split(/[,，;；\\\/\t|]+/).filter(p => p.trim());
+            if (parts.length < 3) {
+                failCount++;
+                return;
+            }
+
+            const mpn = parts[0].trim();
+            const brand = parts[1].trim();
+            // 数量只提取纯数字，移除单位和符号
+            const qty = parts[2].replace(/[^\d]/g, '').trim();
+            let cliId = '';
+
+            // 匹配客户（如果有）
+            if (parts.length > 3) {
+                const cliName = parts[3].trim().toLowerCase();
+                for (let i = 0; i < cliOptions.length; i++) {
+                    if (cliOptions[i].text.toLowerCase().includes(cliName)) {
+                        cliId = cliOptions[i].value;
+                        break;
+                    }
+                }
+            }
+
+            const formData = new FormData();
+            formData.append('inquiry_mpn', mpn);
+            formData.append('quoted_mpn', mpn);
+            formData.append('inquiry_brand', brand);
+            formData.append('quoted_brand', brand);
+            formData.append('inquiry_qty', qty);
+            formData.append('quoted_qty', qty);
+            formData.append('actual_qty', qty);
+            formData.append('date_code', '3년내');
+            formData.append('delivery_date', '1~3days');
+            if (cliId) formData.append('cli_id', cliId);
+
+            promises.push(fetch('/api/offer/add_simple', {
+                method: 'POST',
+                body: formData
+            }).then(res => res.json()).then(data => {
+                if (data.success) successCount++;
+                else failCount++;
+            }).catch(() => failCount++));
+        });
+
+        Promise.all(promises).then(() => {
+            msgEl.textContent = `插入完成：成功 ${successCount} 条，失败 ${failCount} 条`;
+            msgEl.style.color = successCount > 0 ? 'var(--success)' : 'var(--danger)';
+            if (successCount > 0) {
+                setTimeout(() => window.location.reload(), 1000);
+            }
         });
     }
 

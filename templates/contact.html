@@ -754,7 +754,7 @@
     // 初始化
     document.addEventListener('DOMContentLoaded', () => {
         loadContacts();
-        ProspectManager.init();  // 初始化待开发客户（包括加载国家列表）
+        // ProspectManager 延迟初始化，只在用户切换到待开发客户 tab 时才加载
     });
 
     // 加载联系人列表
@@ -1293,6 +1293,7 @@
     }
 
     // Tab切换函数
+    let prospectInitialized = false;  // 标记是否已初始化
     function toggleTab(tab) {
         if (tab === 'contacts') {
             document.getElementById('tabContacts').className = 'btn btn-primary btn-sm';
@@ -1305,7 +1306,11 @@
             document.getElementById('tabProspects').className = 'btn btn-primary btn-sm';
             document.getElementById('contactsTabContent').style.display = 'none';
             document.getElementById('prospectsTabContent').style.display = 'block';
-            ProspectManager.init();
+            // 只在首次切换时初始化
+            if (!prospectInitialized) {
+                ProspectManager.init();
+                prospectInitialized = true;
+            }
         }
     }
 
