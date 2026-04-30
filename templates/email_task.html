@@ -77,39 +77,49 @@
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <input type="text" id="taskName" placeholder="任务名称" style="width: 180px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
         </div>
-        <!-- 发件人账号多选（支持轮换） -->
-        <div style="margin-top: 10px;">
-            <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">选择发件人账号（可多选，按顺序轮换）：</span>
-            <div style="display: flex; gap: 15px; margin-top: 8px;">
-                <!-- 可选账号列表 -->
-                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
-                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">可选账号（点击添加）</div>
-                    <div id="availableAccountsList"></div>
+        <!-- 发件人账号和联系人组选择器（横向并排） -->
+        <div style="margin-top: 10px; display: flex; gap: 20px;">
+            <!-- 左侧：发件人账号选择 -->
+            <div style="flex: 1;">
+                <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">选择发件人账号（可多选，按顺序轮换）：</span>
+                <div style="display: flex; gap: 15px; margin-top: 8px;">
+                    <!-- 可选账号列表 -->
+                    <div style="width: 240px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">可选账号（点击添加）</div>
+                        <div id="availableAccountsList"></div>
+                    </div>
+                    <!-- 已选账号列表（按优先顺序） -->
+                    <div style="width: 240px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">已选账号（点击移除）<br><span style="color: #F59E0B;">※ 按顺序轮换</span></div>
+                        <div id="selectedAccountsList"></div>
+                    </div>
                 </div>
-                <!-- 已选账号列表（按优先顺序） -->
-                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
-                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">已选账号（点击移除）<br><span style="color: #F59E0B;">※ 按顺序轮换，满限制自动切换</span></div>
-                    <div id="selectedAccountsList"></div>
-                </div>
+                <div id="selectedAccountsStats" style="font-size: 12px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何发件账号</div>
             </div>
-            <div id="selectedAccountsStats" style="font-size: 13px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何发件账号</div>
-        </div>
-        <!-- 联系人组选择器（点击添加/删除） -->
-        <div style="margin-top: 10px;">
-            <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">选择联系人组：</span>
-            <div style="display: flex; gap: 15px; margin-top: 8px;">
-                <!-- 可选组列表 -->
-                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
-                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">可选组（点击添加）</div>
-                    <div id="availableGroupsList"></div>
+            <!-- 右侧：联系人组选择 -->
+            <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 13px; color: var(--text-main); font-weight: 600;">选择联系人组：</span>
+                    <button class="btn btn-ghost btn-sm" onclick="loadGroupsForTask()" title="刷新联系人组">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                    </button>
                 </div>
-                <!-- 已选组列表 -->
-                <div style="width: 280px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
-                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">已选组（点击移除）</div>
-                    <div id="selectedGroupsList"></div>
+                <div style="display: flex; gap: 15px; margin-top: 8px;">
+                    <!-- 可选组列表 -->
+                    <div style="width: 240px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">可选组（点击添加）</div>
+                        <div id="availableGroupsList"></div>
+                    </div>
+                    <!-- 已选组列表 -->
+                    <div style="width: 240px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); padding: 8px; min-height: 100px; max-height: 200px; overflow-y: auto;">
+                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">已选组（点击移除）</div>
+                        <div id="selectedGroupsList"></div>
+                    </div>
                 </div>
+                <div id="selectedGroupsStats" style="font-size: 12px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何组</div>
             </div>
-            <div id="selectedGroupsStats" style="font-size: 13px; color: var(--text-main); margin-top: 5px; font-weight: 500;">尚未选择任何组</div>
         </div>
         <!-- 邮件模板选择 -->
         <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">

@@ -300,88 +300,186 @@
 </div>
 
 <script>
-// 页面加载时自动获取汇率
+// 页面加载时：先显示缓存汇率，后台异步刷新
 document.addEventListener('DOMContentLoaded', function() {
-    refreshRates();
+    loadCachedRates();
 });
 
-async function refreshRates() {
+// 全局存储比例数据
+let currentRatios = { krw: 0.03, jpy: 0.03, usd: 0.03, eur: 0.03 };
+
+async function loadCachedRates() {
     const rateGrid = document.getElementById('rateGrid');
     const updateTimeEl = document.getElementById('rateUpdateTime');
 
-    rateGrid.innerHTML = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);"><span>正在获取实时汇率...</span></div>';
+    rateGrid.innerHTML = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);"><span>正在加载汇率...</span></div>';
+
+    try {
+        // 只获取缓存汇率，不自动刷新网络
+        const cachedResponse = await fetch('/api/exchange/cached');
+        const cachedResult = await cachedResponse.json();
+
+        if (cachedResult.success) {
+            currentRatios = cachedResult.rate_ratios || { krw: 0.03, jpy: 0.03, usd: 0.03, eur: 0.03 };
+            renderRates(cachedResult.exchange_rates, cachedResult.original_rates, currentRatios);
+            updateTimeEl.textContent = cachedResult.last_refresh_time || '暂无刷新记录';
+        } else {
+            rateGrid.innerHTML = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);"><span>暂无汇率数据</span></div>';
+        }
+
+    } catch (error) {
+        rateGrid.innerHTML = `<div class="rate-item" style="justify-content: center; color: #EF4444;"><span>加载失败: ${error.message}</span></div>`;
+    }
+}
+
+async function refreshRatesFromNetwork() {
+    const updateTimeEl = document.getElementById('rateUpdateTime');
+    const refreshBtn = document.querySelector('button[onclick="refreshRates()"]');
+
+    // 显示刷新状态
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px; animation: spin 1s linear infinite;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>刷新中...';
+    }
 
     try {
         const response = await fetch('/api/exchange/fetch_latest');
         const result = await response.json();
 
         if (result.success) {
-            const rates = result.exchange_rates;
-            const suggested = result.suggested_rates;
-
-            let html = '';
-
-            // KRW
-            if (rates.krw) {
-                html += `
-                    <div class="rate-item">
-                        <div class="rate-label">1 RMB → 韩元 (KRW)</div>
-                        <div class="rate-values">
-                            <div class="rate-base" style="color: #10B981;">${rates.krw}</div>
-                            ${suggested.krw ? `<div class="rate-suggested"><span>建议:</span> ${suggested.krw}</div>` : ''}
-                        </div>
-                    </div>`;
-            }
-
-            // JPY
-            if (rates.jpy) {
-                html += `
-                    <div class="rate-item">
-                        <div class="rate-label">1 RMB → 日元 (JPY)</div>
-                        <div class="rate-values">
-                            <div class="rate-base" style="color: #10B981;">${rates.jpy}</div>
-                            ${suggested.jpy ? `<div class="rate-suggested"><span>建议:</span> ${suggested.jpy}</div>` : ''}
-                        </div>
-                    </div>`;
-            }
-
-            // USD to RMB
-            if (rates.usd_to_rmb) {
-                html += `
-                    <div class="rate-item">
-                        <div class="rate-label">1 美元 (USD) → RMB</div>
-                        <div class="rate-values">
-                            <div class="rate-base" style="color: #10B981;">${rates.usd_to_rmb}</div>
-                            ${suggested.usd_to_rmb ? `<div class="rate-suggested"><span>建议:</span> ${suggested.usd_to_rmb}</div>` : ''}
-                        </div>
-                    </div>`;
-            }
-
-            // EUR to RMB
-            if (rates.eur_to_rmb) {
-                html += `
-                    <div class="rate-item">
-                        <div class="rate-label">1 欧元 (EUR) → RMB</div>
-                        <div class="rate-values">
-                            <div class="rate-base" style="color: #10B981;">${rates.eur_to_rmb}</div>
-                            ${suggested.eur_to_rmb ? `<div class="rate-suggested"><span>建议:</span> ${suggested.eur_to_rmb}</div>` : ''}
-                        </div>
-                    </div>`;
-            }
-
-            if (!html) {
-                html = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);">暂无汇率数据</div>';
-            }
-
-            rateGrid.innerHTML = html;
-            updateTimeEl.textContent = rates.update_time || '';
-
+            // 网络获取成功后，重新加载缓存数据（使用数据库中的rate_ratio）
+            await loadCachedRates();
+            updateTimeEl.style.color = 'var(--accent)';
         } else {
-            rateGrid.innerHTML = `<div class="rate-item" style="justify-content: center; color: #EF4444;"><span>获取失败: ${result.error || '未知错误'}</span></div>`;
+            updateTimeEl.textContent = updateTimeEl.textContent + ' (网络获取失败)';
+            updateTimeEl.style.color = '#EF4444';
+            console.log('网络汇率获取失败:', result.error);
         }
     } catch (error) {
-        rateGrid.innerHTML = `<div class="rate-item" style="justify-content: center; color: #EF4444;"><span>请求失败: ${error.message}</span></div>`;
+        updateTimeEl.textContent = updateTimeEl.textContent + ' (网络获取失败)';
+        updateTimeEl.style.color = '#EF4444';
+        console.log('网络汇率请求失败:', error.message);
     }
+
+    // 恢复按钮状态
+    if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>刷新';
+    }
+}
+
+function renderRates(rates, original, ratios) {
+    const rateGrid = document.getElementById('rateGrid');
+    let html = '';
+
+    // KRW
+    if (rates.krw) {
+        const ratio = ratios.krw || 0.03;
+        html += `
+            <div class="rate-item" style="flex-direction: column; align-items: stretch;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <div class="rate-label">1 RMB → 韩元 (KRW)</div>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" max="1" value="${ratio}" style="width: 60px; padding: 2px 4px; font-size: 0.8rem; border: 1px solid #ddd; border-radius: 4px;" onchange="updateRatio(2, this.value)" title="推荐增量比例">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">+${(ratio * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="rate-base" style="color: #10B981; font-size: 1.1rem;">${rates.krw}</div>
+                    ${original && original.krw ? `<div class="rate-suggested" style="background: rgba(99, 102, 241, 0.1);"><span>原始:</span> ${original.krw}</div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    // JPY
+    if (rates.jpy) {
+        const ratio = ratios.jpy || 0.03;
+        html += `
+            <div class="rate-item" style="flex-direction: column; align-items: stretch;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <div class="rate-label">1 RMB → 日元 (JPY)</div>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" max="1" value="${ratio}" style="width: 60px; padding: 2px 4px; font-size: 0.8rem; border: 1px solid #ddd; border-radius: 4px;" onchange="updateRatio(3, this.value)" title="推荐增量比例">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">+${(ratio * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="rate-base" style="color: #10B981; font-size: 1.1rem;">${rates.jpy}</div>
+                    ${original && original.jpy ? `<div class="rate-suggested" style="background: rgba(99, 102, 241, 0.1);"><span>原始:</span> ${original.jpy}</div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    // USD to RMB
+    if (rates.usd_to_rmb) {
+        const ratio = ratios.usd || 0.03;
+        html += `
+            <div class="rate-item" style="flex-direction: column; align-items: stretch;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <div class="rate-label">1 美元 (USD) → RMB</div>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" max="1" value="${ratio}" style="width: 60px; padding: 2px 4px; font-size: 0.8rem; border: 1px solid #ddd; border-radius: 4px;" onchange="updateRatio(1, this.value)" title="推荐增量比例">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">-${(ratio * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="rate-base" style="color: #10B981; font-size: 1.1rem;">${rates.usd_to_rmb}</div>
+                    ${original && original.usd_to_rmb ? `<div class="rate-suggested" style="background: rgba(99, 102, 241, 0.1);"><span>原始:</span> ${original.usd_to_rmb}</div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    // EUR to RMB
+    if (rates.eur_to_rmb) {
+        const ratio = ratios.eur || 0.03;
+        html += `
+            <div class="rate-item" style="flex-direction: column; align-items: stretch;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <div class="rate-label">1 欧元 (EUR) → RMB</div>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <input type="number" step="0.01" min="0" max="1" value="${ratio}" style="width: 60px; padding: 2px 4px; font-size: 0.8rem; border: 1px solid #ddd; border-radius: 4px;" onchange="updateRatio(4, this.value)" title="推荐增量比例">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">-${(ratio * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="rate-base" style="color: #10B981; font-size: 1.1rem;">${rates.eur_to_rmb}</div>
+                    ${original && original.eur_to_rmb ? `<div class="rate-suggested" style="background: rgba(99, 102, 241, 0.1);"><span>原始:</span> ${original.eur_to_rmb}</div>` : ''}
+                </div>
+            </div>`;
+    }
+
+    if (!html) {
+        html = '<div class="rate-item" style="justify-content: center; color: var(--text-muted);">暂无汇率数据</div>';
+    }
+
+    rateGrid.innerHTML = html;
+}
+
+async function updateRatio(currencyCode, newRatio) {
+    try {
+        const response = await fetch('/api/exchange/update_ratio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currency_code: currencyCode, rate_ratio: parseFloat(newRatio) })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            // 更新本地比例
+            const key = currencyCode === 1 ? 'usd' : currencyCode === 2 ? 'krw' : currencyCode === 3 ? 'jpy' : 'eur';
+            currentRatios[key] = parseFloat(newRatio);
+            // 重新加载缓存汇率显示更新后的推荐汇率
+            loadCachedRates();
+        } else {
+            alert('更新失败: ' + result.message);
+        }
+    } catch (error) {
+        alert('请求失败: ' + error.message);
+    }
+}
+
+async function refreshRates() {
+    await refreshRatesFromNetwork();
 }
 
 async function saveRates() {
@@ -391,6 +489,8 @@ async function saveRates() {
 
         if (result.success) {
             alert('汇率已保存到数据库！\n\n更新时间: ' + result.update_time);
+            renderRates(result.exchange_rates, result.original_rates, currentRatios);
+            document.getElementById('rateUpdateTime').textContent = result.update_time;
         } else {
             alert('保存失败: ' + result.message);
         }

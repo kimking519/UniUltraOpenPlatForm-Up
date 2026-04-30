@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS uni_daily (
     record_date TEXT NOT NULL,
     currency_code INTEGER NOT NULL,
     exchange_rate DOUBLE PRECISION NOT NULL,
+    original_rate DOUBLE PRECISION,
+    rate_ratio DOUBLE PRECISION DEFAULT 0.03,
+    last_refresh_time TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(record_date, currency_code)
 );

@@ -1312,6 +1312,65 @@ async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
     krw, usd, jpy = get_exchange_rates()
     return {"success": True, "krw": krw, "usd": usd, "jpy": jpy}
 
+@app.get("/api/exchange/cached")
+async def get_cached_exchange_rates_api(current_user: dict = Depends(get_current_user)):
+    """获取数据库缓存的汇率（快速返回，不阻塞页面）
+
+    exchange_rate 字段存储推荐汇率：
+    - KRW/JPY: 1 RMB = X 外币（已乘以比例）
+    - USD/EUR: 1币种 = X RMB（已乘以比例）
+    rate_ratio: 推荐增量比例，默认0.03
+    """
+    from Sills.base import get_db_connection
+
+    with get_db_connection() as conn:
+        # 获取各币种汇率和比例
+        krw_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+        jpy_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=3 ORDER BY record_date DESC LIMIT 1").fetchone()
+        usd_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+        eur_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=4 ORDER BY record_date DESC LIMIT 1").fetchone()
+
+        # 找到最新的刷新时间
+        refresh_times = []
+        if krw_row and krw_row[3]: refresh_times.append(krw_row[3])
+        if jpy_row and jpy_row[3]: refresh_times.append(jpy_row[3])
+        if usd_row and usd_row[3]: refresh_times.append(usd_row[3])
+        if eur_row and eur_row[3]: refresh_times.append(eur_row[3])
+        last_refresh = max(refresh_times) if refresh_times else None
+
+        # 推荐汇率和比例
+        exchange_rates = {
+            "krw": float(krw_row[0]) if krw_row else None,
+            "jpy": float(jpy_row[0]) if jpy_row else None,
+            "usd_to_rmb": float(usd_row[0]) if usd_row else None,
+            "eur_to_rmb": float(eur_row[0]) if eur_row else None,
+        }
+
+        # 原始汇率
+        original_rates = {
+            "krw": float(krw_row[1]) if krw_row and krw_row[1] else None,
+            "jpy": float(jpy_row[1]) if jpy_row and jpy_row[1] else None,
+            "usd_to_rmb": round(1 / float(usd_row[1]), 4) if usd_row and usd_row[1] else None,
+            "eur_to_rmb": round(1 / float(eur_row[1]), 4) if eur_row and eur_row[1] else None,
+        }
+
+        # 推荐比例
+        rate_ratios = {
+            "krw": float(krw_row[2]) if krw_row and krw_row[2] else 0.03,
+            "jpy": float(jpy_row[2]) if jpy_row and jpy_row[2] else 0.03,
+            "usd": float(usd_row[2]) if usd_row and usd_row[2] else 0.03,
+            "eur": float(eur_row[2]) if eur_row and eur_row[2] else 0.03,
+        }
+
+    return {
+        "success": True,
+        "exchange_rates": exchange_rates,
+        "original_rates": original_rates,
+        "rate_ratios": rate_ratios,
+        "last_refresh_time": last_refresh,
+        "is_cached": True
+    }
+
 @app.get("/api/exchange/fetch_latest")
 async def fetch_latest_exchange_rates_api(current_user: dict = Depends(login_required)):
     """从网络获取实时汇率并返回"""
@@ -1332,8 +1391,16 @@ async def save_latest_exchange_rates_api(current_user: dict = Depends(login_requ
     if not save_success:
         return {"success": False, "message": save_msg}
 
-    # 计算建议汇率
-    suggested_rates = {
+    # 原始汇率
+    original_rates = {
+        "krw": rates["krw"],
+        "jpy": rates["jpy"],
+        "usd_to_rmb": rates["usd_to_rmb"],
+        "eur_to_rmb": rates["eur_to_rmb"],
+    }
+
+    # 推荐汇率（保存到数据库的值）
+    exchange_rates = {
         "krw": round(rates["krw"] * 1.025, 2) if rates["krw"] else None,
         "jpy": round(rates["jpy"] * 1.025, 2) if rates["jpy"] else None,
         "usd_to_rmb": round(rates["usd_to_rmb"] * 0.975, 4) if rates["usd_to_rmb"] else None,
@@ -1343,10 +1410,103 @@ async def save_latest_exchange_rates_api(current_user: dict = Depends(login_requ
     return {
         "success": True,
         "message": save_msg,
-        "exchange_rates": rates,
-        "suggested_rates": suggested_rates,
+        "exchange_rates": exchange_rates,
+        "original_rates": original_rates,
         "update_time": rates.get("update_time")
     }
+
+@app.post("/api/exchange/update_ratio")
+async def update_rate_ratio_api(request: Request, current_user: dict = Depends(login_required)):
+    """更新币种的推荐增量比例"""
+    from Sills.base import get_db_connection
+
+    data = await request.json()
+    currency_code = data.get("currency_code")
+    rate_ratio = data.get("rate_ratio")
+
+    if not currency_code or rate_ratio is None:
+        return {"success": False, "message": "缺少参数"}
+
+    try:
+        rate_ratio = float(rate_ratio)
+        if rate_ratio < 0 or rate_ratio > 1:
+            return {"success": False, "message": "比例必须在0-1之间"}
+    except:
+        return {"success": False, "message": "比例格式错误"}
+
+    with get_db_connection() as conn:
+        # 更新最新记录的比例
+        conn.execute(
+            "UPDATE uni_daily SET rate_ratio = ? WHERE currency_code = ? AND id = (SELECT id FROM uni_daily WHERE currency_code = ? ORDER BY record_date DESC LIMIT 1)",
+            (rate_ratio, currency_code, currency_code)
+        )
+        conn.commit()
+
+        # 根据新比例重新计算推荐汇率
+        row = conn.execute(
+            "SELECT original_rate FROM uni_daily WHERE currency_code = ? ORDER BY record_date DESC LIMIT 1",
+            (currency_code,)
+        ).fetchone()
+
+        if row and row[0]:
+            original = float(row[0])
+            if currency_code in [2, 3]:  # KRW, JPY: 1 RMB = X 外币
+                new_rate = round(original * (1 + rate_ratio), 2)
+            else:  # USD, EUR: 1币种 = X RMB
+                new_rate = round(1 / original * (1 - rate_ratio), 4)
+
+            # 更新推荐汇率
+            conn.execute(
+                "UPDATE uni_daily SET exchange_rate = ? WHERE currency_code = ? AND id = (SELECT id FROM uni_daily WHERE currency_code = ? ORDER BY record_date DESC LIMIT 1)",
+                (new_rate, currency_code, currency_code)
+            )
+            conn.commit()
+
+    return {"success": True, "message": "比例已更新", "rate_ratio": rate_ratio}
+
+@app.post("/api/exchange/update_ratio_by_id")
+async def update_rate_ratio_by_id_api(request: Request, current_user: dict = Depends(login_required)):
+    """按ID更新推荐增量比例"""
+    from Sills.base import get_db_connection
+
+    data = await request.json()
+    id = data.get("id")
+    rate_ratio = data.get("rate_ratio")
+
+    if not id or rate_ratio is None:
+        return {"success": False, "message": "缺少参数"}
+
+    try:
+        rate_ratio = float(rate_ratio)
+        if rate_ratio < 0 or rate_ratio > 1:
+            return {"success": False, "message": "比例必须在0-1之间"}
+    except:
+        return {"success": False, "message": "比例格式错误"}
+
+    with get_db_connection() as conn:
+        # 获取该记录的currency_code和original_rate
+        row = conn.execute("SELECT currency_code, original_rate FROM uni_daily WHERE id = ?", (id,)).fetchone()
+        if not row:
+            return {"success": False, "message": "记录不存在"}
+
+        currency_code = row[0]
+        original_rate = float(row[1]) if row[1] else None
+
+        # 更新比例
+        conn.execute("UPDATE uni_daily SET rate_ratio = ? WHERE id = ?", (rate_ratio, id))
+
+        # 根据新比例重新计算推荐汇率
+        if original_rate:
+            if currency_code in [2, 3]:  # KRW, JPY
+                new_rate = round(original_rate * (1 + rate_ratio), 2)
+            else:  # USD, EUR
+                new_rate = round(1 / original_rate * (1 - rate_ratio), 4)
+
+            conn.execute("UPDATE uni_daily SET exchange_rate = ? WHERE id = ?", (new_rate, id))
+
+        conn.commit()
+
+    return {"success": True, "message": "比例已更新", "rate_ratio": rate_ratio}
 
 @app.get("/api/server/env")
 async def get_server_env_api():

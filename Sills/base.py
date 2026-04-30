@@ -575,6 +575,9 @@ def _init_db_sqlite():
         record_date TEXT NOT NULL,
         currency_code INTEGER NOT NULL,
         exchange_rate REAL NOT NULL,
+        original_rate REAL,
+        rate_ratio REAL DEFAULT 0.03,
+        last_refresh_time TEXT,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         UNIQUE(record_date, currency_code)
     );
