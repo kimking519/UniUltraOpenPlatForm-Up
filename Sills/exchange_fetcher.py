@@ -56,10 +56,10 @@ def fetch_exchange_rates_from_api() -> tuple[bool, Dict[str, Any]]:
 
 def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:
     """
-    保存汇率到数据库（使用数据库中的rate_ratio计算推荐汇率）
+    保存汇率到数据库（只更新固定4条记录，不插入新数据）
 
     Args:
-        rates: 包含 krw, jpy, usd(原始USD汇率), eur(原始EUR汇率)
+        rates: 包含 krw, jpy, usd, eur 汇率数据
 
     Returns:
         (success, message)
@@ -71,10 +71,10 @@ def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:
 
         # 原始汇率：1 RMB = X 外币
         original_rates = {
-            2: raw_rates.get("KRW"),   # KRW: currency_code=2
-            3: raw_rates.get("JPY"),   # JPY: currency_code=3
-            1: raw_rates.get("USD"),   # USD: currency_code=1
-            4: raw_rates.get("EUR"),   # EUR: currency_code=4
+            2: raw_rates.get("KRW"),   # KRW: currency_code=2 (ID=1)
+            3: raw_rates.get("JPY"),   # JPY: currency_code=3 (ID=3)
+            1: raw_rates.get("USD"),   # USD: currency_code=1 (ID=2)
+            4: raw_rates.get("EUR"),   # EUR: currency_code=4 (ID=4)
         }
 
         with get_db_connection() as conn:
@@ -82,9 +82,9 @@ def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:
                 original = original_rates.get(currency_code)
 
                 if original and original > 0:
-                    # 获取该币种的比例（如果存在）
+                    # 获取该币种的比例
                     ratio_row = conn.execute(
-                        "SELECT rate_ratio FROM uni_daily WHERE currency_code = ? ORDER BY record_date DESC LIMIT 1",
+                        "SELECT rate_ratio FROM uni_daily WHERE currency_code = ?",
                         (currency_code,)
                     ).fetchone()
                     rate_ratio = float(ratio_row[0]) if ratio_row and ratio_row[0] else 0.03
@@ -95,27 +95,16 @@ def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:
                     else:  # USD, EUR: 1币种 = X RMB
                         recommended = round(1 / original * (1 - rate_ratio), 4)
 
-                    # 检查今天是否已有记录
-                    existing = conn.execute(
-                        "SELECT id FROM uni_daily WHERE record_date=? AND currency_code=?",
-                        (record_date, currency_code)
-                    ).fetchone()
-
-                    if existing:
-                        # 更新今天的记录：exchange_rate=推荐汇率, original_rate=原始汇率
-                        conn.execute(
-                            "UPDATE uni_daily SET exchange_rate=?, original_rate=?, last_refresh_time=? WHERE id=?",
-                            (recommended, original, refresh_time, existing[0])
-                        )
-                    else:
-                        # 插入新记录
-                        conn.execute(
-                            "INSERT INTO uni_daily (record_date, currency_code, exchange_rate, original_rate, rate_ratio, last_refresh_time) VALUES (?, ?, ?, ?, ?, ?)",
-                            (record_date, currency_code, recommended, original, rate_ratio, refresh_time)
-                        )
+                    # 只更新固定记录，不插入新数据
+                    conn.execute(
+                        """UPDATE uni_daily
+                           SET exchange_rate=?, original_rate=?, last_refresh_time=?, record_date=?
+                           WHERE currency_code=?""",
+                        (recommended, original, refresh_time, record_date, currency_code)
+                    )
             conn.commit()
 
-        return True, "汇率已保存到数据库（推荐汇率）"
+        return True, "汇率已更新"
     except Exception as e:
         return False, str(e)
 
