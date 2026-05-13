@@ -1,7 +1,7 @@
 """
 Exchange Rate Fetcher - 实时汇率获取模块
 
-从网络获取最新汇率数据。
+从网络获取最新汇率数据，支持多个API源切换。
 """
 
 import httpx
@@ -10,48 +10,103 @@ from typing import Optional, Dict, Any
 from Sills.base import get_db_connection
 
 
-# ExchangeRate-API (免费，支持CNY基准)
-EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/CNY"
+def fetch_from_frankfurter() -> tuple[bool, Dict[str, Any]]:
+    """
+    从 Frankfurter API 获取汇率（欧洲央行数据，更新频繁）
+
+    API格式: {"base":"CNY", "rates":{"USD":0.14725, "EUR":0.1257, ...}}
+    表示: 1 CNY = X 外币
+
+    返回:
+        KRW/JPY: 1 CNY = X 外币
+        USD/EUR: 1 币种 = X CNY (需要转换)
+    """
+    try:
+        url = "https://api.frankfurter.app/latest?from=CNY&to=USD,EUR,KRW,JPY"
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(url, follow_redirects=True)
+            response.raise_for_status()
+            data = response.json()
+
+            rates = data.get("rates", {})
+            usd = rates.get("USD", 1)  # 1 CNY = X USD
+            eur = rates.get("EUR", 1)  # 1 CNY = X EUR
+
+            return True, {
+                "krw": rates.get("KRW"),  # 1 CNY = X KRW
+                "jpy": rates.get("JPY"),  # 1 CNY = X JPY
+                "usd_to_rmb": round(1 / usd, 4) if usd else None,  # 1 USD = X CNY
+                "eur_to_rmb": round(1 / eur, 4) if eur else None,  # 1 EUR = X CNY
+                "base": "CNY",
+                "source": "Frankfurter (ECB)",
+                "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "date": data.get("date"),
+                "raw_rates": rates
+            }
+    except Exception as e:
+        return False, {"error": str(e), "source": "Frankfurter"}
+
+
+def fetch_from_exchange_rate_api() -> tuple[bool, Dict[str, Any]]:
+    """
+    从 ExchangeRate-API 获取汇率（备用源）
+
+    返回格式: 1 CNY = X 外币
+    """
+    try:
+        url = "https://open.er-api.com/v6/latest/CNY"
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("result") != "success":
+                return False, {"error": "API返回失败", "source": "ExchangeRate-API"}
+
+            rates = data.get("rates", {})
+
+            usd = rates.get("USD", 1)
+            eur = rates.get("EUR", 1)
+
+            return True, {
+                "krw": rates.get("KRW"),
+                "jpy": rates.get("JPY"),
+                "usd_to_rmb": round(1 / usd, 4) if usd else None,
+                "eur_to_rmb": round(1 / eur, 4) if eur else None,
+                "base": "CNY",
+                "source": "ExchangeRate-API",
+                "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "raw_rates": rates
+            }
+    except Exception as e:
+        return False, {"error": str(e), "source": "ExchangeRate-API"}
 
 
 def fetch_exchange_rates_from_api() -> tuple[bool, Dict[str, Any]]:
     """
-    从 ExchangeRate-API 获取实时汇率
+    从多个API源获取实时汇率（优先使用Frankfurter，数据更准确）
 
     返回:
         (success, result):
             success=True 时 result 包含汇率数据
             success=False 时 result 包含错误信息
 
-    汇率含义: 1 CNY = X 外币
+    汇率含义:
+        - KRW/JPY: 1 CNY = X 外币
+        - USD/EUR: 1 币种 = X RMB
     """
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(EXCHANGE_RATE_API_URL)
-            response.raise_for_status()
-            data = response.json()
+    # 优先使用 Frankfurter API（欧洲央行数据，更新更频繁）
+    success, result = fetch_from_frankfurter()
+    if success and result.get("krw") and result.get("usd_to_rmb"):
+        return success, result
 
-            if data.get("result") != "success":
-                return False, {"error": "API返回失败"}
+    # 备用：ExchangeRate-API
+    success, result = fetch_from_exchange_rate_api()
+    if success and result.get("krw"):
+        return success, result
 
-            rates = data.get("rates", {})
-
-            # 提取需要的币种
-            return True, {
-                "krw": rates.get("KRW"),
-                "jpy": rates.get("JPY"),
-                "usd_to_rmb": round(1 / rates.get("USD", 1), 4) if rates.get("USD") else None,
-                "eur_to_rmb": round(1 / rates.get("EUR", 1), 4) if rates.get("EUR") else None,
-                "base": "CNY",
-                "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "raw_rates": rates
-            }
-    except httpx.TimeoutException:
-        return False, {"error": "请求超时"}
-    except httpx.HTTPError as e:
-        return False, {"error": f"HTTP错误: {str(e)}"}
-    except Exception as e:
-        return False, {"error": str(e)}
+    # 都失败
+    return False, {"error": "所有汇率API均不可用", "source": "all"}
 
 
 def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:

@@ -505,7 +505,7 @@
                     style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
                 <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
                     <button type="button" class="btn btn-primary" onclick="parseSmartInput()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;">解析填入</button>
-                    <button type="button" class="btn" onclick="batchInsertSmart()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: var(--success); color: white;">直接插入</button>
+                    <button type="button" class="btn" onclick="batchInsertSmart()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: #f59e0b; color: white;">直接插入</button>
                 </div>
                 <p id="smartMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
             </div>
@@ -674,8 +674,8 @@
 
         const firstLine = lines[0].trim();
 
-        // 使用正则分割：支持逗号、空格、分号、斜杠、反斜杠、Tab、|、#、-、中文逗号等
-        const parts = firstLine.split(/[,，;；\\\/\t|]+/).filter(p => p.trim());
+        // 使用正则分割：支持逗号、分号、Tab、|、中文逗号等（不包含斜杠/反斜杠/#，因为型号中可能包含这些字符）
+        const parts = firstLine.split(/[,，;；\t|]+|\s{2,}/).filter(p => p.trim());
 
         if (parts.length < 3) {
             msgEl.textContent = '数据不足，至少需要：型号、品牌、数量';
@@ -725,7 +725,7 @@
         }
     }
 
-    // 批量直接插入函数
+    // 批量直接插入函数（改为预览确认模式）
     function batchInsertSmart() {
         const input = document.getElementById('smartInput').value.trim();
         const msgEl = document.getElementById('smartMsg');
@@ -743,50 +743,326 @@
             return;
         }
 
-        msgEl.textContent = `正在插入 ${lines.length} 条数据...`;
-        msgEl.style.color = 'var(--primary)';
-
+        // 解析数据生成预览列表
         const cliSelect = document.getElementById('formCliId');
         const cliOptions = cliSelect.options;
-        let successCount = 0;
-        let failCount = 0;
-        const promises = [];
+        const previewList = [];
+        const errorLines = [];
 
         lines.forEach((line, idx) => {
-            const parts = line.trim().split(/[,，;；\\\/\t|]+/).filter(p => p.trim());
+            const parts = line.trim().split(/[,，;；\t|]+|\s{2,}/).filter(p => p.trim());
             if (parts.length < 3) {
-                failCount++;
+                errorLines.push(`第 ${idx + 1} 行: 数据不足`);
                 return;
             }
 
             const mpn = parts[0].trim();
             const brand = parts[1].trim();
-            // 数量只提取纯数字，移除单位和符号
             const qty = parts[2].replace(/[^\d]/g, '').trim();
+            let cliName = '';
             let cliId = '';
 
-            // 匹配客户（如果有）
             if (parts.length > 3) {
-                const cliName = parts[3].trim().toLowerCase();
+                const inputCliName = parts[3].trim();
+                const searchName = inputCliName.toLowerCase();
+                let matched = false;
                 for (let i = 0; i < cliOptions.length; i++) {
-                    if (cliOptions[i].text.toLowerCase().includes(cliName)) {
+                    if (cliOptions[i].text.toLowerCase().includes(searchName)) {
                         cliId = cliOptions[i].value;
+                        cliName = cliOptions[i].text;
+                        matched = true;
                         break;
                     }
                 }
+                // 如果无法匹配，保留空（不使用输入的客户名）
+                if (!matched) {
+                    cliName = '';
+                    cliId = '';
+                }
             }
 
+            previewList.push({
+                mpn, brand, qty, cliId, cliName,
+                formData: {
+                    inquiry_mpn: mpn,
+                    quoted_mpn: mpn,
+                    inquiry_brand: brand,
+                    quoted_brand: brand,
+                    inquiry_qty: qty,
+                    quoted_qty: qty,
+                    actual_qty: qty,
+                    date_code: '3년내',
+                    delivery_date: '1~3days',
+                    cli_id: cliId
+                }
+            });
+        });
+
+        if (previewList.length === 0) {
+            msgEl.textContent = '无有效数据可插入';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        // 显示预览弹窗
+        showPreviewModal(previewList, errorLines, msgEl);
+    }
+
+    // 预览弹窗函数
+    function showPreviewModal(previewList, errorLines, msgEl) {
+        // 计算最长型号长度，用于自适应列宽
+        const maxMpnLength = previewList.reduce((max, item) => {
+            return Math.max(max, item.mpn.length);
+        }, 0);
+        const mpnColWidth = Math.max(maxMpnLength + 5, 10) + 'ch'; // 最少10ch，型号长度+5ch padding
+
+        // 创建弹窗HTML
+        const modalHtml = `
+            <div id="previewModalOverlay" class="modal-overlay" style="display: flex; z-index: 1000;">
+                <div class="card" style="width: 650px; max-height: 80vh; overflow-y: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0; color: #f59e0b;">插入预览确认</h3>
+                        <button class="btn" onclick="closePreviewModal()" style="padding: 0.2rem 0.5rem;">&times;</button>
+                    </div>
+                    ${errorLines.length > 0 ? `
+                        <div style="margin-bottom: 1rem; padding: 0.5rem; background: rgba(239,68,68,0.1); border-radius: 4px; color: #EF4444;">
+                            <strong>跳过的行:</strong> ${errorLines.join(', ')}
+                        </div>
+                    ` : ''}
+                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: var(--light); border-radius: 4px;">
+                        <strong>共 ${previewList.length} 条数据待插入</strong> <span style="color: var(--secondary); font-size: 0.8rem;">(双击单元格可修改)</span>
+                    </div>
+                    <table class="data-table" style="margin-bottom: 1rem;">
+                        <thead>
+                            <tr>
+                                <th style="padding: 0.4rem; width: ${mpnColWidth};">型号</th>
+                                <th style="padding: 0.4rem;">品牌</th>
+                                <th style="padding: 0.4rem;">数量</th>
+                                <th style="padding: 0.4rem;">客户</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${previewList.map((item, idx) => `
+                                <tr data-row="${idx}">
+                                    <td class="editable-cell" data-field="mpn" data-index="${idx}"
+                                        ondblclick="editCell(this, 'text')"
+                                        style="padding: 0.3rem; cursor: pointer;">${item.mpn}</td>
+                                    <td class="editable-cell" data-field="brand" data-index="${idx}"
+                                        ondblclick="editCell(this, 'text')"
+                                        style="padding: 0.3rem; cursor: pointer;">${item.brand}</td>
+                                    <td class="editable-cell" data-field="qty" data-index="${idx}"
+                                        ondblclick="editCell(this, 'text')"
+                                        style="padding: 0.3rem; cursor: pointer;">${item.qty}</td>
+                                    <td class="editable-cell" data-field="cliName" data-index="${idx}"
+                                        ondblclick="editCell(this, 'select')"
+                                        data-cli-id="${item.cliId || ''}"
+                                        style="padding: 0.3rem; cursor: pointer;">${item.cliName || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button class="btn" onclick="closePreviewModal()" style="padding: 0.4rem 1rem;">取消</button>
+                        <button class="btn" onclick="executeBatchInsert()" style="padding: 0.4rem 1rem; background: #f59e0b; color: white;">确认插入</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 存储预览数据供后续使用
+        window._previewInsertData = previewList;
+        window._previewMsgEl = msgEl;
+
+        // 关闭新增报价窗口
+        const addModal = document.getElementById('addModal');
+        if (addModal) addModal.style.display = 'none';
+
+        // 插入弹窗到body
+        const existingModal = document.getElementById('previewModalOverlay');
+        if (existingModal) existingModal.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    // 双击编辑单元格
+    function editCell(cell, type, optionsHtml) {
+        const field = cell.dataset.field;
+        const index = parseInt(cell.dataset.index);
+        const currentValue = cell.textContent.trim();
+        const originalValue = currentValue === '-' ? '' : currentValue;
+
+        // 如果已经在编辑状态，不重复处理
+        if (cell.querySelector('input') || cell.querySelector('select')) return;
+
+        if (type === 'text') {
+            // 创建输入框
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalValue;
+            input.style.cssText = 'width: 100%; padding: 0.2rem; border: 1px solid var(--primary); border-radius: 2px; font-size: 0.8rem;';
+            input.dataset.original = originalValue;
+
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+
+            // 保存修改
+            input.addEventListener('blur', function() {
+                saveCellEdit(cell, field, index, this.value);
+            });
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    this.blur();
+                } else if (e.key === 'Escape') {
+                    cell.textContent = originalValue || '-';
+                    // 恢复原始数据
+                    restoreOriginalData(field, index, originalValue);
+                }
+            });
+        } else if (type === 'select') {
+            // 客户列：改为带筛选功能的输入框
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalValue === '-' ? '' : originalValue;
+            input.placeholder = '输入客户名筛选';
+            input.style.cssText = 'width: 100%; padding: 0.2rem; border: 1px solid var(--primary); border-radius: 2px; font-size: 0.8rem;';
+            input.dataset.original = originalValue;
+            input.dataset.cliId = cell.dataset.cliId || '';
+
+            cell.textContent = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+
+            // 创建筛选下拉框
+            const dataList = document.createElement('datalist');
+            dataList.id = 'clientFilterList';
+            const cliSelect = document.getElementById('formCliId');
+            if (cliSelect && cliSelect.options) {
+                Array.from(cliSelect.options).forEach(opt => {
+                    if (opt.value) {
+                        const option = document.createElement('option');
+                        option.value = opt.text;
+                        option.dataset.cliId = opt.value;
+                        dataList.appendChild(option);
+                    }
+                });
+            }
+            document.body.appendChild(dataList);
+            input.setAttribute('list', 'clientFilterList');
+
+            // 输入时自动匹配客户（智能匹配）
+            input.addEventListener('input', function() {
+                const matchedId = findClientIdByName(this.value);
+                if (matchedId) {
+                    this.dataset.cliId = matchedId;
+                }
+            });
+
+            // 保存修改
+            input.addEventListener('blur', function() {
+                // 使用智能匹配获取客户ID
+                const matchedId = findClientIdByName(this.value);
+                saveCellEdit(cell, field, index, this.value, matchedId);
+                // 清理datalist
+                const dl = document.getElementById('clientFilterList');
+                if (dl) dl.remove();
+            });
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    this.blur();
+                } else if (e.key === 'Escape') {
+                    cell.textContent = originalValue;
+                    cell.dataset.cliId = window._previewInsertData[index].cliId || '';
+                    const dl = document.getElementById('clientFilterList');
+                    if (dl) dl.remove();
+                }
+            });
+        }
+    }
+
+    // 根据客户名查找客户ID
+    function findClientIdByName(name) {
+        if (!name || name.trim() === '') return '';
+        const cliSelect = document.getElementById('formCliId');
+        if (!cliSelect || !cliSelect.options) return '';
+
+        const searchName = name.trim().toLowerCase();
+        for (let i = 0; i < cliSelect.options.length; i++) {
+            if (cliSelect.options[i].text.toLowerCase().includes(searchName)) {
+                return cliSelect.options[i].value;
+            }
+        }
+        return '';
+    }
+
+    // 保存单元格编辑
+    function saveCellEdit(cell, field, index, value, cliId) {
+        const displayValue = value.trim() || '-';
+        cell.textContent = displayValue;
+
+        // 更新预览数据
+        const data = window._previewInsertData[index];
+        if (data) {
+            if (field === 'mpn') {
+                data.mpn = value.trim();
+                data.formData.inquiry_mpn = value.trim();
+                data.formData.quoted_mpn = value.trim();
+            } else if (field === 'brand') {
+                data.brand = value.trim();
+                data.formData.inquiry_brand = value.trim();
+                data.formData.quoted_brand = value.trim();
+            } else if (field === 'qty') {
+                const cleanQty = value.replace(/[^\d]/g, '').trim() || '0';
+                data.qty = cleanQty;
+                data.formData.inquiry_qty = cleanQty;
+                data.formData.quoted_qty = cleanQty;
+                data.formData.actual_qty = cleanQty;
+                cell.textContent = cleanQty;
+            } else if (field === 'cliName') {
+                data.cliName = value.trim();
+                data.cliId = cliId || '';
+                data.formData.cli_id = cliId || '';
+                cell.dataset.cliId = cliId || '';
+            }
+        }
+    }
+
+    // 恢复原始数据
+    function restoreOriginalData(field, index, value, cliId) {
+        // 保持原数据不变，已在 escape 处理中恢复显示
+    }
+
+    // 关闭预览弹窗
+    function closePreviewModal() {
+        const modal = document.getElementById('previewModalOverlay');
+        if (modal) modal.remove();
+        window._previewInsertData = null;
+        window._previewMsgEl = null;
+    }
+
+    // 执行批量插入
+    function executeBatchInsert() {
+        const previewList = window._previewInsertData;
+        const msgEl = window._previewMsgEl;
+
+        if (!previewList || previewList.length === 0) return;
+
+        closePreviewModal();
+        msgEl.textContent = `正在插入 ${previewList.length} 条数据...`;
+        msgEl.style.color = 'var(--primary)';
+
+        let successCount = 0;
+        let failCount = 0;
+        const promises = [];
+
+        previewList.forEach(item => {
             const formData = new FormData();
-            formData.append('inquiry_mpn', mpn);
-            formData.append('quoted_mpn', mpn);
-            formData.append('inquiry_brand', brand);
-            formData.append('quoted_brand', brand);
-            formData.append('inquiry_qty', qty);
-            formData.append('quoted_qty', qty);
-            formData.append('actual_qty', qty);
-            formData.append('date_code', '3년내');
-            formData.append('delivery_date', '1~3days');
-            if (cliId) formData.append('cli_id', cliId);
+            for (const [key, value] of Object.entries(item.formData)) {
+                if (value) formData.append(key, value);
+            }
 
             promises.push(fetch('/api/offer/add_simple', {
                 method: 'POST',
