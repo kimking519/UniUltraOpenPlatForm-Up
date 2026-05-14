@@ -417,7 +417,7 @@
                     <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_usd', 'USD', {{ row.price_usd or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ "%.3f"|format(row.price_usd or 0) }}</span></td>
                     <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_jpy', 'JPY', {{ row.price_jpy or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
-                            style="color:var(--primary);">{{ "%.1f"|format(row.price_jpy or 0) }}</span></td>
+                            style="color:var(--primary);">{{ "%.2f"|format(row.price_jpy or 0) }}</span></td>
                     <td><span style="color:#10b981; font-weight:500;">{{ row.profit }}</span></td>
                     <td><span style="color:#10b981; font-weight:bold;">{{ row.total_profit }}</span></td>
                     {% if current_user.rule == '3' or current_user.rule == '0' %}
@@ -1248,34 +1248,25 @@
         };
     }
 
-    // 编辑价格字段（KWR/USD/JPY），完成后自动计算 RMB
+    // 编辑价格字段（KWR/USD/JPY），完成后自动反算 RMB 并刷新所有价格
     async function makeEditablePrice(td, offer_id, field, currency, currentValue, currentRmb) {
         if (td.querySelector('input')) return;
 
-        // 获取最新汇率
-        let exchangeRate = currency === 'KWR' ? 180.0 : (currency === 'JPY' ? 20.0 : 7.0);
-        try {
-            const res = await fetch('/api/exchange/rates');
-            const rateData = await res.json();
-            if (rateData.success) {
-                exchangeRate = currency === 'KWR' ? rateData.krw : (currency === 'JPY' ? rateData.jpy : rateData.usd);
-            }
-        } catch (e) {
-            console.error('Failed to get exchange rate:', e);
-        }
-
         const originalValue = currentValue;
-        td.innerHTML = `<input type="number" step="0.0001" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
+        // 根据货币类型设置合适的步长
+        const step = currency === 'KWR' ? '0.1' : (currency === 'JPY' ? '0.01' : '0.001');
+        td.innerHTML = `<input type="number" step="${step}" value="${originalValue}" style="width: 100%; min-width: 60px; padding: 4px; box-sizing: border-box;">`;
         const input = td.querySelector('input');
         input.focus();
 
         const savePrice = async (newValue) => {
             if (newValue === originalValue) {
-                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                // 根据货币类型格式化显示
+                const fmt = currency === 'KWR' ? parseFloat(originalValue).toFixed(1) : (currency === 'JPY' ? parseFloat(originalValue).toFixed(2) : parseFloat(originalValue).toFixed(3));
+                td.innerHTML = `<span style="color:var(--primary);">${fmt}</span>`;
                 return;
             }
 
-            // 保存 KWR/USD
             const formData = new FormData();
             formData.append('offer_id', offer_id);
             formData.append('field', field);
@@ -1289,19 +1280,63 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    // USD/KWR 修改时不自动更新 RMB（按用户需求）
-                    td.innerHTML = `<span style="color:var(--primary);">${newValue}</span>`;
-                    // 局部更新，高亮显示
+                    // 更新当前编辑的单元格
+                    const fmt = currency === 'KWR' ? parseFloat(newValue).toFixed(1) : (currency === 'JPY' ? parseFloat(newValue).toFixed(2) : parseFloat(newValue).toFixed(3));
+                    td.innerHTML = `<span style="color:var(--primary);">${fmt}</span>`;
                     td.style.backgroundColor = '#dcfce7';
                     setTimeout(() => td.style.backgroundColor = 'transparent', 1000);
+
+                    // 如果返回了更新后的所有价格，刷新整行的价格单元格
+                    if (data.prices) {
+                        const row = td.closest('tr');
+                        if (row) {
+                            const cells = row.querySelectorAll('td');
+                            // 动态检测是否有checkbox列（管理员有checkbox，列索引偏移1）
+                            const hasCheckbox = cells[0].querySelector('.row-checkbox') !== null;
+                            const offset = hasCheckbox ? 1 : 0;
+
+                            // 定位各价格单元格：RMB在目标价之后，目标价在组合信息之后
+                            // 组合信息→目标价→报价RMB→报价KWR→报价USD→报价JPY
+                            // 更新报价(RMB) - 格式化为4位小数
+                            const rmbCell = cells[12 + offset];
+                            if (rmbCell) {
+                                rmbCell.innerHTML = `<span>${data.prices.offer_price_rmb.toFixed(4)}</span>`;
+                                rmbCell.style.backgroundColor = '#dcfce7';
+                                setTimeout(() => rmbCell.style.backgroundColor = 'transparent', 1000);
+                            }
+                            // 更新报价(KWR) - 格式化为1位小数
+                            const kwrCell = cells[13 + offset];
+                            if (kwrCell && field !== 'price_kwr') {
+                                kwrCell.innerHTML = `<span style="color:var(--primary);">${data.prices.price_kwr.toFixed(1)}</span>`;
+                                kwrCell.style.backgroundColor = '#dcfce7';
+                                setTimeout(() => kwrCell.style.backgroundColor = 'transparent', 1000);
+                            }
+                            // 更新报价(USD) - 格式化为3位小数
+                            const usdCell = cells[14 + offset];
+                            if (usdCell && field !== 'price_usd') {
+                                usdCell.innerHTML = `<span style="color:var(--primary);">${data.prices.price_usd.toFixed(3)}</span>`;
+                                usdCell.style.backgroundColor = '#dcfce7';
+                                setTimeout(() => usdCell.style.backgroundColor = 'transparent', 1000);
+                            }
+                            // 更新报价(JPY) - 格式化为2位小数
+                            const jpyCell = cells[15 + offset];
+                            if (jpyCell && field !== 'price_jpy') {
+                                jpyCell.innerHTML = `<span style="color:var(--primary);">${data.prices.price_jpy.toFixed(2)}</span>`;
+                                jpyCell.style.backgroundColor = '#dcfce7';
+                                setTimeout(() => jpyCell.style.backgroundColor = 'transparent', 1000);
+                            }
+                        }
+                    }
                 } else {
                     alert('更新失败：' + data.message);
-                    td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                    const fmt = currency === 'KWR' ? parseFloat(originalValue).toFixed(1) : (currency === 'JPY' ? parseFloat(originalValue).toFixed(2) : parseFloat(originalValue).toFixed(3));
+                    td.innerHTML = `<span style="color:var(--primary);">${fmt}</span>`;
                 }
             } catch (e) {
                 console.error('Error:', e);
                 alert('请求失败，请稍后重试');
-                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                const fmt = currency === 'KWR' ? parseFloat(originalValue).toFixed(1) : (currency === 'JPY' ? parseFloat(originalValue).toFixed(2) : parseFloat(originalValue).toFixed(3));
+                td.innerHTML = `<span style="color:var(--primary);">${fmt}</span>`;
             }
         };
 
@@ -1309,7 +1344,8 @@
         input.onkeydown = (e) => {
             if (e.key === 'Enter') input.blur();
             if (e.key === 'Escape') {
-                td.innerHTML = `<span style="color:var(--primary);">${originalValue}</span>`;
+                const fmt = currency === 'KWR' ? parseFloat(originalValue).toFixed(1) : (currency === 'JPY' ? parseFloat(originalValue).toFixed(2) : parseFloat(originalValue).toFixed(3));
+                td.innerHTML = `<span style="color:var(--primary);">${fmt}</span>`;
             }
         };
     }

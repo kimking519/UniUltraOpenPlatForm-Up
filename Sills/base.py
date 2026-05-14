@@ -383,7 +383,11 @@ def get_cached_rate(currency_code):
 
 
 def get_exchange_rates():
-    """获取最新汇率，使用缓存（返回KRW, USD, JPY）"""
+    """获取最新推荐汇率，使用缓存（返回KRW, USD, JPY）
+    注意：
+    - KRW/JPY: 1 RMB → X 外币（RMB乘以汇率得到外币）
+    - USD: 1 USD → X RMB（USD乘以汇率得到RMB）
+    """
     try:
         return get_cached_rate(2), get_cached_rate(1), get_cached_rate(3)
     except:
@@ -459,17 +463,17 @@ def _init_db_postgresql():
             conn.rollback()
             print(f"[DB] uni_cli send_mail 字段迁移: {e}")
 
-        # 迁移：uni_order_manager_rel 表从 order_id 改为 offer_id
+        # 迁移：uni_order_manager_rel 表从 offer_id 改为 order_id
         try:
-            # 检查是否存在 order_id 列
+            # 检查是否存在 offer_id 列（旧版本）
             cur.execute("""
                 SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'uni_order_manager_rel' AND column_name = 'order_id'
+                WHERE table_name = 'uni_order_manager_rel' AND column_name = 'offer_id'
             """)
             if cur.fetchone():
                 # 删除旧表并重建
                 cur.execute("DROP TABLE IF EXISTS uni_order_manager_rel CASCADE")
-                print("[DB] 迁移：uni_order_manager_rel 表已删除，将重建为关联报价订单")
+                print("[DB] 迁移：uni_order_manager_rel 表已删除，将重建为关联销售订单")
         except Exception as e:
             conn.rollback()
             print(f"[DB] 迁移检查: {e}")
@@ -511,6 +515,7 @@ def _init_db_postgresql():
             ("status", "TEXT DEFAULT '询价中'"),
             ("target_price_rmb", "DOUBLE PRECISION"),
             ("cli_id", "TEXT REFERENCES uni_cli(cli_id)"),
+            ("manager_id", "TEXT REFERENCES uni_order_manager(manager_id) ON DELETE SET NULL"),
         ]
         for col_name, col_def in offer_columns_to_add:
             try:
@@ -753,15 +758,15 @@ def _init_db_sqlite():
         FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON UPDATE CASCADE
     );
 
-    -- 客户订单与报价订单关联表（原销售订单关联表已迁移）
+    -- 客户订单与销售订单关联表
     CREATE TABLE IF NOT EXISTS uni_order_manager_rel (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         manager_id TEXT NOT NULL,
-        offer_id TEXT NOT NULL,
+        order_id TEXT NOT NULL,
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
-        FOREIGN KEY (offer_id) REFERENCES uni_offer(offer_id) ON DELETE CASCADE,
-        UNIQUE(manager_id, offer_id)
+        FOREIGN KEY (order_id) REFERENCES uni_order(order_id) ON DELETE CASCADE,
+        UNIQUE(manager_id, order_id)
     );
 
     -- 客户订单附件表
@@ -931,7 +936,7 @@ def _init_db_sqlite():
     CREATE INDEX IF NOT EXISTS idx_order_manager_cli ON uni_order_manager(cli_id);
     CREATE INDEX IF NOT EXISTS idx_order_manager_date ON uni_order_manager(order_date);
     CREATE INDEX IF NOT EXISTS idx_order_manager_rel_manager ON uni_order_manager_rel(manager_id);
-    CREATE INDEX IF NOT EXISTS idx_order_manager_rel_offer ON uni_order_manager_rel(offer_id);
+    CREATE INDEX IF NOT EXISTS idx_order_manager_rel_order ON uni_order_manager_rel(order_id);
 
     CREATE INDEX IF NOT EXISTS idx_daily_date ON uni_daily(record_date);
     CREATE INDEX IF NOT EXISTS idx_daily_currency ON uni_daily(currency_code);
@@ -1284,13 +1289,13 @@ def _init_db_sqlite():
             else:
                 print(f"[DB] 迁移警告：{e}")
 
-        # 迁移：uni_order_manager_rel 表从关联销售订单改为关联报价订单
+        # 迁移：uni_order_manager_rel 表从关联报价改为关联销售订单
         try:
-            # 检查表是否存在且有 order_id 列
+            # 检查表是否存在且有 offer_id 列（旧版本）
             old_schema = conn.execute("PRAGMA table_info(uni_order_manager_rel)").fetchall()
-            has_order_id = any(col[1] == 'order_id' for col in old_schema)
+            has_offer_id = any(col[1] == 'offer_id' for col in old_schema)
 
-            if has_order_id:
+            if has_offer_id:
                 # 备份旧数据（可选，这里直接清空因为关联关系改变）
                 conn.execute("DROP TABLE IF EXISTS uni_order_manager_rel_backup")
                 conn.execute("ALTER TABLE uni_order_manager_rel RENAME TO uni_order_manager_rel_backup")

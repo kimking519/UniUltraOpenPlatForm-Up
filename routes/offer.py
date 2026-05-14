@@ -137,23 +137,42 @@ api_router = APIRouter(tags=["offer-api"])
 @api_router.get("/api/exchange/rates")
 async def get_exchange_rates_api(current_user: dict = Depends(login_required)):
     """获取最新汇率"""
-    krw, usd, _ = get_exchange_rates()
-    return {"success": True, "krw": krw, "usd": usd}
+    krw, usd, jpy = get_exchange_rates()
+    return {"success": True, "krw": krw, "usd": usd, "jpy": jpy}
 
 
 @api_router.post("/api/offer/update")
 async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), value: str = Form(default=""), current_user: dict = Depends(login_required)):
-    """更新报价API"""
+    """更新报价API - 修改KWR/USD/JPY会自动反算RMB"""
     if current_user['rule'] not in ['3', '0']:
         return {"success": False, "message": "无修改权限"}
-    allowed_fields = ['cli_id', 'quoted_mpn', 'quoted_brand', 'quoted_qty', 'offer_price_rmb', 'offer_price_kwr', 'offer_price_usd', 'cost_price_rmb', 'date_code', 'delivery_date', 'remark', 'is_transferred', 'vendor_id']
+    allowed_fields = ['cli_id', 'quoted_mpn', 'quoted_brand', 'quoted_qty', 'offer_price_rmb', 'price_kwr', 'price_usd', 'price_jpy', 'cost_price_rmb', 'date_code', 'delivery_date', 'remark', 'is_transferred', 'vendor_id', 'status']
     if field not in allowed_fields:
         return {"success": False, "message": f"非法字段: {field}"}
 
-    if field in ['quoted_qty', 'offer_price_rmb', 'offer_price_kwr', 'offer_price_usd', 'cost_price_rmb']:
+    if field in ['quoted_qty', 'offer_price_rmb', 'price_kwr', 'price_usd', 'price_jpy', 'cost_price_rmb']:
         try:
             val = float(value)
             success, msg = update_offer(offer_id, {field: val})
+
+            # 如果是价格字段更新，返回更新后的所有价格值供前端刷新
+            if success and field in ['offer_price_rmb', 'price_kwr', 'price_usd', 'price_jpy']:
+                with get_db_connection() as conn:
+                    row = conn.execute(
+                        "SELECT offer_price_rmb, price_kwr, price_usd, price_jpy FROM uni_offer WHERE offer_id = ?",
+                        (offer_id,)
+                    ).fetchone()
+                    if row:
+                        return {
+                            "success": True,
+                            "message": msg,
+                            "prices": {
+                                "offer_price_rmb": round(float(row['offer_price_rmb'] or 0), 4),
+                                "price_kwr": round(float(row['price_kwr'] or 0), 1),
+                                "price_usd": round(float(row['price_usd'] or 0), 3),
+                                "price_jpy": round(float(row['price_jpy'] or 0), 2)
+                            }
+                        }
             return {"success": success, "message": msg}
         except:
             return {"success": False, "message": "必须是数字"}

@@ -84,9 +84,9 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
                 if not r.get('price_kwr') or float(r.get('price_kwr') or 0) == 0:
                     if krw_val > 10: r['price_kwr'] = round(offer_price * krw_val, 1)
                     else: r['price_kwr'] = round(offer_price / krw_val, 1) if krw_val else 0.0
-                # USD汇率表示 1 RMB = ? USD，直接乘
+                # USD汇率表示 1 USD = X RMB，需要除法
                 if not r.get('price_usd') or float(r.get('price_usd') or 0) == 0:
-                    r['price_usd'] = round(offer_price * usd_val, 3) if usd_val else 0.0
+                    r['price_usd'] = round(offer_price / usd_val, 3) if usd_val else 0.0
             except:
                 pass
 
@@ -195,8 +195,8 @@ def add_offer(data, emp_id, conn=None):
             if krw_val > 10: price_kwr = round(offer_price * krw_val, 1)
             else: price_kwr = round(offer_price / krw_val, 1) if krw_val else 0.0
 
-            # USD汇率表示 1 RMB = ? USD，直接乘
-            price_usd = round(offer_price * usd_val, 2) if usd_val else 0.0
+            # USD汇率表示 1 USD = X RMB，需要除法
+            price_usd = round(offer_price / usd_val, 3) if usd_val else 0.0
 
             inquiry_mpn = data.get('inquiry_mpn', '')
             quoted_mpn = data.get('quoted_mpn', '')
@@ -243,23 +243,59 @@ def update_offer(offer_id, data):
         if 'emp_id' in data:
             del data['emp_id'] # Prevent changing owner post-creation
 
-        # 检查是否更新了价格字段，需要同步更新关联订单
-        price_fields = ['offer_price_rmb', 'price_kwr', 'price_usd']
-        need_sync_order = any(field in data for field in price_fields)
+        # 获取推荐汇率
+        krw_val, usd_val, jpy_val = get_exchange_rates()
 
-        # 如果更新了 offer_price_rmb，需要计算 KWR 和 USD
+        # 如果更新了 offer_price_rmb，只有外币价格为空或0时才计算
         if 'offer_price_rmb' in data:
-            krw_val, usd_val, _ = get_exchange_rates()
             offer_price = float(data.get('offer_price_rmb') or 0)
 
-            # 计算 KWR
-            if krw_val > 10:
-                data['price_kwr'] = round(offer_price * krw_val, 1)
-            else:
-                data['price_kwr'] = round(offer_price / krw_val, 1) if krw_val else 0.0
+            # 先查询当前报价的外币价格
+            with get_db_connection() as conn:
+                current = conn.execute(
+                    "SELECT price_kwr, price_usd, price_jpy FROM uni_offer WHERE offer_id = ?",
+                    (offer_id,)
+                ).fetchone()
 
-            # 计算 USD (USD汇率表示 1 RMB = ? USD，直接乘)
-            data['price_usd'] = round(offer_price * usd_val, 2) if usd_val else 0.0
+            if current:
+                current_kwr = float(current['price_kwr'] or 0)
+                current_usd = float(current['price_usd'] or 0)
+                current_jpy = float(current['price_jpy'] or 0)
+
+                # 只有外币价格为空或0时才计算
+                if current_kwr == 0:
+                    data['price_kwr'] = round(offer_price * krw_val, 1) if krw_val else 0.0
+                if current_usd == 0:
+                    data['price_usd'] = round(offer_price / usd_val, 3) if usd_val else 0.0
+                if current_jpy == 0:
+                    data['price_jpy'] = round(offer_price * jpy_val, 2) if jpy_val else 0.0
+
+        # 如果更新了 price_kwr，反向计算 RMB
+        if 'price_kwr' in data and 'offer_price_rmb' not in data:
+            price_kwr = float(data.get('price_kwr') or 0)
+            # RMB = KWR ÷ KRW汇率
+            data['offer_price_rmb'] = round(price_kwr / krw_val, 4) if krw_val else 0.0
+            # 同时更新 USD 和 JPY
+            data['price_usd'] = round(data['offer_price_rmb'] / usd_val, 3) if usd_val else 0.0
+            data['price_jpy'] = round(data['offer_price_rmb'] * jpy_val, 2) if jpy_val else 0.0
+
+        # 如果更新了 price_usd，反向计算 RMB
+        if 'price_usd' in data and 'offer_price_rmb' not in data:
+            price_usd = float(data.get('price_usd') or 0)
+            # RMB = USD × USD汇率
+            data['offer_price_rmb'] = round(price_usd * usd_val, 4) if usd_val else 0.0
+            # 同时更新 KWR 和 JPY
+            data['price_kwr'] = round(data['offer_price_rmb'] * krw_val, 1) if krw_val else 0.0
+            data['price_jpy'] = round(data['offer_price_rmb'] * jpy_val, 2) if jpy_val else 0.0
+
+        # 如果更新了 price_jpy，反向计算 RMB
+        if 'price_jpy' in data and 'offer_price_rmb' not in data:
+            price_jpy = float(data.get('price_jpy') or 0)
+            # RMB = JPY ÷ JPY汇率
+            data['offer_price_rmb'] = round(price_jpy / jpy_val, 4) if jpy_val else 0.0
+            # 同时更新 KWR 和 USD
+            data['price_kwr'] = round(data['offer_price_rmb'] * krw_val, 1) if krw_val else 0.0
+            data['price_usd'] = round(data['offer_price_rmb'] / usd_val, 3) if usd_val else 0.0
 
         set_cols = []
         params = []
@@ -273,30 +309,6 @@ def update_offer(offer_id, data):
 
         with get_db_connection() as conn:
             conn.execute(sql, params)
-
-            # 同步更新关联订单的价格字段
-            if need_sync_order:
-                price_rmb = data.get('offer_price_rmb')
-                price_kwr = data.get('price_kwr')
-                price_usd = data.get('price_usd')
-
-                update_parts = []
-                update_params = []
-                if price_rmb is not None:
-                    update_parts.append("price_rmb = ?")
-                    update_params.append(price_rmb)
-                if price_kwr is not None:
-                    update_parts.append("price_kwr = ?")
-                    update_params.append(price_kwr)
-                if price_usd is not None:
-                    update_parts.append("price_usd = ?")
-                    update_params.append(price_usd)
-
-                if update_parts:
-                    update_params.append(offer_id)
-                    order_sql = f"UPDATE uni_order SET {', '.join(update_parts)} WHERE offer_id = ?"
-                    conn.execute(order_sql, update_params)
-
             conn.commit()
             return True, "更新成功"
     except Exception as e:
