@@ -51,6 +51,7 @@ from Sills.db_bank_ledger import (
     delete_ledger, update_ledger, set_primary_ledger, get_ledger_summary,
     validate_allocation_amount
 )
+from Sills.db_task_board import get_all_tasks, get_task_counts, update_task_status, add_alert, delete_alert, get_all_task_rules, set_task_rule
 from utils.price_engine import PriceEngine
 
 from typing import Optional
@@ -357,27 +358,43 @@ async def index(request: Request, current_user: dict = Depends(get_current_user)
         emp_count = conn.execute("SELECT COUNT(*) FROM uni_emp").fetchone()[0]
         order_sum = conn.execute("SELECT COALESCE(SUM(paid_amount), 0) FROM uni_order").fetchone()[0]
 
-        # 获取各币种汇率 (存储的是 1 RMB = X 外币)
-        krw_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
-        jpy_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=3 ORDER BY record_date DESC LIMIT 1").fetchone()
-        usd_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
-        eur_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=4 ORDER BY record_date DESC LIMIT 1").fetchone()
+        # 获取各币种汇率和比例 (存储的是 1 RMB = X 外币)
+        krw_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
+        jpy_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=3 ORDER BY record_date DESC LIMIT 1").fetchone()
+        usd_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
+        eur_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=4 ORDER BY record_date DESC LIMIT 1").fetchone()
 
-        # 汇率数据 (无数据则不显示)
+        # 推荐汇率 (exchange_rate)
         exchange_rates = {
-            "krw": float(krw_row[0]) if krw_row else None,
-            "jpy": float(jpy_row[0]) if jpy_row else None,
-            "usd_to_rmb": round(1 / float(usd_row[0]), 4) if usd_row else None,  # 反向: 1 USD = X RMB
-            "eur_to_rmb": round(1 / float(eur_row[0]), 4) if eur_row else None,  # 反向: 1 EUR = X RMB
+            "krw": float(krw_row[0]) if krw_row and krw_row[0] else None,
+            "jpy": float(jpy_row[0]) if jpy_row and jpy_row[0] else None,
+            "usd_to_rmb": float(usd_row[0]) if usd_row and usd_row[0] else None,  # 存的是 1 USD = X RMB
+            "eur_to_rmb": float(eur_row[0]) if eur_row and eur_row[0] else None,  # 存的是 1 EUR = X RMB
         }
 
-        # 建议汇率 (韩元日元乘以1.025，美元欧元乘以0.975)
-        suggested_rates = {
-            "krw": round(exchange_rates["krw"] * 1.025, 2) if exchange_rates["krw"] else None,
-            "jpy": round(exchange_rates["jpy"] * 1.025, 2) if exchange_rates["jpy"] else None,
-            "usd_to_rmb": round(exchange_rates["usd_to_rmb"] * 0.975, 4) if exchange_rates["usd_to_rmb"] else None,
-            "eur_to_rmb": round(exchange_rates["eur_to_rmb"] * 0.975, 4) if exchange_rates["eur_to_rmb"] else None,
+        # 原始汇率 (original_rate)
+        original_rates = {
+            "krw": float(krw_row[1]) if krw_row and krw_row[1] else None,
+            "jpy": float(jpy_row[1]) if jpy_row and jpy_row[1] else None,
+            "usd_to_rmb": float(usd_row[1]) if usd_row and usd_row[1] else None,
+            "eur_to_rmb": float(eur_row[1]) if eur_row and eur_row[1] else None,
         }
+
+        # 比例 (rate_ratio)
+        rate_ratios = {
+            "krw": float(krw_row[2]) if krw_row and krw_row[2] else 0.03,
+            "jpy": float(jpy_row[2]) if jpy_row and jpy_row[2] else 0.03,
+            "usd": float(usd_row[2]) if usd_row and usd_row[2] else 0.03,
+            "eur": float(eur_row[2]) if eur_row and eur_row[2] else 0.03,
+        }
+
+        # 最新刷新时间
+        refresh_times = []
+        if krw_row and krw_row[3]: refresh_times.append(krw_row[3])
+        if jpy_row and jpy_row[3]: refresh_times.append(jpy_row[3])
+        if usd_row and usd_row[3]: refresh_times.append(usd_row[3])
+        if eur_row and eur_row[3]: refresh_times.append(eur_row[3])
+        last_refresh_time = max(refresh_times) if refresh_times else None
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
@@ -389,8 +406,125 @@ async def index(request: Request, current_user: dict = Depends(get_current_user)
             "order_sum": order_sum
         },
         "exchange_rates": exchange_rates,
-        "suggested_rates": suggested_rates
+        "original_rates": original_rates,
+        "rate_ratios": rate_ratios,
+        "last_refresh_time": last_refresh_time
     })
+
+# ============ Task Board API (任务看板) ============
+
+@app.get("/api/task_board/list")
+async def api_task_board_list(
+    request: Request,
+    status: str = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: dict = Depends(login_required)
+):
+    """获取任务列表"""
+    try:
+        tasks, total = get_all_tasks(status_filter=status, page=page, page_size=page_size)
+        return {
+            "success": True,
+            "tasks": tasks,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "has_more": total > page * page_size
+        }
+    except Exception as e:
+        return {"success": False, "message": f"查询失败: {str(e)}"}
+
+@app.get("/api/task_board/counts")
+async def api_task_board_counts(request: Request, current_user: dict = Depends(login_required)):
+    """获取任务计数"""
+    try:
+        counts = get_task_counts()
+        return {
+            "success": True,
+            "counts": counts,
+            "total": sum(counts.values())
+        }
+    except Exception as e:
+        return {"success": False, "message": f"计数查询失败: {str(e)}"}
+
+@app.post("/api/task_board/update_status")
+async def api_task_board_update_status(request: Request, current_user: dict = Depends(login_required)):
+    """更新任务状态"""
+    try:
+        data = await request.json()
+        valid_ref_types = ['contact', 'quote', 'order', 'buy', 'alert']
+        if data.get('ref_type') not in valid_ref_types:
+            return {"success": False, "message": f"无效的 ref_type: {data.get('ref_type')}"}
+        valid_statuses = ['pending', 'in_progress', 'inspection', 'completed']
+        if data.get('new_status') not in valid_statuses:
+            return {"success": False, "message": f"无效的 new_status: {data.get('new_status')}"}
+        success, msg = update_task_status(data['ref_type'], data['ref_id'], data['new_status'])
+        if success:
+            return {"success": True, "message": msg}
+        else:
+            return {"success": False, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": f"更新失败: {str(e)}"}
+
+@app.post("/api/task_board/alert/add")
+async def api_task_board_add_alert(request: Request, current_user: dict = Depends(login_required)):
+    """添加综合预警"""
+    try:
+        data = await request.json()
+        if not data.get('alert_title'):
+            return {"success": False, "message": "alert_title 必填"}
+        data['created_by'] = current_user.get('emp_id')
+        success, msg = add_alert(data)
+        if success:
+            return {"success": True, "message": msg}
+        else:
+            return {"success": False, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": f"添加失败: {str(e)}"}
+
+@app.delete("/api/task_board/alert/{alert_id}")
+async def api_task_board_delete_alert(alert_id: str, request: Request, current_user: dict = Depends(login_required)):
+    """删除综合预警"""
+    try:
+        success, msg = delete_alert(alert_id)
+        if success:
+            return {"success": True, "message": msg}
+        else:
+            return {"success": False, "message": msg}
+    except Exception as e:
+        return {"success": False, "message": f"删除失败: {str(e)}"}
+
+
+@app.get("/api/task_board/rules")
+async def api_task_board_rules(request: Request, current_user: dict = Depends(login_required)):
+    """获取任务规则配置"""
+    try:
+        rules = get_all_task_rules()
+        return {"success": True, "rules": rules}
+    except Exception as e:
+        return {"success": False, "message": f"获取规则失败: {str(e)}"}
+
+
+@app.post("/api/task_board/rules")
+async def api_task_board_set_rules(request: Request, current_user: dict = Depends(login_required)):
+    """更新任务规则配置（仅管理员）"""
+    # 权限检查：rule 字段为字符串，管理员为 '3'，超级管理员为 '0'
+    if current_user.get('rule') not in ['3', '0']:
+        return JSONResponse(status_code=403, content={"success": False, "message": "无权限修改规则配置"})
+
+    try:
+        data = await request.json()
+        for key, value in data.items():
+            # 规则键名映射：前端传 quote_timeout_hours，后端存 task_rule_quote_timeout_hours
+            full_key = f'task_rule_{key}'
+            set_task_rule(full_key, int(value))
+        return {"success": True, "message": "规则已更新，立即生效"}
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "message": f"更新失败: {str(e)}"})
+
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -718,11 +852,11 @@ async def order_update_api(order_id: str = Form(...), field: str = Form(...), va
                 from Sills.base import get_exchange_rates
                 krw_rate, usd_rate, _ = get_exchange_rates()
 
-                # 汇率含义: 1 RMB = X 外币
+                # 汇率含义: 1 RMB = X 外币(KRW/JPY), 1 USD = X RMB(USD)
                 # price_kwr = price_rmb * krw_rate (韩元)
-                # price_usd = price_rmb * usd_rate (美元)
+                # price_usd = price_rmb / usd_rate (美元)
                 price_kwr = round(val * krw_rate, 1) if krw_rate else 0
-                price_usd = round(val * usd_rate, 3) if usd_rate else 0
+                price_usd = round(val / usd_rate, 3) if usd_rate else 0
 
                 # 同时更新三个价格字段
                 success, msg = update_order(order_id, {
@@ -1610,12 +1744,12 @@ async def offer_delete_api(offer_id: str = Form(...), current_user: dict = Depen
 @app.post("/api/offer/add_simple")
 async def offer_add_simple_api(
     inquiry_mpn: str = Form(...),
-    quoted_mpn: str = Form(...),
-    inquiry_brand: str = Form(...),
-    quoted_brand: str = Form(...),
-    inquiry_qty: int = Form(...),
-    quoted_qty: int = Form(...),
-    actual_qty: int = Form(...),
+    quoted_mpn: str = Form(None),
+    inquiry_brand: str = Form(None),
+    quoted_brand: str = Form(None),
+    inquiry_qty: int = Form(0),
+    quoted_qty: int = Form(0),
+    actual_qty: int = Form(0),
     cli_id: str = Form(None),
     date_code: str = Form('3년내'),
     delivery_date: str = Form('1~3days'),
@@ -1628,12 +1762,12 @@ async def offer_add_simple_api(
     emp_id = current_user['emp_id']
     data = {
         'inquiry_mpn': inquiry_mpn,
-        'quoted_mpn': quoted_mpn,
-        'inquiry_brand': inquiry_brand,
-        'quoted_brand': quoted_brand,
+        'quoted_mpn': quoted_mpn or inquiry_mpn,
+        'inquiry_brand': inquiry_brand or '',
+        'quoted_brand': quoted_brand or inquiry_brand or '',
         'inquiry_qty': inquiry_qty,
-        'quoted_qty': quoted_qty,
-        'actual_qty': actual_qty,
+        'quoted_qty': quoted_qty or inquiry_qty,
+        'actual_qty': actual_qty or quoted_qty or inquiry_qty,
         'cli_id': cli_id or '',
         'date_code': date_code,
         'delivery_date': delivery_date
@@ -1714,7 +1848,7 @@ async def offer_batch_price_increase_api(request: Request, current_user: dict = 
                 cost_price = float(row[0])
                 new_offer_rmb = cost_price * (1 + ratio / 100)
                 new_price_kwr = round(new_offer_rmb * krw_rate, 1)  # KWR保留1位小数
-                new_price_usd = round(new_offer_rmb * usd_rate, 3)  # USD保留3位小数
+                new_price_usd = round(new_offer_rmb / usd_rate, 3)  # USD汇率表示 1 USD = X RMB，需要除法
 
                 conn.execute("""
                     UPDATE uni_offer
@@ -2148,7 +2282,7 @@ async def order_export_csv(request: Request, current_user: dict = Depends(login_
             if krw_rate > 10: price_kwr = round(price_rmb * krw_rate, 1)
             else: price_kwr = round(price_rmb / krw_rate, 1) if krw_rate else 0
         if not price_usd:
-            price_usd = round(price_rmb * usd_rate, 2) if usd_rate else 0
+            price_usd = round(price_rmb / usd_rate, 3) if usd_rate else 0
 
         writer.writerow([
             d.get('order_date', ''),
@@ -3307,7 +3441,7 @@ async def buy_export_csv(request: Request, current_user: dict = Depends(login_re
             if krw_rate > 10: price_kwr = round(buy_price * krw_rate, 1)
             else: price_kwr = round(buy_price / krw_rate, 1) if krw_rate else 0
         if not price_usd or float(price_usd or 0) == 0:
-            price_usd = round(buy_price * usd_rate, 2) if usd_rate else 0
+            price_usd = round(buy_price / usd_rate, 3) if usd_rate else 0
 
         writer.writerow([
             d.get('buy_date', ''),
@@ -5929,6 +6063,60 @@ async def api_cli_group_preview(
     return {"success": True, "contacts": contacts, "total": total}
 
 
+@app.get("/api/cli_group/{group_id}/contacts")
+async def api_cli_group_contacts_for_edit(
+    group_id: str,
+    page: int = 1,
+    page_size: int = 50,
+    current_user: dict = Depends(login_required)
+):
+    """获取客户组联系人列表（用于编辑弹框，带排除标记）"""
+    from Sills.db_contact_group import get_cli_group_contacts_for_edit
+    contacts, total, excluded_count = get_cli_group_contacts_for_edit(group_id, page, page_size)
+    return {
+        "success": True,
+        "contacts": contacts,
+        "total": total,
+        "excluded_count": excluded_count,
+        "page": page,
+        "page_size": page_size
+    }
+
+
+@app.post("/api/cli_group/{group_id}/exclude")
+async def api_cli_group_exclude_email(
+    group_id: str,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """从客户组排除邮箱"""
+    from Sills.db_contact_group import exclude_email_from_cli_group
+    data = await request.json()
+    email = data.get('email', '')
+    if not email:
+        return {"success": False, "message": "邮箱地址不能为空"}
+
+    success, message = exclude_email_from_cli_group(group_id, email)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/cli_group/{group_id}/restore")
+async def api_cli_group_restore_email(
+    group_id: str,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """恢复客户组中被排除的邮箱"""
+    from Sills.db_contact_group import restore_email_to_cli_group
+    data = await request.json()
+    email = data.get('email', '')
+    if not email:
+        return {"success": False, "message": "邮箱地址不能为空"}
+
+    success, message = restore_email_to_cli_group(group_id, email)
+    return {"success": success, "message": message}
+
+
 @app.get("/api/group/{group_id}/contacts")
 async def api_group_contacts(
     group_id: str,
@@ -6788,13 +6976,23 @@ async def api_bank_import(request: Request, current_user: dict = Depends(login_r
     if not rows:
         return {"success": False, "message": "无数据"}
 
-    success_count, errors, batch_id = batch_import_transactions(rows, source_file)
+    success_count, skip_count, errors, batch_id = batch_import_transactions(rows, source_file)
+
+    # 构建提示信息
+    msg_parts = []
+    if success_count > 0:
+        msg_parts.append(f"成功导入 {success_count} 条流水")
+    if skip_count > 0:
+        msg_parts.append(f"跳过 {skip_count} 条重复数据")
+    if errors:
+        msg_parts.append(f"失败 {len(errors)} 条")
 
     return {
         "success": success_count > 0,
-        "message": f"成功导入 {success_count} 条流水" + (f"，失败 {len(errors)} 条" if errors else ""),
+        "message": "，".join(msg_parts) if msg_parts else "无数据导入",
         "batch_id": batch_id,
-        "errors": errors
+        "errors": errors,
+        "skip_count": skip_count
     }
 
 

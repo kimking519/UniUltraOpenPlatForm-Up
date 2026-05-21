@@ -244,6 +244,30 @@ class _PgConnectionWrapper:
         pg_sql = pg_sql.replace("datetime('now', 'localtime')", 'NOW()')
         pg_sql = pg_sql.replace('datetime("now", "localtime")', 'NOW()')
 
+        # datetime('now', '-N days') -> NOW() - INTERVAL 'N days'
+        # datetime('now', '-N hours') -> NOW() - INTERVAL 'N hours'
+        def replace_datetime_interval(match):
+            unit = match.group(2).lower()
+            value = match.group(1)
+            # SQLite 格式 '-7 days' 需要去掉负号，INTERVAL 本身支持减法
+            if value.startswith('-'):
+                value = value[1:]
+            return f"NOW() - INTERVAL '{value} {unit}'"
+
+        # 匹配 datetime('now', '-7 days') 或 datetime('now', '-48 hours') - 包含闭合括号
+        pg_sql = re.sub(
+            r"datetime\('now',\s*'(-?\d+)\s*(days|hours|minutes|seconds)'?\)",
+            replace_datetime_interval,
+            pg_sql,
+            flags=re.IGNORECASE
+        )
+        pg_sql = re.sub(
+            r'datetime\("now",\s*"(-?\d+)\s*(days|hours|minutes|seconds)"?\)',
+            replace_datetime_interval,
+            pg_sql,
+            flags=re.IGNORECASE
+        )
+
         # GROUP_CONCAT(col ORDER BY x) -> STRING_AGG(col::text, ',' ORDER BY x)
         # 匹配 GROUP_CONCAT(字段 [ORDER BY ...])
         def replace_group_concat(match):
@@ -562,6 +586,38 @@ def _init_db_postgresql():
         except:
             conn.rollback()
             conn.commit()
+
+        # 迁移：创建 uni_task_alert 表（任务提醒表）
+        try:
+            cur.execute("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_name = 'uni_task_alert'
+            """)
+            if not cur.fetchone():
+                cur.execute("""
+                    CREATE TABLE uni_task_alert (
+                        alert_id TEXT PRIMARY KEY,
+                        alert_type TEXT NOT NULL,
+                        ref_type TEXT,
+                        ref_id TEXT,
+                        alert_title TEXT NOT NULL,
+                        alert_content TEXT,
+                        status TEXT DEFAULT 'pending',
+                        priority INTEGER DEFAULT 1 CHECK (priority IN (1, 2, 3)),
+                        created_by TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        updated_at TIMESTAMP,
+                        CHECK (status IN ('pending', 'in_progress', 'inspection', 'completed'))
+                    )
+                """)
+                cur.execute("CREATE INDEX idx_task_alert_status ON uni_task_alert(status)")
+                cur.execute("CREATE INDEX idx_task_alert_type ON uni_task_alert(alert_type)")
+                cur.execute("CREATE INDEX idx_task_alert_ref ON uni_task_alert(ref_type, ref_id)")
+                cur.execute("CREATE INDEX idx_task_alert_created ON uni_task_alert(created_at DESC)")
+                print("[DB] 迁移：uni_task_alert 表已创建")
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] uni_task_alert 表迁移: {e}")
 
         # 执行 schema
         cur.execute(PG_SCHEMA)
@@ -1165,6 +1221,27 @@ def _init_db_sqlite():
     -- 邮件模板索引
     CREATE INDEX IF NOT EXISTS idx_template_created_by ON uni_email_template(created_by);
     CREATE INDEX IF NOT EXISTS idx_template_name ON uni_email_template(template_name);
+
+    -- 任务提醒表（D类综合预警）
+    CREATE TABLE IF NOT EXISTS uni_task_alert (
+        alert_id TEXT PRIMARY KEY,           -- 格式: AL-YYYYMMDDHHMMSS-XXXX
+        alert_type TEXT NOT NULL,            -- 类型: 退信/账期/重要备注
+        ref_type TEXT,                       -- 关联类型: contact/quote/order/buy
+        ref_id TEXT,                         -- 关联ID
+        alert_title TEXT NOT NULL,           -- 提醒标题
+        alert_content TEXT,                  -- 提醒内容
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'inspection', 'completed')),
+        priority INTEGER DEFAULT 1 CHECK(priority IN (1, 2, 3)),
+        created_by TEXT,                     -- 创建人
+        created_at DATETIME DEFAULT (datetime('now', 'localtime')),
+        updated_at DATETIME
+    );
+
+    -- 任务提醒索引
+    CREATE INDEX IF NOT EXISTS idx_task_alert_status ON uni_task_alert(status);
+    CREATE INDEX IF NOT EXISTS idx_task_alert_type ON uni_task_alert(alert_type);
+    CREATE INDEX IF NOT EXISTS idx_task_alert_ref ON uni_task_alert(ref_type, ref_id);
+    CREATE INDEX IF NOT EXISTS idx_task_alert_created ON uni_task_alert(created_at DESC);
     """
 
     with get_db_connection() as conn:
@@ -1401,6 +1478,13 @@ def _init_db_sqlite():
             conn.execute("ALTER TABLE uni_email_log ADD COLUMN account_id TEXT")
             conn.execute("ALTER TABLE uni_email_log ADD COLUMN account_email TEXT")
             print("[DB] 迁移完成：uni_email_log 添加 account_id/account_email 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_contact_group 添加 excluded_emails 列（客户组排除邮箱列表）
+        try:
+            conn.execute("ALTER TABLE uni_contact_group ADD COLUMN excluded_emails TEXT")
+            print("[DB] 迁移完成：uni_contact_group 添加 excluded_emails 列")
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 

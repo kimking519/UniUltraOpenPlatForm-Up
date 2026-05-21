@@ -326,9 +326,10 @@
 
 <!-- 编辑联系人组弹窗 -->
 <div id="editGroupModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
-    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 500px; max-height: 80vh; overflow-y: auto;">
+    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 650px; max-height: 85vh; overflow-y: auto;">
         <h3 style="margin: 0 0 15px 0;">编辑联系人组</h3>
         <input type="hidden" id="editGroupId">
+        <input type="hidden" id="editGroupType">
         <div style="display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 15px;">
             <input type="text" id="editGroupName" placeholder="组名称" style="width: 160px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
             <input type="text" id="editGroupDomain" placeholder="域名筛选" style="width: 140px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
@@ -368,6 +369,24 @@
                 包含已转客户
             </label>
         </div>
+
+        <!-- 联系人列表区域（仅客户组显示） -->
+        <div id="editGroupContactsSection" style="display: none; margin-bottom: 15px; border: 1px solid var(--border); border-radius: var(--radius); padding: 15px; background: var(--bg-secondary);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0; font-size: 14px; color: var(--text-main);">联系人列表</h4>
+                <div>
+                    <span id="editGroupContactsStats" style="font-size: 12px; color: var(--text-muted);"></span>
+                    <button class="btn btn-ghost btn-sm" onclick="loadEditGroupContacts()" title="刷新联系人列表">🔄</button>
+                </div>
+            </div>
+            <div id="editGroupContactsList" style="max-height: 300px; overflow-y: auto;">
+                <!-- 联系人列表，动态加载 -->
+            </div>
+            <div id="editGroupContactsPagination" style="display: flex; justify-content: center; gap: 8px; margin-top: 10px;">
+                <!-- 分页按钮，动态加载 -->
+            </div>
+        </div>
+
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
             <button class="btn" onclick="closeEditGroupModal()">取消</button>
             <button class="btn btn-primary" onclick="saveEditGroup()">保存</button>
@@ -628,6 +647,7 @@
                 const tr = document.createElement('tr');
                 tr.dataset.groupId = g.group_id;
                 tr.dataset.groupName = g.group_name;
+                tr.dataset.groupType = g.group_type || 'dynamic';
                 tr.dataset.filter = encodeURIComponent(g.filter_criteria || '');
                 tr.dataset.manual = encodeURIComponent(g.manual_emails || '');
                 tr.innerHTML = '<td>' + g.group_name + '</td><td style="font-size: 12px; color: var(--text-muted);">' + criteriaText + manualText + '</td><td>' + (g.contact_count || 0) + '</td><td>' + (g.created_at || '-') + '</td><td><button class="btn btn-sm" onclick="editGroup(\'' + g.group_id + '\')">编辑</button> <button class="btn btn-sm" onclick="exportGroup(\'' + g.group_id + '\')">导出</button> <button class="btn btn-sm" onclick="deleteGroup(\'' + g.group_id + '\')">删除</button></td>';
@@ -1076,9 +1096,11 @@
         }
 
         const group_name = row.dataset.groupName;
+        const group_type = row.dataset.groupType || 'dynamic';
         const filter_criteria_encoded = row.dataset.filter;
 
         document.getElementById('editGroupId').value = group_id;
+        document.getElementById('editGroupType').value = group_type;
         document.getElementById('editGroupName').value = group_name;
 
         // 清空所有输入
@@ -1091,6 +1113,15 @@
         document.getElementById('editGroupBounceStatus').value = '';
         document.getElementById('editGroupSendCount').value = '';
         document.getElementById('editGroupLastSentDays').value = '';
+
+        // 显示/隐藏联系人列表区域（仅客户组显示）
+        const contactsSection = document.getElementById('editGroupContactsSection');
+        if (group_type === 'cli_group') {
+            contactsSection.style.display = 'block';
+            loadEditGroupContacts(group_id, 1);
+        } else {
+            contactsSection.style.display = 'none';
+        }
 
         // 解析并填充筛选条件（解码 URL 编码）
         if (filter_criteria_encoded) {
@@ -1113,6 +1144,138 @@
         }
 
         document.getElementById('editGroupModal').style.display = 'flex';
+    }
+
+    // 加载客户组联系人列表（用于编辑弹框）
+    let editGroupContactsPage = 1;
+    async function loadEditGroupContacts(group_id, page = 1) {
+        const groupId = group_id || document.getElementById('editGroupId').value;
+        editGroupContactsPage = page;
+
+        try {
+            const res = await fetch(`/api/cli_group/${groupId}/contacts?page=${page}&page_size=30`);
+            const data = await res.json();
+
+            if (!data.success) {
+                console.error('加载联系人失败', data.message);
+                return;
+            }
+
+            const contacts = data.contacts || [];
+            const total = data.total || 0;
+            const excludedCount = data.excluded_count || 0;
+
+            // 更新统计信息
+            const statsEl = document.getElementById('editGroupContactsStats');
+            statsEl.textContent = `共 ${total} 个联系人，已排除 ${excludedCount} 个`;
+
+            // 渲染联系人列表
+            const listEl = document.getElementById('editGroupContactsList');
+            listEl.innerHTML = '';
+
+            if (contacts.length === 0) {
+                listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">暂无联系人</div>';
+            } else {
+                contacts.forEach(c => {
+                    const isExcluded = c.is_excluded;
+                    const bgStyle = isExcluded ? 'background: #FEE2E2; border: 1px solid #EF4444;' : 'background: var(--card-bg); border: 1px solid var(--border);';
+                    const textStyle = isExcluded ? 'color: #991B1B;' : 'color: var(--text-main);';
+
+                    const div = document.createElement('div');
+                    div.style.cssText = `display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; margin: 4px 0; ${bgStyle} border-radius: var(--radius);`;
+                    div.innerHTML = `
+                        <div style="flex: 1; display: flex; gap: 15px; align-items: center;">
+                            <span style="font-size: 13px; ${textStyle} flex: 1;">${c.company || '-'}</span>
+                            <span style="font-size: 12px; color: var(--text-muted);">${c.domain || '-'}</span>
+                            <span style="font-size: 13px; ${textStyle}">${c.email}</span>
+                        </div>
+                        ${isExcluded
+                            ? `<button class="btn btn-sm" style="background: #22C55E; color: white;" onclick="restoreEmail('${groupId}', '${c.email}')">恢复</button>`
+                            : `<button class="btn btn-ghost btn-sm" style="color: #DC2626;" onclick="excludeEmail('${groupId}', '${c.email}')">删除</button>`
+                        }
+                    `;
+                    listEl.appendChild(div);
+                });
+            }
+
+            // 渲染分页
+            renderEditGroupContactsPagination(total, page, 30);
+        } catch (e) {
+            console.error('加载联系人失败', e);
+        }
+    }
+
+    // 渲染联系人列表分页
+    function renderEditGroupContactsPagination(total, currentPage, pageSize) {
+        const totalPages = Math.ceil(total / pageSize);
+        const paginationEl = document.getElementById('editGroupContactsPagination');
+        paginationEl.innerHTML = '';
+
+        if (totalPages <= 1) return;
+
+        // 上一页
+        if (currentPage > 1) {
+            paginationEl.innerHTML += `<button class="btn btn-ghost btn-sm" onclick="loadEditGroupContacts(null, ${currentPage - 1})">上一页</button>`;
+        }
+
+        // 页码
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+        for (let p = startPage; p <= endPage; p++) {
+            const btnStyle = p === currentPage ? 'btn-primary' : 'btn-ghost';
+            paginationEl.innerHTML += `<button class="btn ${btnStyle} btn-sm" onclick="loadEditGroupContacts(null, ${p})">${p}</button>`;
+        }
+
+        // 下一页
+        if (currentPage < totalPages) {
+            paginationEl.innerHTML += `<button class="btn btn-ghost btn-sm" onclick="loadEditGroupContacts(null, ${currentPage + 1})">下一页</button>`;
+        }
+    }
+
+    // 排除邮箱
+    async function excludeEmail(group_id, email) {
+        try {
+            const res = await fetch(`/api/cli_group/${group_id}/exclude`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email})
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // 刷新联系人列表
+                loadEditGroupContacts(group_id, editGroupContactsPage);
+                // 刷新主列表的联系人数量
+                loadGroups();
+            } else {
+                alert('排除失败: ' + data.message);
+            }
+        } catch (e) {
+            alert('排除失败');
+        }
+    }
+
+    // 恢复邮箱
+    async function restoreEmail(group_id, email) {
+        try {
+            const res = await fetch(`/api/cli_group/${group_id}/restore`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email})
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // 刷新联系人列表
+                loadEditGroupContacts(group_id, editGroupContactsPage);
+                // 刷新主列表的联系人数量
+                loadGroups();
+            } else {
+                alert('恢复失败: ' + data.message);
+            }
+        } catch (e) {
+            alert('恢复失败');
+        }
     }
 
     // 关闭编辑弹窗

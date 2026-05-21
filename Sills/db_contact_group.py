@@ -144,11 +144,19 @@ def update_group(group_id, group_name=None, filter_criteria=None, manual_emails=
         if not updates:
             return True, "无需更新"
 
-        # 重新计算总数
+        # 重新计算总数（区分组类型）
         group = get_group_by_id(group_id)
         if group:
-            filter_count = count_contacts_by_criteria(filter_criteria) if filter_criteria else 0
-            manual_count = len(unique_emails) if manual_emails else 0
+            if group.get('group_type') == 'cli_group':
+                # 客户组：统计 uni_cli 表，使用 excluded_emails
+                excluded_emails = get_cli_group_excluded_emails(group_id)
+                criteria_obj = json.loads(group.get('filter_criteria', '{}') or '{}')
+                filter_count = count_cli_group_contacts(criteria_obj, excluded_emails)
+                manual_count = 0
+            else:
+                # 其他组：统计 uni_contact 表
+                filter_count = count_contacts_by_criteria(filter_criteria) if filter_criteria is not None else 0
+                manual_count = len(unique_emails) if manual_emails else 0
             updates.append("contact_count = ?")
             params.append(filter_count + manual_count)
 
@@ -608,9 +616,10 @@ def get_group_contacts_all_types(group_id, page=1, page_size=100):
         contacts = get_static_group_contacts(group_id)
         return contacts, len(contacts)
     elif group_type == 'cli_group':
-        # 客户组：从uni_cli获取
+        # 客户组：从uni_cli获取（排除已排除的邮箱）
         criteria = json.loads(group.get('filter_criteria', '{}') or '{}')
-        contacts, total = get_cli_group_contacts(criteria, page=page, page_size=page_size)
+        excluded_emails = get_cli_group_excluded_emails(group_id)
+        contacts, total = get_cli_group_contacts(criteria, page=page, page_size=page_size, excluded_emails=excluded_emails)
         return contacts, total
     else:
         # 动态组：筛选条件 + 手动邮件合并
@@ -814,15 +823,19 @@ def get_cli_credit_levels():
         return [r[0] for r in rows if r[0]]
 
 
-def count_cli_group_contacts(criteria):
+def count_cli_group_contacts(criteria, excluded_emails=None):
     """根据筛选条件统计客户组联系人数量
 
     Args:
         criteria: dict {credit_levels: [], regions: [], cli_name: ""}
+        excluded_emails: set 被排除的邮箱集合（可选）
 
     Returns:
-        int 邮箱数量（分割后的）
+        int 邮箱数量（分割后的，排除已排除的邮箱）
     """
+    if excluded_emails is None:
+        excluded_emails = set()
+
     where_clauses = ["email IS NOT NULL AND email != ''"]
     params = []
 
@@ -849,28 +862,35 @@ def count_cli_group_contacts(criteria):
     where_sql = "WHERE " + " AND ".join(where_clauses)
 
     with get_db_connection() as conn:
-        # 获取所有email并分割统计
+        # 获取所有email并分割统计（排除已排除的邮箱）
         rows = conn.execute(f"SELECT email FROM uni_cli {where_sql}", params).fetchall()
         total_emails = 0
         for r in rows:
             email_str = r[0] or ''
             # 分割逗号（中英文）、回车分隔的邮箱
             emails = [e.strip().lower() for e in re.split(r'[，,\n\r]+', email_str) if e.strip() and '@' in e.strip()]
-            total_emails += len(emails)
+            # 排除已排除的邮箱
+            for email in emails:
+                if email not in excluded_emails:
+                    total_emails += 1
         return total_emails
 
 
-def get_cli_group_contacts(criteria, page=1, page_size=100):
+def get_cli_group_contacts(criteria, page=1, page_size=100, excluded_emails=None):
     """获取客户组的联系人列表
 
     Args:
         criteria: dict {credit_levels: [], regions: [], cli_name: ""}
         page: 页码
         page_size: 每页数量
+        excluded_emails: set 被排除的邮箱集合（可选）
 
     Returns:
         (contacts_list, total) tuple
     """
+    if excluded_emails is None:
+        excluded_emails = set()
+
     where_clauses = ["email IS NOT NULL AND email != ''"]
     params = []
 
@@ -904,7 +924,7 @@ def get_cli_group_contacts(criteria, page=1, page_size=100):
             ORDER BY cli_name
         """, params).fetchall()
 
-        # 分割邮箱并构建联系人列表
+        # 分割邮箱并构建联系人列表（排除已排除的邮箱）
         all_contacts = []
         for r in rows:
             cli = dict(r)
@@ -913,6 +933,10 @@ def get_cli_group_contacts(criteria, page=1, page_size=100):
             emails = [e.strip().lower() for e in re.split(r'[，,\n\r]+', email_str) if e.strip() and '@' in e.strip()]
 
             for email in emails:
+                # 排除已排除的邮箱
+                if email in excluded_emails:
+                    continue
+
                 all_contacts.append({
                     'contact_id': '',  # 客户组没有contact_id
                     'cli_id': cli.get('cli_id', ''),
@@ -1050,7 +1074,7 @@ def refresh_all_groups_contact_count():
     try:
         with get_db_connection() as conn:
             groups = conn.execute(
-                "SELECT group_id, group_name, group_type, filter_criteria, email_list, manual_emails FROM uni_contact_group"
+                "SELECT group_id, group_name, group_type, filter_criteria, email_list, manual_emails, excluded_emails FROM uni_contact_group"
             ).fetchall()
 
         updated_count = 0
@@ -1064,6 +1088,7 @@ def refresh_all_groups_contact_count():
             filter_criteria_json = group[3] or ''
             email_list_json = group[4] or ''
             manual_emails_json = group[5] or ''
+            excluded_emails_json = group[6] or ''
 
             try:
                 new_count = 0
@@ -1074,9 +1099,16 @@ def refresh_all_groups_contact_count():
                     new_count = len(email_list)
 
                 elif group_type == 'cli_group':
-                    # 客户组：根据筛选条件重新查询uni_cli
+                    # 客户组：根据筛选条件重新查询uni_cli（排除已排除的邮箱）
                     criteria = json.loads(filter_criteria_json) if filter_criteria_json else {}
-                    new_count = count_cli_group_contacts(criteria)
+                    excluded_emails = set()
+                    if excluded_emails_json:
+                        try:
+                            excluded_list = json.loads(excluded_emails_json)
+                            excluded_emails = set(e.lower() for e in excluded_list if e)
+                        except:
+                            pass
+                    new_count = count_cli_group_contacts(criteria, excluded_emails)
 
                 else:
                     # 动态组：根据筛选条件重新查询uni_contact + 手动邮件
@@ -1124,3 +1156,214 @@ def refresh_all_groups_contact_count():
 
     except Exception as e:
         return False, str(e), {"updated": 0, "errors": 0, "details": []}
+
+
+# ==================== 客户组排除邮箱功能 ====================
+
+def get_cli_group_excluded_emails(group_id):
+    """获取客户组的排除邮箱列表
+
+    Returns:
+        set 被排除的邮箱集合（小写）
+    """
+    group = get_group_by_id(group_id)
+    if not group:
+        return set()
+
+    excluded_json = group.get('excluded_emails', '') or ''
+    if not excluded_json:
+        return set()
+
+    try:
+        excluded_list = json.loads(excluded_json)
+        return set(e.lower() for e in excluded_list if e)
+    except:
+        return set()
+
+
+def get_cli_group_contacts_for_edit(group_id, page=1, page_size=50):
+    """获取客户组联系人列表（用于编辑弹框展示，带排除标记）
+
+    Args:
+        group_id: 组ID
+        page: 页码
+        page_size: 每页数量
+
+    Returns:
+        (contacts_list, total, excluded_count) tuple
+        contacts_list中每个联系人包含 is_excluded 字段标记是否被排除
+    """
+    group = get_group_by_id(group_id)
+    if not group:
+        return [], 0, 0
+
+    if group.get('group_type') != 'cli_group':
+        return [], 0, 0
+
+    criteria = json.loads(group.get('filter_criteria', '{}') or '{}')
+    excluded_emails = get_cli_group_excluded_emails(group_id)
+
+    where_clauses = ["email IS NOT NULL AND email != ''"]
+    params = []
+
+    # 信用等级筛选（多选）
+    credit_levels = criteria.get('credit_levels', [])
+    if credit_levels and len(credit_levels) > 0:
+        placeholders = ','.join(['?' for _ in credit_levels])
+        where_clauses.append(f"credit_level IN ({placeholders})")
+        params.extend(credit_levels)
+
+    # 区域筛选（多选）
+    regions = criteria.get('regions', [])
+    if regions and len(regions) > 0:
+        placeholders = ','.join(['?' for _ in regions])
+        where_clauses.append(f"region IN ({placeholders})")
+        params.extend(regions)
+
+    # 客户名称搜索
+    cli_name = criteria.get('cli_name', '')
+    if cli_name:
+        where_clauses.append("cli_name LIKE ?")
+        params.append(f"%{cli_name}%")
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    with get_db_connection() as conn:
+        rows = conn.execute(f"""
+            SELECT cli_id, cli_name, cli_name_en, contact_name, send_mail, region, credit_level, address, phone
+            FROM uni_cli {where_sql}
+            ORDER BY cli_name
+        """, params).fetchall()
+
+        # 分割邮箱并构建联系人列表
+        all_contacts = []
+        for r in rows:
+            cli = dict(r)
+            email_str = cli.get('send_mail', '') or ''
+            emails = [e.strip().lower() for e in re.split(r'[，,\n\r]+', email_str) if e.strip() and '@' in e.strip()]
+
+            for email in emails:
+                # 从邮箱提取域名
+                domain = email.split('@')[-1] if '@' in email else ''
+
+                all_contacts.append({
+                    'contact_id': '',
+                    'cli_id': cli.get('cli_id', ''),
+                    'email': email,
+                    'domain': domain,
+                    'company': cli.get('cli_name', ''),
+                    'contact_name': cli.get('contact_name', ''),
+                    'country': cli.get('region', ''),
+                    'region': cli.get('region', ''),
+                    'credit_level': cli.get('credit_level', ''),
+                    'phone': cli.get('phone', ''),
+                    'address': cli.get('address', ''),
+                    'is_bounced': 0,
+                    'send_count': 0,
+                    'source': 'cli_group',
+                    'is_excluded': email in excluded_emails  # 标记是否被排除
+                })
+
+        # 统计
+        total = len(all_contacts)
+        excluded_count = sum(1 for c in all_contacts if c['is_excluded'])
+
+        # 分页处理
+        offset = (page - 1) * page_size
+        paginated = all_contacts[offset:offset + page_size]
+
+        return paginated, total, excluded_count
+
+
+def exclude_email_from_cli_group(group_id, email):
+    """从客户组排除某个邮箱
+
+    Args:
+        group_id: 组ID
+        email: 要排除的邮箱地址
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        group = get_group_by_id(group_id)
+        if not group:
+            return False, "联系人组不存在"
+
+        if group.get('group_type') != 'cli_group':
+            return False, "只有客户组支持排除邮箱"
+
+        email_lower = email.strip().lower()
+
+        # 获取现有排除列表
+        excluded_emails = get_cli_group_excluded_emails(group_id)
+
+        if email_lower in excluded_emails:
+            return False, "该邮箱已在排除列表中"
+
+        # 添加新邮箱
+        excluded_emails.add(email_lower)
+        excluded_json = json.dumps(list(excluded_emails))
+
+        # 重新计算联系人数量（排除已排除的邮箱）
+        criteria = json.loads(group.get('filter_criteria', '{}') or '{}')
+        new_count = count_cli_group_contacts(criteria, excluded_emails)
+
+        with get_db_connection() as conn:
+            conn.execute("""
+                UPDATE uni_contact_group
+                SET excluded_emails = ?, contact_count = ?, updated_at = NOW()
+                WHERE group_id = ?
+            """, (excluded_json, new_count, group_id))
+            conn.commit()
+
+        return True, "邮箱已排除"
+    except Exception as e:
+        return False, str(e)
+
+
+def restore_email_to_cli_group(group_id, email):
+    """恢复客户组中被排除的邮箱
+
+    Args:
+        group_id: 组ID
+        email: 要恢复的邮箱地址
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        group = get_group_by_id(group_id)
+        if not group:
+            return False, "联系人组不存在"
+
+        if group.get('group_type') != 'cli_group':
+            return False, "只有客户组支持恢复邮箱"
+
+        email_lower = email.strip().lower()
+
+        # 获取现有排除列表
+        excluded_emails = get_cli_group_excluded_emails(group_id)
+
+        if email_lower not in excluded_emails:
+            return False, "该邮箱不在排除列表中"
+
+        # 移除邮箱
+        excluded_emails.remove(email_lower)
+        excluded_json = json.dumps(list(excluded_emails)) if excluded_emails else ""
+
+        # 重新计算联系人数量（排除已排除的邮箱）
+        criteria = json.loads(group.get('filter_criteria', '{}') or '{}')
+        new_count = count_cli_group_contacts(criteria, excluded_emails)
+
+        with get_db_connection() as conn:
+            conn.execute("""
+                UPDATE uni_contact_group
+                SET excluded_emails = ?, contact_count = ?, updated_at = NOW()
+                WHERE group_id = ?
+            """, (excluded_json, new_count, group_id))
+            conn.commit()
+
+        return True, "邮箱已恢复"
+    except Exception as e:
+        return False, str(e)

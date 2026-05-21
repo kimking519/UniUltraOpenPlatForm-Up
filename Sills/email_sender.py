@@ -248,8 +248,8 @@ class EmailSenderWorker:
             sent_email_set = set(e.lower() for e in sent_emails)
 
             # 获取跳过规则配置
-            skip_enabled = self.task.get('skip_enabled', 1) or 1
-            skip_days = self.task.get('skip_days', 7) or 7
+            skip_enabled = self.task.get('skip_enabled', 1)  # 0=不跳过, 1=跳过
+            skip_days = self.task.get('skip_days', 7)
 
             # 如果启用跳过规则，获取最近N天内成功发送的邮箱列表（不限任务）
             recently_sent_set = set()

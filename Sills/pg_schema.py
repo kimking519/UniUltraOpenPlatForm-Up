@@ -211,15 +211,15 @@ CREATE TABLE IF NOT EXISTS uni_order_manager (
     CONSTRAINT chk_om_is_finished CHECK (is_finished IN (0,1))
 );
 
--- 客户订单与报价订单关联表
+-- 客户订单与销售订单关联表
 CREATE TABLE IF NOT EXISTS uni_order_manager_rel (
     id SERIAL PRIMARY KEY,
     manager_id TEXT NOT NULL,
-    offer_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (manager_id) REFERENCES uni_order_manager(manager_id) ON DELETE CASCADE,
-    FOREIGN KEY (offer_id) REFERENCES uni_offer(offer_id) ON DELETE CASCADE,
-    UNIQUE(manager_id, offer_id)
+    FOREIGN KEY (order_id) REFERENCES uni_order(order_id) ON DELETE CASCADE,
+    UNIQUE(manager_id, order_id)
 );
 
 -- 客户订单附件表
@@ -398,7 +398,7 @@ CREATE INDEX IF NOT EXISTS idx_buy_vendor ON uni_buy(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_order_manager_cli ON uni_order_manager(cli_id);
 CREATE INDEX IF NOT EXISTS idx_order_manager_date ON uni_order_manager(order_date);
 CREATE INDEX IF NOT EXISTS idx_order_manager_rel_manager ON uni_order_manager_rel(manager_id);
-CREATE INDEX IF NOT EXISTS idx_order_manager_rel_offer ON uni_order_manager_rel(offer_id);
+CREATE INDEX IF NOT EXISTS idx_order_manager_rel_order ON uni_order_manager_rel(order_id);
 
 CREATE INDEX IF NOT EXISTS idx_daily_date ON uni_daily(record_date);
 CREATE INDEX IF NOT EXISTS idx_daily_currency ON uni_daily(currency_code);
@@ -509,6 +509,7 @@ CREATE TABLE IF NOT EXISTS uni_contact_group (
     filter_criteria TEXT,                  -- dynamic组: 筛选条件JSON
     email_list TEXT,                       -- static组: 邮件JSON列表 [{"email": "x@x.com", "company": "公司名"}, ...]
     manual_emails TEXT,                    -- 手动添加的邮件JSON列表（可与筛选条件合并）
+    excluded_emails TEXT,                  -- 被排除的邮箱JSON列表 ["email1@example.com", ...]（仅对当前组有效）
     contact_count INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP
@@ -597,6 +598,7 @@ CREATE INDEX IF NOT EXISTS idx_group_rel_contact ON uni_contact_group_rel(contac
 ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS group_type TEXT DEFAULT 'dynamic';
 ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS email_list TEXT;
 ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS manual_emails TEXT;
+ALTER TABLE uni_contact_group ADD COLUMN IF NOT EXISTS excluded_emails TEXT;
 
 -- 客户订单表添加总价(JPY)字段
 ALTER TABLE uni_order_manager ADD COLUMN IF NOT EXISTS total_price_jpy DOUBLE PRECISION DEFAULT 0;
@@ -698,6 +700,28 @@ CREATE TABLE IF NOT EXISTS uni_email_template (
 -- 邮件模板索引
 CREATE INDEX IF NOT EXISTS idx_template_created_by ON uni_email_template(created_by);
 CREATE INDEX IF NOT EXISTS idx_template_name ON uni_email_template(template_name);
+
+-- 任务提醒表（D类综合预警）
+CREATE TABLE IF NOT EXISTS uni_task_alert (
+    alert_id TEXT PRIMARY KEY,
+    alert_type TEXT NOT NULL,
+    ref_type TEXT,
+    ref_id TEXT,
+    alert_title TEXT NOT NULL,
+    alert_content TEXT,
+    status TEXT DEFAULT 'pending',
+    priority INTEGER DEFAULT 1 CHECK (priority IN (1, 2, 3)),
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP,
+    CHECK (status IN ('pending', 'in_progress', 'inspection', 'completed'))
+);
+
+-- 任务提醒索引
+CREATE INDEX IF NOT EXISTS idx_task_alert_status ON uni_task_alert(status);
+CREATE INDEX IF NOT EXISTS idx_task_alert_type ON uni_task_alert(alert_type);
+CREATE INDEX IF NOT EXISTS idx_task_alert_ref ON uni_task_alert(ref_type, ref_id);
+CREATE INDEX IF NOT EXISTS idx_task_alert_created ON uni_task_alert(created_at DESC);
 """
 
 # 默认管理员插入语句
