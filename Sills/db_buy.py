@@ -12,7 +12,7 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
     LEFT JOIN uni_vendor v ON b.vendor_id = v.vendor_id
     LEFT JOIN uni_cli c ON ord.cli_id = c.cli_id
     LEFT JOIN uni_offer off ON ord.offer_id = off.offer_id
-    LEFT JOIN uni_order_manager_rel rel ON rel.offer_id = off.offer_id
+    LEFT JOIN uni_order_manager_rel rel ON rel.order_id = b.order_id
     LEFT JOIN uni_order_manager m ON rel.manager_id = m.manager_id
     WHERE (b.buy_id LIKE ? OR b.buy_mpn LIKE ? OR v.vendor_name LIKE ?)
     """
@@ -68,10 +68,10 @@ def get_buy_list(page=1, page_size=10, search_kw="", order_id="", start_date="",
                 except:
                     r['price_kwr'] = 0.0
 
-            # 采购单价(USD) - 只在数据库没有值时才计算 (USD汇率表示 1 RMB = ? USD，直接乘)
+            # 采购单价(USD) - 只在数据库没有值时才计算 (USD汇率表示 1 USD = X RMB，需要除法)
             if not r.get('price_usd') or float(r.get('price_usd') or 0) == 0:
                 try:
-                    r['price_usd'] = round(buy_price * usd_val, 2) if usd_val else 0.0
+                    r['price_usd'] = round(buy_price / usd_val, 3) if usd_val else 0.0
                 except:
                     r['price_usd'] = 0.0
 
