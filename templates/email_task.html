@@ -692,8 +692,8 @@
             const tbody = document.getElementById('taskHistoryList');
             tbody.innerHTML = '';
             data.forEach(t => {
-                const statusText = t.status === 'completed' ? '已完成' : t.status === 'running' ? '进行中' : t.status === 'paused' ? '已暂停' : t.status === 'error' ? '执行错误' : '待执行';
-                const statusColor = t.status === 'completed' ? '#22C55E' : t.status === 'running' ? '#3B82F6' : t.status === 'paused' ? '#EF4444' : t.status === 'error' ? '#DC2626' : '#F59E0B';
+                const statusText = t.status === 'completed' ? '已完成' : t.status === 'running' ? '进行中' : t.status === 'paused' ? '已暂停' : t.status === 'error' ? '执行错误' : t.status === 'retrying' ? '重试中' : '待执行';
+                const statusColor = t.status === 'completed' ? '#22C55E' : t.status === 'running' ? '#3B82F6' : t.status === 'paused' ? '#EF4444' : t.status === 'error' ? '#DC2626' : t.status === 'retrying' ? '#8B5CF6' : '#F59E0B';
                 const sentCount = t.sent_count || 0;
                 const totalCount = t.total_count || 0;
                 const skippedCount = t.skipped_count || 0;
@@ -705,6 +705,8 @@
                 if (t.status === 'pending') {
                     actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'running') {
+                    actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
+                } else if (t.status === 'retrying') {
                     actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
                 } else if (t.status === 'paused') {
                     actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
@@ -938,7 +940,8 @@
                     if (data.progress.status === 'completed' ||
                         data.progress.status === 'paused' ||
                         data.progress.status === 'cancelled' ||
-                        data.progress.status === 'error') {
+                        data.progress.status === 'error' ||
+                        data.progress.status === 'pending') {
                         stopProgressPolling(task_id);
                     }
                 }
@@ -964,8 +967,8 @@
         }
 
         // 直接更新当前行的状态和进度
-        const statusText = progress.status === 'completed' ? '已完成' : progress.status === 'running' ? '进行中' : progress.status === 'paused' ? '已暂停' : progress.status === 'error' ? '执行错误' : '待执行';
-        const statusColor = progress.status === 'completed' ? '#22C55E' : progress.status === 'running' ? '#3B82F6' : progress.status === 'paused' ? '#EF4444' : progress.status === 'error' ? '#DC2626' : '#F59E0B';
+        const statusText = progress.status === 'completed' ? '已完成' : progress.status === 'running' ? '进行中' : progress.status === 'paused' ? '已暂停' : progress.status === 'error' ? '执行错误' : progress.status === 'retrying' ? '重试中' : '待执行';
+        const statusColor = progress.status === 'completed' ? '#22C55E' : progress.status === 'running' ? '#3B82F6' : progress.status === 'paused' ? '#EF4444' : progress.status === 'error' ? '#DC2626' : progress.status === 'retrying' ? '#8B5CF6' : '#F59E0B';
 
         const sentCount = progress.sent_count || 0;
         const totalCount = progress.total_count || 0;
@@ -983,7 +986,7 @@
         // 更新进度列（第6列）
         const progressCell = row.querySelector('td:nth-child(6)');
         if (progressCell) {
-            if (progress.status === 'running' || progress.status === 'completed') {
+            if (progress.status === 'running' || progress.status === 'retrying' || progress.status === 'completed') {
                 progressCell.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;">
                     <div style="width: 80px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
                         <div style="width: ${progressPercent}%; height: 100%; background: ${statusColor}; border-radius: 4px;"></div>
@@ -1520,7 +1523,7 @@
             const result = await res.json();
             const tasks = result.tasks || [];
             tasks.forEach(t => {
-                if (t.status === 'running') {
+                if (t.status === 'running' || t.status === 'retrying') {
                     startProgressPolling(t.task_id);
                 }
             });

@@ -147,6 +147,96 @@ class EmailSenderWorker:
         finally:
             os.environ.update(proxy_backup)
 
+    def _is_connection_error(self, error):
+        """判断是否为SMTP连接类错误
+
+        Returns:
+            bool 是否为连接类错误（需要重连）
+        """
+        error_str = str(error).lower()
+        connection_keywords = [
+            'please run connect() first',
+            'connection',
+            'timed out',
+            'timeout',
+            '421',
+            'broken pipe',
+            'server disconnected',
+            'connection reset',
+            'eof occurred',
+        ]
+        if isinstance(error, (smtplib.SMTPServerDisconnected, ConnectionError, OSError)):
+            return True
+        for kw in connection_keywords:
+            if kw in error_str:
+                return True
+        return False
+
+    def _reconnect_smtp(self, old_server, max_retries=2):
+        """尝试重连当前账号的SMTP（指数退避）
+
+        Args:
+            old_server: 旧的SMTP连接（将被关闭）
+            max_retries: 最大重试次数，默认2次
+
+        Returns:
+            新的SMTP连接，或None（重连失败）
+        """
+        account = self.get_current_account()
+        if not account:
+            return None
+
+        for attempt in range(max_retries):
+            wait_time = 5 * (3 ** attempt)  # 5s, 15s 指数退避
+            print(f"[Worker] SMTP重连第{attempt + 1}次，等待{wait_time}秒后重试...")
+            time.sleep(wait_time)
+
+            try:
+                # 关闭旧连接（忽略错误）
+                if old_server:
+                    try:
+                        old_server.quit()
+                    except:
+                        pass
+
+                new_server = self.connect_smtp(account)
+                print(f"[Worker] SMTP重连成功: {account.get('email')}")
+                return new_server
+            except Exception as e:
+                print(f"[Worker] SMTP重连第{attempt + 1}次失败: {e}")
+
+        return None
+
+    def _try_reconnect_or_switch(self, old_server):
+        """尝试重连当前账号，失败则逐个切换到其他账号
+
+        Args:
+            old_server: 旧的SMTP连接
+
+        Returns:
+            (success, new_server) - success=True时new_server为有效连接
+        """
+        # 1. 尝试重连当前账号
+        new_server = self._reconnect_smtp(old_server, max_retries=2)
+        if new_server:
+            return True, new_server
+
+        # 2. 当前账号重连失败，逐个尝试剩余账号
+        print(f"[Worker] 当前账号重连失败，尝试切换到其他账号")
+        for _ in range(len(self.accounts) - 1):
+            if self.switch_to_next_account():
+                acc = self.get_current_account()
+                try:
+                    new_server = self.connect_smtp(acc)
+                    print(f"[Worker] 切换到账号 {acc.get('email')} 成功")
+                    return True, new_server
+                except Exception as e:
+                    print(f"[Worker] 切换到账号 {acc.get('email')} 失败: {e}")
+
+        # 3. 所有账号都连不上
+        print(f"[Worker] 所有账号均无法连接")
+        return False, None
+
     def send_single_email(self, server, to_email, company_name=""):
         """发送单封邮件（支持代理发送）
 
@@ -220,6 +310,7 @@ class EmailSenderWorker:
         # 去重集合：记录已跳过/已失败的邮箱（避免同一邮箱多次计数）
         skipped_email_set = set()  # 已跳过的邮箱
         failed_email_set = set()   # 已失败的邮箱
+        consecutive_550_count = 0  # 当前账号连续550 DT:SPM计数
 
         try:
             self.load_task_data()
@@ -310,6 +401,36 @@ class EmailSenderWorker:
                         server.quit()
                         return
 
+                # 每50封NOOP探活，提前发现死连接
+                if sent_count > 0 and sent_count % 50 == 0:
+                    try:
+                        server.noop()
+                    except Exception as e:
+                        print(f"[Worker] NOOP探活失败: {e}，尝试重连...")
+                        success, server = self._try_reconnect_or_switch(server)
+                        if not success:
+                            update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                            error_task(self.task_id, "SMTP连接断开且所有账号均无法重连")
+                            return
+
+                # 每200封主动重连，避免长连接被中途断开
+                if sent_count > 0 and sent_count % 200 == 0:
+                    try:
+                        server.quit()
+                    except:
+                        pass
+                    current_account = self.get_current_account()
+                    try:
+                        server = self.connect_smtp(current_account)
+                        print(f"[Worker] 主动重连: {current_account.get('email')}")
+                    except Exception as e:
+                        print(f"[Worker] 主动重连失败: {e}，尝试切换账号...")
+                        success, server = self._try_reconnect_or_switch(server)
+                        if not success:
+                            update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                            error_task(self.task_id, "SMTP主动重连失败且所有账号均无法连接")
+                            return
+
                 email_addr = contact.get('email', '')
                 contact_id = contact.get('contact_id', '')
                 company_name = contact.get('company', '')
@@ -351,6 +472,7 @@ class EmailSenderWorker:
                     sent_count += 1
                     account_sent_counts[self.current_account_index] += 1
                     increment_sent_count(current_account['account_id'])
+                    consecutive_550_count = 0  # 发送成功，重置550计数
 
                     # 更新联系人营销状态（send_count++, last_sent_at）
                     if contact_id:
@@ -373,10 +495,129 @@ class EmailSenderWorker:
 
                 except Exception as e:
                     error_msg = str(e)
-                    # 获取当前账号信息用于记录
+
+                    # 判断是否为连接类错误 → 自动重连并重试当前邮件
+                    if self._is_connection_error(e):
+                        print(f"[Worker] {mode_str} 检测到连接错误: {error_msg}，尝试重连...")
+                        success, server = self._try_reconnect_or_switch(server)
+
+                        if success:
+                            # 重连成功，重试发送当前邮件
+                            try:
+                                send_result = self.send_single_email(server, email_addr, company_name)
+                                current_account = self.get_current_account()
+                                current_account_id = current_account.get('account_id')
+                                current_account_email = current_account.get('email')
+
+                                if self.retry_mode:
+                                    from Sills.db_email_log import update_log_status
+                                    update_log_status(self.task_id, email_addr, 'sent', None, current_account_id, current_account_email)
+                                else:
+                                    add_log(self.task_id, contact_id, email_addr, company_name, 'sent', None, current_account_id, current_account_email)
+
+                                if send_result.get('success'):
+                                    save_sent_email_to_mail(send_result, current_account_id)
+                                sent_count += 1
+                                account_sent_counts[self.current_account_index] += 1
+                                increment_sent_count(current_account['account_id'])
+                                consecutive_550_count = 0  # 重连后发送成功，重置550计数
+
+                                if contact_id:
+                                    update_contact_marketing_status(contact_id, 'sent')
+                                else:
+                                    from Sills.db_contact import get_contact_by_email
+                                    existing_contact = get_contact_by_email(email_addr)
+                                    if existing_contact and existing_contact.get('contact_id'):
+                                        update_contact_marketing_status(existing_contact['contact_id'], 'sent')
+
+                                update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                                print(f"[Worker] {mode_str} [{current_account_email}] 重连后发送成功 {base_sent + sent_count}/{total} 到 {email_addr} (账号{self.current_account_index + 1})")
+
+                                send_interval = self.task.get('send_interval', 2) or 2
+                                time.sleep(send_interval)
+                                continue  # 重试成功，继续下一个联系人
+
+                            except Exception as retry_e:
+                                # 重连后重试仍然失败，按普通失败处理
+                                error_msg = str(retry_e)
+                                current_account = self.get_current_account()
+                                current_account_id = current_account.get('account_id')
+                                current_account_email = current_account.get('email')
+                                print(f"[Worker] {mode_str} 重连后重试仍然失败 {email_addr}: {error_msg}")
+                        else:
+                            # 所有账号都无法重连，任务终止
+                            update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                            error_task(self.task_id, "SMTP连接断开且所有账号均无法重连")
+                            return
+
+                    # 非连接错误，或重连后重试仍失败 → 检查550 DT:SPM
+                    current_account = self.get_current_account()
                     current_account_id = current_account.get('account_id')
                     current_account_email = current_account.get('email')
-                    # 重试模式：更新之前失败的日志，保持failed状态但更新错误信息
+
+                    # 检测550 DT:SPM反垃圾拦截，连续5次切换到下一个账号
+                    if '550' in error_msg and 'DT:SPM' in error_msg:
+                        consecutive_550_count += 1
+                        print(f"[Worker] {mode_str} [{current_account_email}] 550 DT:SPM拦截 ({consecutive_550_count}/5) {email_addr}")
+                        if consecutive_550_count >= 5:
+                            print(f"[Worker] {mode_str} 账号 {current_account_email} 连续{consecutive_550_count}次550拦截，切换到下一个账号")
+                            consecutive_550_count = 0  # 重置计数
+                            try:
+                                server.quit()
+                            except:
+                                pass
+                            if self.switch_to_next_account():
+                                next_account = self.get_current_account()
+                                try:
+                                    server = self.connect_smtp(next_account)
+                                    print(f"[Worker] 已切换到账号 {next_account.get('email')}，重试当前邮件")
+                                    # 用新账号重试当前邮件
+                                    try:
+                                        send_result = self.send_single_email(server, email_addr, company_name)
+                                        next_account_id = next_account.get('account_id')
+                                        next_account_email = next_account.get('email')
+                                        if self.retry_mode:
+                                            from Sills.db_email_log import update_log_status
+                                            update_log_status(self.task_id, email_addr, 'sent', None, next_account_id, next_account_email)
+                                        else:
+                                            add_log(self.task_id, contact_id, email_addr, company_name, 'sent', None, next_account_id, next_account_email)
+                                        if send_result.get('success'):
+                                            save_sent_email_to_mail(send_result, next_account_id)
+                                        sent_count += 1
+                                        account_sent_counts[self.current_account_index] += 1
+                                        increment_sent_count(next_account['account_id'])
+                                        consecutive_550_count = 0
+                                        if contact_id:
+                                            update_contact_marketing_status(contact_id, 'sent')
+                                        else:
+                                            from Sills.db_contact import get_contact_by_email
+                                            existing_contact = get_contact_by_email(email_addr)
+                                            if existing_contact and existing_contact.get('contact_id'):
+                                                update_contact_marketing_status(existing_contact['contact_id'], 'sent')
+                                        update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                                        print(f"[Worker] {mode_str} [{next_account_email}] 切换账号后发送成功 {base_sent + sent_count}/{total} 到 {email_addr}")
+                                        send_interval = self.task.get('send_interval', 2) or 2
+                                        time.sleep(send_interval)
+                                        continue  # 成功，继续下一个
+                                    except Exception as retry_e:
+                                        retry_error_msg = str(retry_e)
+                                        print(f"[Worker] {mode_str} 切换账号后重试仍失败 {email_addr}: {retry_error_msg}")
+                                        error_msg = retry_error_msg
+                                        current_account = self.get_current_account()
+                                        current_account_id = current_account.get('account_id')
+                                        current_account_email = current_account.get('email')
+                                except Exception as conn_e:
+                                    print(f"[Worker] 切换账号 {next_account.get('email')} 连接失败: {conn_e}")
+                            else:
+                                # 所有账号都已轮完，说明邮件内容被拦截
+                                update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
+                                error_task(self.task_id, "所有账号均连续触发550 DT:SPM反垃圾拦截，请检查邮件内容")
+                                return
+                    else:
+                        # 非550错误，重置550计数器
+                        consecutive_550_count = 0
+
+                    # 记录失败日志
                     if self.retry_mode:
                         from Sills.db_email_log import update_log_status
                         update_log_status(self.task_id, email_addr, 'failed', error_msg, current_account_id, current_account_email)

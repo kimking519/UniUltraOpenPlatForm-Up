@@ -90,7 +90,7 @@ def get_active_task():
         row = conn.execute("""
             SELECT t.*
             FROM uni_email_task t
-            WHERE t.status = 'running'
+            WHERE t.status IN ('running', 'retrying')
         """).fetchone()
         if row:
             task = {k: ("" if v is None else v) for k, v in dict(row).items()}
@@ -123,7 +123,7 @@ def get_interrupted_tasks():
         rows = conn.execute("""
             SELECT t.*
             FROM uni_email_task t
-            WHERE t.status = 'running'
+            WHERE t.status IN ('running', 'retrying')
             ORDER BY t.started_at DESC
         """).fetchall()
         tasks = []
@@ -137,7 +137,7 @@ def has_running_task():
     """检查是否有正在进行的任务"""
     with get_db_connection() as conn:
         count = conn.execute(
-            "SELECT COUNT(*) FROM uni_email_task WHERE status = 'running'"
+            "SELECT COUNT(*) FROM uni_email_task WHERE status IN ('running', 'retrying')"
         ).fetchone()[0]
         return count > 0
 
@@ -223,7 +223,7 @@ def start_task(task_id):
             conn.execute(f"""
                 UPDATE uni_email_task
                 SET status = 'running', started_at = {dt_now}, cancel_requested = 0, error_message = ''
-                WHERE task_id = ? AND status IN ('pending', 'paused', 'error')
+                WHERE task_id = ? AND status IN ('pending', 'paused', 'error', 'retrying')
             """, (task_id,))
             conn.commit()
             return True, "任务已启动"
@@ -272,7 +272,7 @@ def cancel_task(task_id):
             conn.execute("""
                 UPDATE uni_email_task
                 SET cancel_requested = 1, status = 'paused'
-                WHERE task_id = ? AND status = 'running'
+                WHERE task_id = ? AND status IN ('running', 'retrying')
             """, (task_id,))
             conn.commit()
             return True, "任务已暂停"
