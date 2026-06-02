@@ -441,6 +441,11 @@ class EmailSenderWorker:
                 # 跳过已发送成功的联系人（当前任务内重复）
                 if email_addr.lower() in sent_email_set:
                     print(f"[Worker] {mode_str} 跳过已发送(当前任务): {email_addr}")
+                    # 去重计数：同一个邮箱只计一次跳过
+                    if email_addr.lower() not in skipped_email_set:
+                        skipped_email_set.add(email_addr.lower())
+                        skipped_count += 1
+                    update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
                     continue
 
                 # 跳过规则：N天内已成功发送的邮箱（不限任务）
