@@ -873,7 +873,9 @@ async function batchGeneratePI() {
         document.body.removeChild(processingMsg);
 
         if (result.success) {
-            alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
+            const outputDir = result.output_dir || '';
+            if (outputDir) navigator.clipboard.writeText(outputDir);
+            alert(result.message + '\n\n文件已保存到: ' + outputDir + '\n📂 路径已复制到剪贴板');
         } else {
             alert('生成失败: ' + result.message);
         }
@@ -909,7 +911,9 @@ async function batchGenerateCI() {
         document.body.removeChild(processingMsg);
 
         if (result.success) {
-            alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
+            const outputDir = result.output_dir || '';
+            if (outputDir) navigator.clipboard.writeText(outputDir);
+            alert(result.message + '\n\n文件已保存到: ' + outputDir + '\n📂 路径已复制到剪贴板');
         } else {
             alert('生成失败: ' + result.message + (result.errors ? '\n' + result.errors.join('\n') : ''));
         }
@@ -946,7 +950,9 @@ async function batchGenerateContract() {
         document.body.removeChild(processingMsg);
 
         if (result.success) {
-            alert(result.message + '\n\n文件已保存到: ' + result.output_dir);
+            const outputDir = result.output_dir || '';
+            if (outputDir) navigator.clipboard.writeText(outputDir);
+            alert(result.message + '\n\n文件已保存到: ' + outputDir + '\n📂 路径已复制到剪贴板');
         } else {
             alert('生成失败: ' + result.message + (result.errors ? '\n' + result.errors.join('\n') : ''));
         }

@@ -1768,7 +1768,10 @@
 
             const data = await response.json();
             if (data.success) {
-                alert(`✅ 报价单生成成功！\n文件路径: ${data.file_path}\n报价条数: ${data.count}\n客户: ${data.cli_name}`);
+                const filePath = data.file_path || '';
+                const dirPath = filePath.substring(0, Math.max(filePath.lastIndexOf('\\'), filePath.lastIndexOf('/')));
+                if (dirPath) navigator.clipboard.writeText(dirPath);
+                alert(`✅ 报价单生成成功！\n文件路径: ${filePath}\n报价条数: ${data.count}\n客户: ${data.cli_name}\n\n📂 路径已复制到剪贴板`);
             } else {
                 alert('生成失败: ' + data.message);
             }
@@ -1797,7 +1800,10 @@
 
             const data = await response.json();
             if (data.success) {
-                alert(`✅ PI-KR生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+                const excelPath = data.excel_path || '';
+                const dirPath = excelPath.substring(0, Math.max(excelPath.lastIndexOf('\\'), excelPath.lastIndexOf('/')));
+                if (dirPath) navigator.clipboard.writeText(dirPath);
+                alert(`✅ PI-KR生成成功！\n文件路径: ${excelPath}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}\n\n📂 路径已复制到剪贴板`);
             } else {
                 alert('生成失败: ' + data.message);
             }
@@ -1826,7 +1832,10 @@
 
             const data = await response.json();
             if (data.success) {
-                alert(`✅ PI-US生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+                const excelPath = data.excel_path || '';
+                const dirPath = excelPath.substring(0, Math.max(excelPath.lastIndexOf('\\'), excelPath.lastIndexOf('/')));
+                if (dirPath) navigator.clipboard.writeText(dirPath);
+                alert(`✅ PI-US生成成功！\n文件路径: ${excelPath}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}\n\n📂 路径已复制到剪贴板`);
             } else {
                 alert('生成失败: ' + data.message);
             }
@@ -1855,7 +1864,10 @@
 
             const data = await response.json();
             if (data.success) {
-                alert(`✅ CI-KR生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+                const excelPath = data.excel_path || '';
+                const dirPath = excelPath.substring(0, Math.max(excelPath.lastIndexOf('\\'), excelPath.lastIndexOf('/')));
+                if (dirPath) navigator.clipboard.writeText(dirPath);
+                alert(`✅ CI-KR生成成功！\n文件路径: ${excelPath}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}\n\n📂 路径已复制到剪贴板`);
             } else {
                 alert('生成失败: ' + data.message);
             }
@@ -1884,7 +1896,10 @@
 
             const data = await response.json();
             if (data.success) {
-                alert(`✅ CI-US生成成功！\n文件路径: ${data.excel_path}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}`);
+                const excelPath = data.excel_path || '';
+                const dirPath = excelPath.substring(0, Math.max(excelPath.lastIndexOf('\\'), excelPath.lastIndexOf('/')));
+                if (dirPath) navigator.clipboard.writeText(dirPath);
+                alert(`✅ CI-US生成成功！\n文件路径: ${excelPath}\n发票号: ${data.invoice_no}\n客户: ${data.cli_name}\n条数: ${data.count}\n\n📂 路径已复制到剪贴板`);
             } else {
                 alert('生成失败: ' + data.message);
             }
