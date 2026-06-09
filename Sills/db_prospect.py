@@ -163,13 +163,20 @@ def add_prospect(data):
         except:
             value_level = 0
 
+        # tag 处理（用户自定义标识，整数，默认0）
+        tag = data.get('tag', 0)
+        try:
+            tag = int(tag) if tag not in (None, '') else 0
+        except:
+            tag = 0
+
         with get_db_connection() as conn:
             conn.execute("""
                 INSERT INTO uni_prospect (
                     prospect_id, prospect_name, company_website, domain,
                     country, business_type, business_detail, value_level,
-                    status, contact_count, is_public_domain, remark
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, contact_count, is_public_domain, tag, remark
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 prospect_id, prospect_name,
                 data.get('company_website', ''),
@@ -181,6 +188,7 @@ def add_prospect(data):
                 'pending',
                 contact_count,
                 is_public,
+                tag,
                 data.get('remark', '')
             ))
             conn.commit()
@@ -250,7 +258,11 @@ def import_prospects(data_list):
     for data in data_list:
         try:
             prospect_name = data.get('prospect_name', '').strip()
+            # domain 规范化：去前后空格、转小写、去开头的 www. 前缀
+            # 注意：只能去开头的 www.，用 startswith 判断；不能用 replace('www.','') 否则会把 'mywww.com' 变成 'my.com'
             domain = data.get('domain', '').strip().lower()
+            if domain.startswith('www.'):
+                domain = domain[4:]
 
             if not prospect_name or not domain:
                 skipped_count += 1
@@ -279,12 +291,30 @@ def import_prospects(data_list):
                 except:
                     value_level = 0
 
+                # 状态白名单校验，不在范围内强制 pending
+                # 注意：上游（main.py /api/prospect/import）已对"已转化"做降级处理
+                # 此处仅作为最后防线
+                allowed_status = {'pending', 'converted', 'invalid'}
+                status = data.get('status') or 'pending'
+                if status not in allowed_status:
+                    status = 'pending'
+                # 防御性：即使上游忘了拦截，"已转化"在没有 cli_id 的情况下强制改 pending
+                if status == 'converted':
+                    status = 'pending'
+
+                # tag 处理（用户自定义标识，整数，默认0；非法值兜底为0）
+                tag = data.get('tag', 0)
+                try:
+                    tag = int(tag) if tag not in (None, '') else 0
+                except:
+                    tag = 0
+
                 conn.execute("""
                     INSERT INTO uni_prospect (
                         prospect_id, prospect_name, company_website, domain,
                         country, business_type, business_detail, value_level,
-                        status, contact_count, is_public_domain, remark
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        status, contact_count, is_public_domain, tag, remark
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     prospect_id, prospect_name,
                     data.get('company_website', ''),
@@ -293,9 +323,10 @@ def import_prospects(data_list):
                     data.get('business_type', ''),
                     data.get('business_detail', ''),
                     value_level,
-                    'pending',
+                    status,
                     0,
                     is_public,
+                    tag,
                     data.get('remark', '')
                 ))
                 # with语句结束时自动commit

@@ -134,35 +134,87 @@
         <div style="margin-top: 10px;">
             <input type="text" id="taskSubject" placeholder="邮件主题（支持{公司名}占位符）" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
         </div>
-        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
-            <span style="font-size: 12px; color: var(--text-muted);">发送时间段:</span>
-            <input type="time" id="taskScheduleStart" value="09:00" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <span style="font-size: 12px; color: var(--text-muted);">至</span>
-            <input type="time" id="taskScheduleEnd" value="18:00" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <span style="font-size: 12px; color: var(--text-muted);">发送间隔:</span>
-            <input type="number" id="taskSendInterval" value="2" min="1" max="60" style="width: 60px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <span style="font-size: 12px; color: var(--text-muted);">秒</span>
-        </div>
-        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
-            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-main);">
-                <input type="checkbox" id="taskSkipEnabled" checked style="width: 16px; height: 16px;">
-                <span style="font-size: 12px; color: var(--text-muted);">跳过规则：</span>
-            </label>
-            <input type="number" id="taskSkipDays" value="7" min="1" max="365" style="width: 60px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <span style="font-size: 12px; color: var(--text-muted);">天内已发送的邮箱自动跳过</span>
-        </div>
-        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
-            <span style="font-size: 12px; color: var(--text-muted);">单账号日上限:</span>
-            <input type="number" id="taskDailyLimit" value="1800" min="100" max="5000" style="width: 80px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-            <span style="font-size: 12px; color: var(--text-muted);">封（满限制自动切换下一账号）</span>
+        <div style="margin-top: 10px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+            <!-- 发送时间段 -->
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <span style="font-size: 12px; color: var(--text-muted);">发送时间段:</span>
+                <input type="time" id="taskScheduleStart" value="09:00" style="padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <span style="font-size: 12px; color: var(--text-muted);">至</span>
+                <input type="time" id="taskScheduleEnd" value="18:00" style="padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <span style="font-size: 12px; color: var(--text-muted);">间隔</span>
+                <input type="number" id="taskSendInterval" value="2" min="1" max="60" style="width: 50px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <span style="font-size: 12px; color: var(--text-muted);">秒</span>
+            </div>
+            <!-- 分隔线 -->
+            <span style="color: var(--border);">|</span>
+            <!-- 跳过规则 -->
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted);" title="勾选启用跳过规则">
+                    <input type="checkbox" id="taskSkipEnabled" checked style="width: 14px; height: 14px;">
+                    <span>跳过规则：</span>
+                </label>
+                <input type="number" id="taskSkipDays" value="7" min="1" max="365" style="width: 50px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <span style="font-size: 12px; color: var(--text-muted);" title="N天内已发送过的邮箱自动跳过">天内不重发</span>
+            </div>
+            <!-- 分隔线 -->
+            <span style="color: var(--border);">|</span>
+            <!-- 单账号日上限 -->
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <span style="font-size: 12px; color: var(--text-muted);">单账号日上限:</span>
+                <input type="number" id="taskDailyLimit" value="1800" min="100" max="5000" style="width: 70px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+                <span style="font-size: 12px; color: var(--text-muted);" title="到达上限自动切换下一账号">封</span>
+            </div>
         </div>
         <div id="taskEditorContainer" style="border: 1px solid var(--border); border-radius: var(--radius); background: var(--card-bg); overflow: hidden; margin-top: 10px;">
-            <div id="taskEditorToolbar" style="display: flex; gap: 5px; padding: 5px; background: var(--bg-main); border-bottom: 1px solid var(--border); flex-wrap: wrap;">
-                <button type="button" onclick="execTaskCmd('bold')" title="加粗" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-weight: bold;">B</button>
-                <button type="button" onclick="execTaskCmd('italic')" title="斜体" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-style: italic;">I</button>
-                <button type="button" onclick="execTaskCmd('underline')" title="下划线" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; text-decoration: underline;">U</button>
+            <div id="taskEditorToolbar" style="display: flex; gap: 4px; padding: 5px; background: var(--bg-main); border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center;">
+                <select id="taskFontFamily" onchange="execTaskCmd('fontName', this.value); this.value='';" title="字体" style="width: 80px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-size: 12px;">
+                    <option value="">字体</option>
+                    <option value="宋体">宋体</option>
+                    <option value="微软雅黑">微软雅黑</option>
+                    <option value="黑体">黑体</option>
+                    <option value="楷体">楷体</option>
+                    <option value="仿宋">仿宋</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Calibri">Calibri</option>
+                    <option value="Verdana">Verdana</option>
+                </select>
+                <select id="taskFontSize" onchange="setTaskFontSize(this.value); this.value='';" title="字号" style="width: 55px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-size: 12px;">
+                    <option value="">字号</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                    <option value="13">13</option>
+                    <option value="14">14</option>
+                    <option value="15">15</option>
+                    <option value="16">16</option>
+                    <option value="17">17</option>
+                    <option value="18">18</option>
+                </select>
+                <button type="button" onclick="execTaskCmd('bold')" title="加粗" style="width: 28px; padding: 2px 0; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-weight: bold; text-align: center;">B</button>
+                <button type="button" onclick="execTaskCmd('italic')" title="斜体" style="width: 28px; padding: 2px 0; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-style: italic; text-align: center;">I</button>
+                <button type="button" onclick="execTaskCmd('underline')" title="下划线" style="width: 28px; padding: 2px 0; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; text-decoration: underline; text-align: center;">U</button>
+                <label title="字体颜色" onmousedown="saveTaskSelection()" style="display: inline-flex; align-items: center; cursor: pointer; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); position: relative; width: 32px; justify-content: center;">
+                    <span style="font-size: 12px; color: var(--text-main);">A</span><span style="font-size: 10px; border-bottom: 3px solid #ff0000; margin-left: 1px;">&#8203;</span>
+                    <input type="color" id="taskFontColor" value="#000000" onchange="applyTaskFontColor(this.value)" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
+                </label>
+                <label title="背景颜色" onmousedown="saveTaskSelection()" style="display: inline-flex; align-items: center; cursor: pointer; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); position: relative; width: 32px; justify-content: center;">
+                    <span style="font-size: 12px; color: var(--text-main);">🎨</span>
+                    <input type="color" id="taskBgColor" value="#ffff00" onchange="applyTaskBgColor(this.value)" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
+                </label>
+                <select id="taskLineHeight" onchange="setTaskLineHeight(this.value); this.value='';" title="行距" style="width: 55px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-size: 12px;">
+                    <option value="">行距</option>
+                    <option value="1.0">1.0</option>
+                    <option value="1.3">1.3</option>
+                    <option value="1.5">1.5</option>
+                    <option value="1.8">1.8</option>
+                    <option value="2.0">2.0</option>
+                    <option value="2.5">2.5</option>
+                </select>
+                <button type="button" onclick="insertTaskSignature()" title="插入签名" style="padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-main); color: var(--text-main); cursor: pointer; font-size: 12px;">✍️签名</button>
             </div>
-            <div id="taskBody" contenteditable="true" placeholder="邮件内容..." style="width: 100%; min-height: 200px; padding: 10px; border: none; background: var(--bg-main); color: var(--text-main); resize: vertical; overflow-y: auto; outline: none; line-height: 1.6;"></div>
+            <div id="taskBody" contenteditable="true" placeholder="邮件内容..." onmouseup="saveTaskSelection()" onkeyup="saveTaskSelection()" onblur="saveTaskSelection()" style="width: 100%; min-height: 200px; padding: 10px; border: none; background: var(--bg-main); color: var(--text-main); resize: vertical; overflow-y: auto; outline: none; line-height: 1.6;"></div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
             <span style="font-size: 12px; color: var(--text-muted);">日发送上限: 1800封</span>
@@ -461,10 +513,132 @@
         }
     }
 
+    // 保存/恢复选区（解决点击颜色按钮时选区丢失问题）
+    let taskSavedRange = null;
+    function saveTaskSelection() {
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0) {
+            taskSavedRange = sel.getRangeAt(0).cloneRange();
+        }
+    }
+    function restoreTaskSelection() {
+        if (taskSavedRange) {
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(taskSavedRange);
+        }
+    }
+
     // 富文本命令
     function execTaskCmd(cmd, value = null) {
-        document.getElementById('taskBody').focus();
+        const editor = document.getElementById('taskBody');
+        editor.focus();
+        restoreTaskSelection();
         document.execCommand(cmd, false, value);
+    }
+
+    // 字体颜色（点击前保存选区）
+    function applyTaskFontColor(color) {
+        const editor = document.getElementById('taskBody');
+        editor.focus();
+        restoreTaskSelection();
+        document.execCommand('foreColor', false, color);
+    }
+
+    // 背景颜色（点击前保存选区）
+    function applyTaskBgColor(color) {
+        const editor = document.getElementById('taskBody');
+        editor.focus();
+        restoreTaskSelection();
+        document.execCommand('hiliteColor', false, color);
+    }
+
+    // 设置字号（9-18px），execCommand fontSize只支持1-7，需要hack
+    function setTaskFontSize(sizeInPx) {
+        if (!sizeInPx) return;
+        const editor = document.getElementById('taskBody');
+        editor.focus();
+        restoreTaskSelection();
+        // 先用fontSize设一个值，让浏览器包裹<font>标签
+        document.execCommand('fontSize', false, '7');
+        // 找到刚插入的<font size="7">替换为带px的span
+        const fonts = editor.querySelectorAll('font[size="7"]');
+        fonts.forEach(font => {
+            const span = document.createElement('span');
+            span.style.fontSize = sizeInPx + 'px';
+            span.innerHTML = font.innerHTML;
+            font.parentNode.replaceChild(span, font);
+        });
+    }
+
+    // 设置行距
+    function setTaskLineHeight(lineHeight) {
+        if (!lineHeight) return;
+        const editor = document.getElementById('taskBody');
+        editor.focus();
+        restoreTaskSelection();
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        // 获取选区所在的块级元素
+        let node = range.commonAncestorContainer;
+        if (node.nodeType === 3) node = node.parentNode; // 文本节点取父元素
+
+        // 向上找到块级元素或编辑器本身
+        while (node && node !== editor && !['P','DIV','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE'].includes(node.tagName)) {
+            node = node.parentNode;
+        }
+
+        if (node && node !== editor) {
+            node.style.lineHeight = lineHeight;
+        } else {
+            // 如果没有找到块级元素，用execCommand插入一个带行距的段落
+            document.execCommand('formatBlock', false, 'p');
+            // 重新查找
+            const newRange = selection.getRangeAt(0);
+            let pNode = newRange.commonAncestorContainer;
+            if (pNode.nodeType === 3) pNode = pNode.parentNode;
+            while (pNode && pNode !== editor && !['P','DIV'].includes(pNode.tagName)) {
+                pNode = pNode.parentNode;
+            }
+            if (pNode && pNode !== editor) {
+                pNode.style.lineHeight = lineHeight;
+            } else {
+                // 兜底：设置整个编辑器的行距
+                editor.style.lineHeight = lineHeight;
+            }
+        }
+    }
+
+    // 缓存签名
+    let taskCachedSignature = '';
+
+    // 一键插入签名
+    async function insertTaskSignature() {
+        const editor = document.getElementById('taskBody');
+        editor.focus();
+
+        // 如果缓存为空，尝试从API获取
+        if (!taskCachedSignature) {
+            try {
+                const response = await fetch('/api/mail/signature');
+                if (response.ok) {
+                    const data = await response.json();
+                    taskCachedSignature = data.signature || '';
+                }
+            } catch (e) {
+                console.error('获取签名失败:', e);
+            }
+        }
+
+        if (!taskCachedSignature) {
+            alert('未设置签名，请在邮件设置中先保存签名');
+            return;
+        }
+
+        // 在光标位置插入签名
+        document.execCommand('insertHTML', false, '<br>' + taskCachedSignature);
     }
 
     // 已选联系人组（用于任务创建）
@@ -1516,6 +1690,17 @@
         await loadGroupsForTask();
         await loadGroups();
         await loadTemplates();
+
+        // 预加载签名缓存
+        try {
+            const sigRes = await fetch('/api/mail/signature');
+            if (sigRes.ok) {
+                const sigData = await sigRes.json();
+                taskCachedSignature = sigData.signature || '';
+            }
+        } catch (e) {
+            console.error('预加载签名失败:', e);
+        }
 
         // 检查是否有运行中的任务并启动轮询
         try {

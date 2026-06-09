@@ -92,10 +92,12 @@ def get_contact_list(page=1, page_size=20, search_kw="", filters=None):
     where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
     # LEFT JOIN uni_cli（正式客户）和 uni_prospect（待开发客户）
+    # 注：prospect_tag 仅在联系人关联到 pending 状态的 prospect 时有值；CLI 表暂无 tag 字段
     query = f"""
     SELECT c.*,
            cli.cli_name, cli.region as cli_region,
-           p.prospect_name, p.country as prospect_country, p.prospect_id
+           p.prospect_name, p.country as prospect_country, p.prospect_id,
+           p.tag as prospect_tag
     FROM uni_contact c
     LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
     LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
@@ -280,8 +282,15 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
     contacts_list: [{email, contact_name, country, position, phone, company, remark}, ...]
     auto_create_cli: 是否自动创建不存在的客户
     每条记录使用独立连接，避免 PostgreSQL 事务错误累积
+
+    返回: (success_count, skipped_count, errors, new_clients)
+      - success_count: 成功导入数
+      - skipped_count: 因邮箱重复跳过的数量（与 Prospect 导入对齐）
+      - errors: 真正的错误（不含重复跳过）
+      - new_clients: 自动创建的客户列表
     """
     success_count = 0
+    skipped_count = 0
     errors = []
     new_clients = []
 
@@ -294,15 +303,19 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
                 continue
 
             # 优先使用传入的domain，否则从邮箱自动提取
-            domain = contact.get('domain', '').strip() if contact.get('domain') else extract_domain(email)
+            raw_domain = contact.get('domain', '').strip() if contact.get('domain') else extract_domain(email)
+            # domain 规范化：转小写、去开头的 www. 前缀（避免 www.x.com 和 x.com 重复入库）
+            domain = raw_domain.lower() if raw_domain else ''
+            if domain.startswith('www.'):
+                domain = domain[4:]
             contact_id = get_next_contact_id()
 
             # 每条记录使用独立连接
             with get_db_connection() as conn:
-                # 检查是否已存在
+                # 检查是否已存在（按 email 唯一）
                 existing = conn.execute("SELECT contact_id FROM uni_contact WHERE email = ?", (email,)).fetchone()
                 if existing:
-                    errors.append(f"{email}: 邮箱已存在")
+                    skipped_count += 1
                     continue
 
                 # 尝试匹配客户
@@ -363,7 +376,8 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
         except Exception as e:
             error_msg = str(e)
             if 'duplicate key' in error_msg.lower() or 'already exists' in error_msg.lower():
-                errors.append(f"{contact.get('email', '未知')}: 已存在")
+                # DB 层唯一约束兜底，也算 skipped 而非 error
+                skipped_count += 1
             else:
                 errors.append(f"{contact.get('email', '未知')}: {error_msg}")
 
@@ -372,7 +386,7 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
         from Sills.db_cli import sync_cli_marketing_status
         sync_cli_marketing_status()
 
-    return success_count, errors, new_clients
+    return success_count, skipped_count, errors, new_clients
 
 
 def update_contact_marketing_status(contact_id, status_type, increment=True):

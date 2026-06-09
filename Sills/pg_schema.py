@@ -487,6 +487,7 @@ CREATE TABLE IF NOT EXISTS uni_prospect (
     status TEXT DEFAULT 'pending',
     contact_count INTEGER DEFAULT 0,
     is_public_domain INTEGER DEFAULT 0,
+    tag INTEGER DEFAULT 0,                  -- 标识（用户自定义区分客户，默认0）
     remark TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON DELETE SET NULL,

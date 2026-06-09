@@ -93,7 +93,7 @@ def add_mail_account(config: Dict[str, Any]) -> str:
         """, (
             account_id,
             config.get('account_name', '新账户'),
-            config.get('email'),
+            config.get('email') or config.get('username'),
             config.get('username') or config.get('email'),
             password,
             config.get('smtp_server'),

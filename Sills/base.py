@@ -619,6 +619,19 @@ def _init_db_postgresql():
             conn.rollback()
             print(f"[DB] uni_task_alert 表迁移: {e}")
 
+        # 迁移：uni_prospect 表添加 tag 字段（用户自定义标识，默认0）
+        try:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'uni_prospect' AND column_name = 'tag'
+            """)
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE uni_prospect ADD COLUMN tag INTEGER DEFAULT 0")
+                print("[DB] 迁移：uni_prospect 表已添加 tag 字段（默认0）")
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] uni_prospect tag 字段迁移: {e}")
+
         # 执行 schema
         cur.execute(PG_SCHEMA)
         # 插入默认管理员
@@ -1135,6 +1148,7 @@ def _init_db_sqlite():
         status TEXT DEFAULT 'pending',     -- 状态：pending/converted/archived
         contact_count INTEGER DEFAULT 0,   -- 关联联系人数
         is_public_domain INTEGER DEFAULT 0, -- 是否公共邮箱域名（gmail/hotmail等）
+        tag INTEGER DEFAULT 0,             -- 标识（用户自定义区分客户，默认0）
         remark TEXT,                       -- 备注
         created_at DATETIME DEFAULT (datetime('now', 'localtime')),
         FOREIGN KEY (cli_id) REFERENCES uni_cli(cli_id) ON DELETE SET NULL
@@ -1289,6 +1303,13 @@ def _init_db_sqlite():
         try:
             conn.execute("ALTER TABLE uni_mail ADD COLUMN from_name TEXT")
             print("[DB] 迁移完成：uni_mail 添加 from_name 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
+        # 迁移：为 uni_prospect 添加 tag 字段（用户自定义标识，默认0）
+        try:
+            conn.execute("ALTER TABLE uni_prospect ADD COLUMN tag INTEGER DEFAULT 0")
+            print("[DB] 迁移完成：uni_prospect 添加 tag 列")
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 

@@ -181,39 +181,51 @@ def update_manager(manager_id, data):
 def delete_manager(manager_id, cascade=False):
     """删除客户订单
     cascade=False: 检查引用，有则拒绝删除
-    cascade=True: 级联删除关联的报价、销售订单、采购记录
+    cascade=True: 级联删除关联的销售订单、报价、采购记录
     """
     try:
         with get_db_connection() as conn:
-            # 获取关联的报价订单ID列表
-            offer_ids = conn.execute("SELECT offer_id FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,)).fetchall()
-            offer_ids = [row[0] for row in offer_ids]
+            # 获取关联的销售订单ID列表（通过 order_id）
+            order_rows = conn.execute("SELECT order_id FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,)).fetchall()
+            order_ids = [row[0] for row in order_rows]
 
-            if offer_ids:
-                offer_placeholders = ','.join(['?'] * len(offer_ids))
+            if order_ids:
+                order_placeholders = ','.join(['?'] * len(order_ids))
 
-                # 检查报价是否被销售订单引用
-                order_refs = conn.execute(f"SELECT order_id FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids).fetchall()
-                order_ids = [row[0] for row in order_refs]
+                # 通过销售订单获取报价ID列表
+                offer_rows = conn.execute(f"SELECT DISTINCT offer_id FROM uni_order WHERE order_id IN ({order_placeholders})", order_ids).fetchall()
+                offer_ids = [row[0] for row in offer_rows]
 
-                if order_ids and not cascade:
-                    return False, f"无法删除：关联的报价被 {len(order_ids)} 条销售订单引用，请勾选【级联删除】选项"
+                # 检查销售订单是否被采购引用
+                buy_refs = conn.execute(f"SELECT buy_id FROM uni_buy WHERE order_id IN ({order_placeholders})", order_ids).fetchall()
+                buy_ids = [row[0] for row in buy_refs]
+
+                if buy_ids and not cascade:
+                    return False, f"无法删除：关联的销售订单被 {len(buy_ids)} 条采购记录引用，请勾选【级联删除】选项"
 
                 if cascade:
                     # 级联删除：先删除采购记录 -> 销售订单 -> 报价
-                    if order_ids:
-                        order_placeholders = ','.join(['?'] * len(order_ids))
-                        conn.execute(f"DELETE FROM uni_buy WHERE order_id IN ({order_placeholders})", order_ids)
-                        conn.execute(f"DELETE FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids)
+                    if buy_ids:
+                        buy_placeholders = ','.join(['?'] * len(buy_ids))
+                        conn.execute(f"DELETE FROM uni_buy WHERE buy_id IN ({buy_placeholders})", buy_ids)
 
-                    conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
+                    conn.execute(f"DELETE FROM uni_order WHERE order_id IN ({order_placeholders})", order_ids)
+
+                    if offer_ids:
+                        offer_placeholders = ','.join(['?'] * len(offer_ids))
+                        conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
                 else:
-                    # 不级联删除：只能删除未被引用的报价
-                    # 找出未被引用的报价
-                    unreferenced_offers = [oid for oid in offer_ids if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ?", (oid,)).fetchone()]
-                    if unreferenced_offers:
-                        unreferenced_placeholders = ','.join(['?'] * len(unreferenced_offers))
-                        conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({unreferenced_placeholders})", unreferenced_offers)
+                    # 不级联删除：只删除未被引用的销售订单
+                    unreferenced_orders = [oid for oid in order_ids if not conn.execute("SELECT 1 FROM uni_buy WHERE order_id = ?", (oid,)).fetchone()]
+                    if unreferenced_orders:
+                        unreferenced_placeholders = ','.join(['?'] * len(unreferenced_orders))
+                        conn.execute(f"DELETE FROM uni_order WHERE order_id IN ({unreferenced_placeholders})", unreferenced_orders)
+                        # 获取这些销售订单关联的报价ID，如果报价不再被任何销售订单引用，也删除
+                        unreferenced_offer_rows = conn.execute(f"SELECT DISTINCT offer_id FROM uni_order WHERE order_id IN ({unreferenced_placeholders})", unreferenced_orders).fetchall()
+                        for offer_row in unreferenced_offer_rows:
+                            offer_id = offer_row[0]
+                            if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ? AND order_id NOT IN ({})".format(unreferenced_placeholders), [offer_id] + unreferenced_orders).fetchone():
+                                conn.execute("DELETE FROM uni_offer WHERE offer_id = ?", (offer_id,))
 
             # 删除关联记录
             conn.execute("DELETE FROM uni_order_manager_rel WHERE manager_id = ?", (manager_id,))
@@ -225,14 +237,14 @@ def delete_manager(manager_id, cascade=False):
             conn.execute("DELETE FROM uni_order_manager WHERE manager_id = ?", (manager_id,))
             conn.commit()
 
-        deleted_count = len(offer_ids) if cascade else len([oid for oid in offer_ids if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ?", (oid,)).fetchone()])
-        return True, f"删除成功（同时删除了 {deleted_count} 条关联报价）"
+        deleted_count = len(order_ids) if cascade else len([oid for oid in order_ids if not conn.execute("SELECT 1 FROM uni_buy WHERE order_id = ?", (oid,)).fetchone()])
+        return True, f"删除成功（同时删除了 {deleted_count} 条关联销售订单）"
     except Exception as e:
         return False, f"数据库错误：{str(e)}"
 
 
 def add_offer_to_manager(manager_id, offer_id):
-    """添加报价订单到客户订单"""
+    """添加报价订单到客户订单（自动创建销售订单）"""
     try:
         with get_db_connection() as conn:
             # 检查客户订单是否存在
@@ -245,13 +257,57 @@ def add_offer_to_manager(manager_id, offer_id):
             if not offer:
                 return False, "报价订单不存在"
 
-            # 检查是否已关联
-            existing = conn.execute("SELECT id FROM uni_order_manager_rel WHERE manager_id = ? AND offer_id = ?", (manager_id, offer_id)).fetchone()
-            if existing:
+            # 检查报价是否已关联到此客户订单（通过销售订单）
+            existing_rel = conn.execute("""
+                SELECT r.id FROM uni_order_manager_rel r
+                JOIN uni_order o ON r.order_id = o.order_id
+                WHERE r.manager_id = ? AND o.offer_id = ?
+            """, (manager_id, offer_id)).fetchone()
+            if existing_rel:
                 return False, "该报价订单已关联到此客户订单"
 
-            # 添加关联
-            conn.execute("INSERT INTO uni_order_manager_rel (manager_id, offer_id) VALUES (?, ?)", (manager_id, offer_id))
+            # 检查是否已有销售订单
+            existing_order = conn.execute("SELECT order_id FROM uni_order WHERE offer_id = ?", (offer_id,)).fetchone()
+
+            if existing_order:
+                # 已有销售订单，直接关联
+                order_id = existing_order['order_id']
+            else:
+                # 创建销售订单
+                order_date = datetime.now().strftime("%Y-%m-%d")
+                last_order = conn.execute("SELECT order_id FROM uni_order WHERE order_id LIKE 'd%' ORDER BY order_id DESC LIMIT 1").fetchone()
+                if last_order:
+                    try:
+                        last_num = int(last_order['order_id'][1:])
+                        new_num = last_num + 1
+                    except:
+                        new_num = 1
+                else:
+                    new_num = 1
+                order_id = f"d{new_num:05d}"
+
+                # 获取报价信息
+                offer_data = conn.execute("SELECT * FROM uni_offer WHERE offer_id = ?", (offer_id,)).fetchone()
+                offer_dict = dict(offer_data)
+
+                conn.execute("""
+                    INSERT INTO uni_order (
+                        order_id, order_no, order_date, cli_id, offer_id,
+                        inquiry_mpn, inquiry_brand, price_rmb, price_kwr, price_usd,
+                        cost_price_rmb, is_finished, is_paid, paid_amount, return_status,
+                        remark, is_transferred
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    order_id, order_id, order_date, manager['cli_id'] if 'cli_id' in manager else None, offer_id,
+                    offer_dict.get('quoted_mpn') or offer_dict.get('inquiry_mpn'),
+                    offer_dict.get('quoted_brand') or offer_dict.get('inquiry_brand'),
+                    offer_dict.get('offer_price_rmb'), offer_dict.get('price_kwr'), offer_dict.get('price_usd'),
+                    offer_dict.get('cost_price_rmb'), 0, 0, 0.0, '正常',
+                    '', '未转'
+                ))
+
+            # 添加关联（通过 order_id）
+            conn.execute("INSERT INTO uni_order_manager_rel (manager_id, order_id) VALUES (?, ?)", (manager_id, order_id))
             conn.commit()
 
             # 重新计算汇总
@@ -263,12 +319,23 @@ def add_offer_to_manager(manager_id, offer_id):
 
 
 def remove_offer_from_manager(manager_id, offer_id):
-    """从客户订单移除报价订单"""
+    """从客户订单移除报价订单（通过销售订单）"""
     try:
         with get_db_connection() as conn:
-            result = conn.execute("DELETE FROM uni_order_manager_rel WHERE manager_id = ? AND offer_id = ?", (manager_id, offer_id))
-            if result.rowcount == 0:
+            # 找到关联的销售订单
+            result = conn.execute("""
+                SELECT r.id, r.order_id FROM uni_order_manager_rel r
+                JOIN uni_order o ON r.order_id = o.order_id
+                WHERE r.manager_id = ? AND o.offer_id = ?
+            """, (manager_id, offer_id)).fetchone()
+            if not result:
                 return False, "关联记录不存在"
+
+            rel_id = result['id']
+            order_id = result['order_id']
+
+            # 删除关联记录
+            conn.execute("DELETE FROM uni_order_manager_rel WHERE id = ?", (rel_id,))
             conn.commit()
 
             # 重新计算汇总
@@ -282,12 +349,13 @@ def remove_offer_from_manager(manager_id, offer_id):
 def recalculate_manager_totals(manager_id):
     """重新计算客户订单的汇总字段"""
     with get_db_connection() as conn:
-        # 查询所有关联的报价订单
+        # 查询所有关联的销售订单，再关联报价获取价格信息
         rows = conn.execute("""
             SELECT o.offer_price_rmb as price_rmb, o.price_kwr, o.price_usd, o.price_jpy, o.cost_price_rmb,
                    COALESCE(o.quoted_qty, 1) as qty
             FROM uni_order_manager_rel r
-            JOIN uni_offer o ON r.offer_id = o.offer_id
+            JOIN uni_order ord ON r.order_id = ord.order_id
+            JOIN uni_offer o ON ord.offer_id = o.offer_id
             WHERE r.manager_id = ?
         """, (manager_id,)).fetchall()
 
@@ -329,12 +397,13 @@ def recalculate_manager_totals(manager_id):
 
 
 def get_manager_offers(manager_id):
-    """获取客户订单关联的所有报价订单"""
+    """获取客户订单关联的所有报价订单（通过销售订单）"""
     with get_db_connection() as conn:
         rows = conn.execute("""
-            SELECT o.*, c.cli_name, v.vendor_name
+            SELECT o.*, c.cli_name, v.vendor_name, ord.order_id
             FROM uni_order_manager_rel r
-            JOIN uni_offer o ON r.offer_id = o.offer_id
+            JOIN uni_order ord ON r.order_id = ord.order_id
+            JOIN uni_offer o ON ord.offer_id = o.offer_id
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
             LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
@@ -356,15 +425,17 @@ def get_manager_offers(manager_id):
 
 
 def get_available_offers_for_manager(cli_id=None, manager_id=None):
-    """获取可添加到客户订单的报价订单（未被关联的）"""
+    """获取可添加到客户订单的报价订单（未被关联到任何客户订单的）"""
     with get_db_connection() as conn:
         query = """
             SELECT o.offer_id, o.offer_date, o.quoted_mpn, o.inquiry_mpn,
-                   o.offer_price_rmb, o.quoted_qty, COALESCE(o.cli_id, q.cli_id) as cli_id, c.cli_name
+                   o.offer_price_rmb, o.quoted_qty, COALESCE(o.cli_id, q.cli_id) as cli_id, c.cli_name,
+                   ord.order_id
             FROM uni_offer o
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
-            WHERE o.offer_id NOT IN (SELECT offer_id FROM uni_order_manager_rel)
+            LEFT JOIN uni_order ord ON o.offer_id = ord.offer_id
+            WHERE ord.order_id NOT IN (SELECT order_id FROM uni_order_manager_rel)
         """
         params = []
 
@@ -375,9 +446,9 @@ def get_available_offers_for_manager(cli_id=None, manager_id=None):
         # 如果指定了 manager_id，可以显示该客户订单已关联的报价订单
         if manager_id:
             query = query.replace(
-                "WHERE o.offer_id NOT IN (SELECT offer_id FROM uni_order_manager_rel)",
-                """WHERE (o.offer_id NOT IN (SELECT offer_id FROM uni_order_manager_rel)
-                   OR o.offer_id IN (SELECT offer_id FROM uni_order_manager_rel WHERE manager_id = ?))"""
+                "WHERE ord.order_id NOT IN (SELECT order_id FROM uni_order_manager_rel)",
+                """WHERE (ord.order_id NOT IN (SELECT order_id FROM uni_order_manager_rel)
+                   OR ord.order_id IN (SELECT order_id FROM uni_order_manager_rel WHERE manager_id = ?))"""
             )
             params.insert(0, manager_id)
 
@@ -503,7 +574,7 @@ def batch_import_manager(text, cli_id=None):
 def batch_delete_managers(manager_ids, cascade=False):
     """批量删除客户订单
     cascade=False: 检查引用，有则拒绝删除
-    cascade=True: 级联删除关联的报价、销售订单、采购记录
+    cascade=True: 级联删除关联的销售订单、报价、采购记录
     """
     if not manager_ids:
         return True, "无选中记录"
@@ -511,37 +582,44 @@ def batch_delete_managers(manager_ids, cascade=False):
         with get_db_connection() as conn:
             placeholders = ','.join(['?'] * len(manager_ids))
 
-            # 获取关联的报价订单ID列表
-            offer_ids = conn.execute(f"SELECT offer_id FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids).fetchall()
-            offer_ids = [row[0] for row in offer_ids]
+            # 获取关联的销售订单ID列表（通过 order_id）
+            order_rows = conn.execute(f"SELECT order_id FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids).fetchall()
+            order_ids = [row[0] for row in order_rows]
 
-            if offer_ids:
-                offer_placeholders = ','.join(['?'] * len(offer_ids))
+            if order_ids:
+                order_placeholders = ','.join(['?'] * len(order_ids))
 
-                # 检查报价是否被销售订单引用
-                order_refs = conn.execute(f"SELECT order_id FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids).fetchall()
-                order_ids = [row[0] for row in order_refs]
+                # 通过销售订单获取报价ID列表
+                offer_rows = conn.execute(f"SELECT DISTINCT offer_id FROM uni_order WHERE order_id IN ({order_placeholders})", order_ids).fetchall()
+                offer_ids = [row[0] for row in offer_rows]
 
-                if order_ids and not cascade:
-                    return False, f"无法删除：关联的报价被 {len(order_ids)} 条销售订单引用，请勾选【级联删除】选项"
+                # 检查销售订单是否被采购引用
+                buy_refs = conn.execute(f"SELECT buy_id FROM uni_buy WHERE order_id IN ({order_placeholders})", order_ids).fetchall()
+                buy_ids = [row[0] for row in buy_refs]
+
+                if buy_ids and not cascade:
+                    return False, f"无法删除：关联的销售订单被 {len(buy_ids)} 条采购记录引用，请勾选【级联删除】选项"
 
                 if cascade:
                     # 级联删除：先删除采购记录 -> 销售订单 -> 报价
-                    if order_ids:
-                        order_placeholders = ','.join(['?'] * len(order_ids))
-                        conn.execute(f"DELETE FROM uni_buy WHERE order_id IN ({order_placeholders})", order_ids)
-                        conn.execute(f"DELETE FROM uni_order WHERE offer_id IN ({offer_placeholders})", offer_ids)
+                    if buy_ids:
+                        buy_placeholders = ','.join(['?'] * len(buy_ids))
+                        conn.execute(f"DELETE FROM uni_buy WHERE buy_id IN ({buy_placeholders})", buy_ids)
 
-                    conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
+                    conn.execute(f"DELETE FROM uni_order WHERE order_id IN ({order_placeholders})", order_ids)
+
+                    if offer_ids:
+                        offer_placeholders = ','.join(['?'] * len(offer_ids))
+                        conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({offer_placeholders})", offer_ids)
                 else:
-                    # 不级联删除：只能删除未被引用的报价
-                    unreferenced_offers = []
-                    for oid in offer_ids:
-                        if not conn.execute("SELECT 1 FROM uni_order WHERE offer_id = ?", (oid,)).fetchone():
-                            unreferenced_offers.append(oid)
-                    if unreferenced_offers:
-                        unreferenced_placeholders = ','.join(['?'] * len(unreferenced_offers))
-                        conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({unreferenced_placeholders})", unreferenced_offers)
+                    # 不级联删除：只删除未被引用的销售订单
+                    unreferenced_orders = []
+                    for oid in order_ids:
+                        if not conn.execute("SELECT 1 FROM uni_buy WHERE order_id = ?", (oid,)).fetchone():
+                            unreferenced_orders.append(oid)
+                    if unreferenced_orders:
+                        unreferenced_placeholders = ','.join(['?'] * len(unreferenced_orders))
+                        conn.execute(f"DELETE FROM uni_order WHERE order_id IN ({unreferenced_placeholders})", unreferenced_orders)
 
             # 删除关联记录
             conn.execute(f"DELETE FROM uni_order_manager_rel WHERE manager_id IN ({placeholders})", manager_ids)
@@ -771,21 +849,21 @@ def batch_convert_offers_to_manager(offer_ids, manager_id):
 
 
 def get_manager_orders_for_purchase(manager_id):
-    """获取客户订单中可用于转采购的报价订单（排除已转采购的）"""
+    """获取客户订单中可用于转采购的销售订单（排除已转采购的）"""
     with get_db_connection() as conn:
         rows = conn.execute("""
             SELECT o.offer_id, o.quoted_mpn as inquiry_mpn, o.quoted_brand as buy_brand, o.offer_price_rmb as price_rmb, o.price_usd,
-                   o.cost_price_rmb, q.cli_id, c.cli_name,
+                   o.cost_price_rmb, q.cli_id, c.cli_name, ord.order_id,
                    o.quoted_qty, o.date_code, o.delivery_date,
                    v.vendor_id, v.vendor_name, m.customer_order_no,
                    CASE WHEN bu.buy_id IS NOT NULL THEN 1 ELSE 0 END as is_purchased
             FROM uni_order_manager_rel r
-            JOIN uni_offer o ON r.offer_id = o.offer_id
+            JOIN uni_order ord ON r.order_id = ord.order_id
+            JOIN uni_offer o ON ord.offer_id = o.offer_id
             JOIN uni_order_manager m ON r.manager_id = m.manager_id
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
             LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
-            LEFT JOIN uni_order ord ON ord.offer_id = o.offer_id
             LEFT JOIN uni_buy bu ON bu.order_id = ord.order_id
             WHERE r.manager_id = ?
             ORDER BY o.created_at DESC
@@ -794,7 +872,7 @@ def get_manager_orders_for_purchase(manager_id):
 
 
 def get_all_manager_orders_for_purchase(manager_ids):
-    """批量获取多个客户订单的报价订单用于转采购（排除已转采购的）"""
+    """批量获取多个客户订单的销售订单用于转采购（排除已转采购的）"""
     if not manager_ids:
         return []
 
@@ -802,17 +880,17 @@ def get_all_manager_orders_for_purchase(manager_ids):
         placeholders = ','.join(['?'] * len(manager_ids))
         rows = conn.execute(f"""
             SELECT o.offer_id, o.quoted_mpn as inquiry_mpn, o.quoted_brand as buy_brand, o.offer_price_rmb as price_rmb, o.price_usd,
-                   o.cost_price_rmb, COALESCE(o.cli_id, q.cli_id) as cli_id, c.cli_name,
+                   o.cost_price_rmb, COALESCE(o.cli_id, q.cli_id) as cli_id, c.cli_name, ord.order_id,
                    o.quoted_qty, o.date_code, o.delivery_date,
                    v.vendor_id, v.vendor_name, r.manager_id, m.customer_order_no,
                    CASE WHEN bu.buy_id IS NOT NULL THEN 1 ELSE 0 END as is_purchased
             FROM uni_order_manager_rel r
-            JOIN uni_offer o ON r.offer_id = o.offer_id
+            JOIN uni_order ord ON r.order_id = ord.order_id
+            JOIN uni_offer o ON ord.offer_id = o.offer_id
             JOIN uni_order_manager m ON r.manager_id = m.manager_id
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
             LEFT JOIN uni_vendor v ON o.vendor_id = v.vendor_id
-            LEFT JOIN uni_order ord ON ord.offer_id = o.offer_id
             LEFT JOIN uni_buy bu ON bu.order_id = ord.order_id
             WHERE r.manager_id IN ({placeholders})
             ORDER BY o.created_at DESC

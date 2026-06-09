@@ -5337,6 +5337,72 @@ async def api_contact_stats(current_user: dict = Depends(login_required)):
     return get_marketing_stats()
 
 
+@app.get("/api/contact/export")
+async def api_contact_export(current_user: dict = Depends(login_required)):
+    """
+    导出全部联系人为 Excel（全量，不接受任何筛选参数）
+    导出字段与 /api/contact/template 完全一致：域名*、邮箱*、姓名、职位、备注
+    这样导出的文件可以直接反向 import。
+    """
+    from openpyxl import Workbook
+    from fastapi.responses import StreamingResponse
+    from Sills.base import get_db_connection
+    from urllib.parse import quote
+    from datetime import datetime
+    import io
+
+    # 直接全表查询，不应用任何筛选
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT domain, email, contact_name, position, remark "
+            "FROM uni_contact ORDER BY created_at DESC"
+        ).fetchall()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "联系人导出"
+    # 表头必须与 /api/contact/template (main.py:5294) 完全一致
+    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注'])
+
+    for r in rows:
+        ws.append([
+            r['domain'] or '',
+            r['email'] or '',
+            r['contact_name'] or '',
+            r['position'] or '',
+            r['remark'] or '',
+        ])
+
+    # 列宽与模板保持一致
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 30
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # 文件名按确认方案：contacts_export_YYYYMMDDHHMM_共N条.xlsx
+    # 同时提供 ASCII fallback，兼容不识别 RFC 5987 filename* 的浏览器/下载器
+    ts = datetime.now().strftime('%Y%m%d%H%M')
+    filename_utf8 = f"contacts_export_{ts}_共{len(rows)}条.xlsx"
+    filename_ascii = f"contacts_export_{ts}_{len(rows)}.xlsx"
+    encoded_filename = quote(filename_utf8)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename_ascii}"; '
+                f"filename*=UTF-8''{encoded_filename}"
+            )
+        }
+    )
+
+
 @app.get("/api/contact/{contact_id}")
 async def api_contact_get(contact_id: str, current_user: dict = Depends(login_required)):
     """获取联系人详情"""
@@ -5478,11 +5544,11 @@ async def api_contact_import(request: Request, current_user: dict = Depends(logi
     if not contacts:
         return {"success": False, "message": "未提供数据"}
 
-    success_count, errors, new_clients = batch_import_contacts(contacts, auto_create_cli)
+    success_count, skipped_count, errors, new_clients = batch_import_contacts(contacts, auto_create_cli)
     return {
         "success": True,
         "imported": success_count,
-        "skipped": len(contacts) - success_count,
+        "skipped": skipped_count,
         "errors": errors[:10] if errors else [],
         "new_clients": new_clients
     }
@@ -5543,13 +5609,13 @@ async def api_contact_import_file(request: Request, current_user: dict = Depends
             return {"success": False, "message": "文件中没有有效数据"}
 
         print("调用 batch_import_contacts...")
-        success_count, errors, new_clients = batch_import_contacts(contacts, False)
-        print(f"导入结果: 成功={success_count}, 错误={errors}, 新客户={new_clients}")
+        success_count, skipped_count, errors, new_clients = batch_import_contacts(contacts, False)
+        print(f"导入结果: 成功={success_count}, 跳过={skipped_count}, 错误={errors}, 新客户={new_clients}")
         print("===== 联系人文件导入结束 =====")
         return {
             "success": True,
             "imported": success_count,
-            "skipped": len(contacts) - success_count,
+            "skipped": skipped_count,
             "errors": errors[:10] if errors else [],
             "new_clients": new_clients
         }
@@ -5651,6 +5717,7 @@ async def api_contact_template(current_user: dict = Depends(login_required)):
 async def api_prospect_template(current_user: dict = Depends(login_required)):
     """下载Prospect导入模板"""
     from openpyxl import Workbook
+    from openpyxl.comments import Comment
     from fastapi.responses import StreamingResponse
     import io
     from urllib.parse import quote
@@ -5658,9 +5725,23 @@ async def api_prospect_template(current_user: dict = Depends(login_required)):
     wb = Workbook()
     ws = wb.active
     ws.title = "Prospect导入模板"
-    # 新模板字段：客户名称、公司网站、域名、国家、主要业务、业务明细、价值分级、备注
-    ws.append(['客户名称*', '公司网站', '域名*', '国家', '主要业务', '业务明细', '价值分级(1-3)', '备注'])
-    ws.append(['示例公司', 'https://example.com', 'example.com', '中国', '电子元器件', '半导体分销', '2', '备注信息'])
+    # 模板字段（10列，倒数第二列为状态、最后一列为标识）：与 /api/prospect/export 完全对齐
+    # 状态值可填：待开发 / 已转化 / 无效；留空默认 待开发
+    # 标识：用户自定义整数标识，默认 0
+    # 注意：导入"已转化"会被降级为"待开发"（必须通过页面转化操作才能创建客户）
+    ws.append(['客户名称*', '公司网站', '域名*', '国家', '主要业务', '业务明细', '价值分级(1-3)', '备注', '状态', '标识'])
+    ws.append(['示例公司', 'https://example.com', 'example.com', '中国', '电子元器件', '半导体分销', '2', '备注信息', '待开发', '0'])
+
+    # 给状态表头加批注，告诉用户取值范围
+    ws['I1'].comment = Comment(
+        "状态取值：待开发 / 已转化 / 无效\n留空默认为 待开发\n注意：导入'已转化'会被降级为'待开发'，必须通过页面转化操作创建客户",
+        "System"
+    )
+    # 给标识表头加批注
+    ws['J1'].comment = Comment(
+        "标识：用户自定义整数（默认 0），用于区分/分组客户\n例：0=普通  1=重点  2=已联系...",
+        "System"
+    )
 
     # 设置列宽
     ws.column_dimensions['A'].width = 20
@@ -5671,17 +5752,25 @@ async def api_prospect_template(current_user: dict = Depends(login_required)):
     ws.column_dimensions['F'].width = 20
     ws.column_dimensions['G'].width = 15
     ws.column_dimensions['H'].width = 30
+    ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 10
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
 
-    filename = "prospect_template.xlsx"
-    encoded_filename = quote(filename)
+    filename_utf8 = "prospect_template.xlsx"
+    filename_ascii = "prospect_template.xlsx"
+    encoded_filename = quote(filename_utf8)
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename_ascii}"; '
+                f"filename*=UTF-8''{encoded_filename}"
+            )
+        }
     )
 
 
@@ -5697,6 +5786,89 @@ async def api_prospect_countries(current_user: dict = Depends(login_required)):
     """获取Prospect国家列表"""
     from Sills.db_prospect import get_prospect_countries
     return {"success": True, "countries": get_prospect_countries()}
+
+
+@app.get("/api/prospect/export")
+async def api_prospect_export(current_user: dict = Depends(login_required)):
+    """导出所有待开发客户为Excel"""
+    from Sills.db_prospect import get_prospect_list
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+
+    # 获取全部数据（按 created_at DESC 排序，由 get_prospect_list 内部处理）
+    prospects, _total = get_prospect_list(page=1, page_size=100000, search_kw="", filters=None)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "待开发客户"
+
+    # 表头（与页面展示及业务要求一致）
+    headers = [
+        "客户名称*", "公司网站", "域名*", "国家",
+        "主要业务", "业务明细", "价值分级(1-3)", "备注", "状态", "标识"
+    ]
+    ws.append(headers)
+
+    # 表头样式
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_align = Alignment(horizontal="center", vertical="center")
+    for col_idx in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+
+    # 状态映射
+    status_map = {
+        'pending': '待开发',
+        'converted': '已转化',
+        'invalid': '无效',
+    }
+
+    # 数据行
+    for p in prospects:
+        status_raw = p.get('status') or 'pending'
+        status_text = status_map.get(status_raw, status_raw)
+        ws.append([
+            p.get('prospect_name') or '',
+            p.get('company_website') or '',
+            p.get('domain') or '',
+            p.get('country') or '',
+            p.get('business_type') or '',
+            p.get('business_detail') or '',
+            p.get('value_level') if p.get('value_level') not in (None, '', 0) else '',
+            p.get('remark') or '',
+            status_text,
+            p.get('tag') if p.get('tag') not in (None, '') else 0,
+        ])
+
+    # 列宽
+    col_widths = [25, 30, 25, 12, 20, 30, 14, 30, 10, 10]
+    for i, w in enumerate(col_widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    # 冻结首行
+    ws.freeze_panes = "A2"
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    from urllib.parse import quote
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename_utf8 = f"待开发客户_{ts}.xlsx"
+    filename_ascii = f"prospects_export_{ts}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename_ascii}"; '
+                f"filename*=UTF-8''{quote(filename_utf8)}"
+            )
+        }
+    )
 
 
 @app.get("/api/prospect/{prospect_id}")
@@ -5810,7 +5982,16 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
         print(f"表头: {header_row}")
 
         # 解析Excel数据
+        # 状态中文→英文映射；不识别的值或空都降级为 pending
+        # 注意：导入"已转化"也会被降级为 pending（防止产生 cli_id 为空的幽灵已转化记录）
+        STATUS_MAP = {
+            '待开发': 'pending', 'pending': 'pending', '': 'pending',
+            '已转化': 'converted_blocked',  # 特殊标记，下方降级处理
+            'converted': 'converted_blocked',
+            '无效': 'invalid', 'invalid': 'invalid',
+        }
         data_list = []
+        downgraded_rows = []  # 收集被降级的行号，最后并入 errors 提示用户
         row_num = 2
         for row in ws.iter_rows(min_row=2, values_only=True):
             print(f"第{row_num}行数据: {row}")
@@ -5818,6 +5999,15 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
                 print(f"  -> 跳过: 数据为空或客户名称为空")
                 row_num += 1
                 continue
+            # 状态列（第9列，索引8）—— 模板没有这列时 row 长度可能 <9，兼容旧模板
+            raw_status = ''
+            if len(row) >= 9 and row[8] is not None:
+                raw_status = str(row[8]).strip()
+            mapped = STATUS_MAP.get(raw_status, 'pending')
+            if mapped == 'converted_blocked':
+                downgraded_rows.append(row_num)
+                mapped = 'pending'
+
             item = {
                 'prospect_name': str(row[0] or '').strip(),
                 'company_website': str(row[1] or '').strip(),
@@ -5826,7 +6016,10 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
                 'business_type': str(row[4] or '').strip(),
                 'business_detail': str(row[5] or '').strip(),
                 'value_level': row[6] if row[6] else 0,
-                'remark': str(row[7] or '').strip()
+                'remark': str(row[7] or '').strip(),
+                'status': mapped,
+                # 第10列：标识（兼容旧模板没有此列的情况）
+                'tag': (row[9] if len(row) >= 10 and row[9] not in (None, '') else 0),
             }
             print(f"  -> 解析结果: {item}")
             data_list.append(item)
@@ -5839,13 +6032,19 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
 
         print("调用 import_prospects...")
         imported, skipped, errors = import_prospects(data_list)
+        # 把"已转化降级"提示并入 errors 列表返回给前端
+        if downgraded_rows:
+            errors = [
+                f"行 {n}: 状态'已转化'已自动降级为'待开发'（请通过页面转化操作创建客户）"
+                for n in downgraded_rows
+            ] + errors
         print(f"导入结果: 成功={imported}, 跳过={skipped}, 错误={errors}")
         print("===== Prospect文件导入结束 =====")
         return {
             "success": True,
             "imported": imported,
             "skipped": skipped,
-            "errors": errors[:10] if errors else []
+            "errors": errors[:20] if errors else []
         }
     except Exception as e:
         import traceback

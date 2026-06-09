@@ -167,16 +167,17 @@ def batch_import_transactions(rows_data, source_file="", batch_id=None):
         batch_id: 批次ID（可选，默认自动生成）
 
     Returns:
-        (success_count, errors, batch_id)
+        (success_count, skip_count, errors, batch_id)
     """
     success_count = 0
+    skip_count = 0
     errors = []
 
     if not batch_id:
         batch_id = generate_batch_id()
 
     if not rows_data:
-        return 0, ["无数据"], batch_id
+        return 0, 0, ["无数据"], batch_id
 
     try:
         with get_db_connection() as conn:
@@ -189,6 +190,7 @@ def batch_import_transactions(rows_data, source_file="", batch_id=None):
                     if transaction_no or ledger_no:
                         existing = get_transaction_by_bank_no(transaction_no, ledger_no)
                         if existing:
+                            skip_count += 1  # 记录跳过数量
                             continue  # 跳过重复流水
 
                     transaction_id = generate_transaction_id()
@@ -258,7 +260,7 @@ def batch_import_transactions(rows_data, source_file="", batch_id=None):
     except Exception as e:
         errors.append(f"批量导入失败：{str(e)}")
 
-    return success_count, errors, batch_id
+    return success_count, skip_count, errors, batch_id
 
 
 def update_transaction(transaction_id, data):

@@ -221,16 +221,8 @@
         <button class="btn btn-primary btn-sm" id="tabContacts" onclick="toggleTab('contacts')">联系人</button>
         <button class="btn btn-ghost btn-sm" id="tabProspects" onclick="toggleTab('prospects')">待开发客户</button>
     </div>
-    <a href="/mail" class="btn" style="background: var(--border); color: var(--text-main); margin-left: 1rem;">返回邮件列表</a>
-    <!-- 数据同步按钮 - 不受Tab切换影响 -->
-    {% if current_user.rule == '3' or current_user.rule == '0' %}
-    <button class="btn btn-success btn-sm" onclick="startSync()" style="margin-left: 0.5rem;">
-        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-        </svg>
-        数据同步
-    </button>
-    {% endif %}
+    <!-- 返回邮件列表 - 推到最右侧，与主操作区分离 -->
+    <a href="/mail" class="btn btn-sm" style="background: var(--border); color: var(--text-main); margin-left: auto;" title="返回邮件列表 (Esc)">返回邮件列表</a>
 </div>
 
 <!-- 联系人Tab内容 -->
@@ -298,6 +290,13 @@
                     </svg>
                     清空全部
                 </button>
+                <!-- 数据同步按钮 - 紧贴操作按钮组尾部（仅在联系人Tab显示） -->
+                <button class="btn btn-success btn-sm" onclick="startSync()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    数据同步
+                </button>
                 <button class="btn btn-primary btn-sm" onclick="toggleModal('addModal')">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -352,6 +351,7 @@
                     <th>公司/域名</th>
                     <th>国家</th>
                     <th>关联客户</th>
+                    <th style="width: 60px;" title="关联待开发客户的标识（来自 uni_prospect.tag）">标识</th>
                     <th>发送</th>
                     <th>退信</th>
                     <th>已读</th>
@@ -453,6 +453,7 @@
                         <th>价值分级</th>
                         <th>关联联系人</th>
                         <th>状态</th>
+                        <th style="width: 60px;" title="用户自定义标识（双击编辑）">标识</th>
                         <th style="width: 120px;">操作</th>
                     </tr>
                 </thead>
@@ -855,6 +856,18 @@
             }
             tr.appendChild(tdClient);
 
+            // 标识：来自关联的 prospect.tag，未关联或关联 CLI 时显示 '-'
+            // 注意：item.prospect_tag 在 LEFT JOIN 未匹配时会被 dict_factory 转成 ''（空字符串）
+            const tdProspectTag = document.createElement('td');
+            const hasProspect = !!item.prospect_name;
+            if (hasProspect && item.prospect_tag !== '' && item.prospect_tag !== undefined && item.prospect_tag !== null) {
+                tdProspectTag.textContent = item.prospect_tag;
+                tdProspectTag.title = '关联待开发客户 [' + item.prospect_name + '] 的标识';
+            } else {
+                tdProspectTag.textContent = '-';
+            }
+            tr.appendChild(tdProspectTag);
+
             // 发送次数
             const tdSendCount = document.createElement('td');
             tdSendCount.textContent = item.send_count || 0;
@@ -1122,9 +1135,19 @@
             }
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
+            // 从响应头解析后端返回的文件名，优先 filename*=UTF-8''，fallback filename="..."
+            let filename = 'contacts_export.xlsx';
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const utf8Match = disposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/);
+            if (utf8Match) {
+                filename = decodeURIComponent(utf8Match[1]);
+            } else {
+                const asciiMatch = disposition.match(/filename="?(.+?)"?(?:;|$)/);
+                if (asciiMatch) filename = asciiMatch[1];
+            }
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'contacts_export.xlsx';
+            a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
             showToast('导出成功', 'success');
@@ -1419,6 +1442,15 @@
         }
         tdStatus.appendChild(statusBadge);
         tr.appendChild(tdStatus);
+
+        // 标识 - 支持双击编辑（用户自定义整数，默认 0）
+        const tdTag = document.createElement('td');
+        const tagVal = (item.tag === undefined || item.tag === null) ? 0 : item.tag;
+        tdTag.textContent = tagVal;
+        tdTag.style.cursor = 'pointer';
+        tdTag.title = '双击编辑标识';
+        tdTag.ondblclick = () => ProspectManager.inlineEdit(item.prospect_id, 'tag', tagVal);
+        tr.appendChild(tdTag);
 
         // 操作栏 - 只保留转化按钮
         const tdActions = document.createElement('td');
@@ -1747,9 +1779,19 @@
                 }
                 const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
+                // 从响应头解析后端返回的文件名，优先 filename*=UTF-8''，fallback filename="..."
+                let filename = 'prospects_export.xlsx';
+                const disposition = res.headers.get('Content-Disposition') || '';
+                const utf8Match = disposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/);
+                if (utf8Match) {
+                    filename = decodeURIComponent(utf8Match[1]);
+                } else {
+                    const asciiMatch = disposition.match(/filename="?(.+?)"?(?:;|$)/);
+                    if (asciiMatch) filename = asciiMatch[1];
+                }
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'prospects_export.xlsx';
+                a.download = filename;
                 a.click();
                 URL.revokeObjectURL(url);
                 showToast('导出成功', 'success');
