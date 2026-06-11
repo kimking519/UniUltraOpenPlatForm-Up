@@ -569,91 +569,51 @@ def get_contact_countries():
         return sorted(list(countries))
 
 
-def _count_contacts_by_mail_type(conn, mail_type, sender_email='joy@unicornsemi.com'):
-    """统计某种 mail_type 邮件命中的去重联系人数
-
-    通过解析邮件内容/原始收件人提取邮箱地址，与 uni_contact.email 匹配，
-    返回去重后的联系人数量。
-
-    Args:
-        conn: 数据库连接
-        mail_type: 1=已读回执, 2=未读回执, 3=系统退信
-        sender_email: 发送方邮箱（需要排除，避免自己回执自己）
-
-    Returns:
-        int: 去重后的 contact_id 数量
-    """
-    matched_contact_ids = set()
-
-    if mail_type == 3:
-        # 退信：优先用 original_recipient（自动分类时已提取），其次从 content 解析
-        rows = conn.execute("""
-            SELECT original_recipient, content FROM uni_mail
-            WHERE mail_type = 3
-        """).fetchall()
-        for r in rows:
-            candidates = []
-            original_recipient = r['original_recipient'] if 'original_recipient' in r.keys() else None
-            if original_recipient:
-                candidates.append(original_recipient.lower())
-            elif r['content']:
-                candidates.extend(extract_emails_from_addr(r['content']))
-
-            for email in candidates:
-                if not email or email == sender_email:
-                    continue
-                row = conn.execute(
-                    "SELECT contact_id FROM uni_contact WHERE email = ?",
-                    (email,)
-                ).fetchone()
-                if row:
-                    matched_contact_ids.add(row['contact_id'])
-    else:
-        # 已读(1) / 未读(2) 回执：从 content 解析收件人
-        rows = conn.execute("""
-            SELECT content FROM uni_mail
-            WHERE mail_type = ? AND content IS NOT NULL AND content != ''
-        """, (mail_type,)).fetchall()
-        for r in rows:
-            for email in extract_emails_from_addr(r['content']):
-                if email == sender_email:
-                    continue
-                row = conn.execute(
-                    "SELECT contact_id FROM uni_contact WHERE email = ?",
-                    (email,)
-                ).fetchone()
-                if row:
-                    matched_contact_ids.add(row['contact_id'])
-
-    return len(matched_contact_ids)
-
-
 def get_marketing_stats():
     """获取营销统计数据
 
-    统计逻辑（2026-06-11 重构）：
-    - total_sent     = SUM(uni_contact.send_count) —— 由开发信发送时累加，链路完整
-    - total_bounced  = uni_mail.mail_type=3 命中的去重联系人数（实时计算）
-    - total_read     = uni_mail.mail_type=1 命中的去重联系人数（实时计算）
-    - total_unread   = uni_mail.mail_type=2 命中的去重联系人数（实时计算，已去重）
+    统计逻辑：
+    - total_sent     = SUM(uni_contact.send_count)
+    - total_bounced  = mail_type=3 中 original_recipient JOIN uni_contact 的去重联系人数
+    - total_read     = mail_type=1 中 to_addr JOIN uni_contact 的去重联系人数
+    - total_unread   = mail_type=2 中 to_addr JOIN uni_contact 的去重联系人数
 
-    说明：read/bounce 不再 SUM uni_contact 的累计字段，因为代码中没有任何位置
-    回写 read_count / bounce_count，那两个字段长期为 0。改为从 uni_mail 实时
-    JOIN 联系人统计，保证数据真实可信。
+    全部用单次 JOIN 查询，避免 N+1 性能问题。
     """
     with get_db_connection() as conn:
-        # 联系人总数
         total_contacts = conn.execute("SELECT COUNT(*) FROM uni_contact").fetchone()[0]
+        total_sent = conn.execute("SELECT COALESCE(SUM(send_count), 0) FROM uni_contact").fetchone()[0]
 
-        # 已发送邮件数（从联系人表汇总 —— send_count 链路完整）
-        total_sent = conn.execute("SELECT SUM(send_count) FROM uni_contact").fetchone()[0] or 0
+        # 退信：original_recipient 是被退回的联系人邮箱（自动分类时提取）
+        total_bounced = conn.execute("""
+            SELECT COUNT(DISTINCT c.contact_id)
+            FROM uni_mail m
+            JOIN uni_contact c ON m.original_recipient = c.email
+            WHERE m.mail_type = 3
+              AND m.original_recipient IS NOT NULL
+              AND m.original_recipient != ''
+        """).fetchone()[0]
 
-        # 退信数 / 已读数 / 未读数：均按联系人去重的实时统计
-        total_bounced = _count_contacts_by_mail_type(conn, 3)
-        total_read    = _count_contacts_by_mail_type(conn, 1)
-        total_unread  = _count_contacts_by_mail_type(conn, 2)
+        # 已读回执：发件人(from_addr)就是打开邮件的联系人
+        total_read = conn.execute("""
+            SELECT COUNT(DISTINCT c.contact_id)
+            FROM uni_mail m
+            JOIN uni_contact c ON m.from_addr = c.email
+            WHERE m.mail_type = 1
+              AND m.from_addr IS NOT NULL
+              AND m.from_addr != ''
+        """).fetchone()[0]
 
-        # 退信率（前端目前不展示，仍保留返回以兼容潜在调用方）
+        # 未读回执：发件人(from_addr)就是未读的联系人
+        total_unread = conn.execute("""
+            SELECT COUNT(DISTINCT c.contact_id)
+            FROM uni_mail m
+            JOIN uni_contact c ON m.from_addr = c.email
+            WHERE m.mail_type = 2
+              AND m.from_addr IS NOT NULL
+              AND m.from_addr != ''
+        """).fetchone()[0]
+
         bounce_rate = round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0
 
         return {
