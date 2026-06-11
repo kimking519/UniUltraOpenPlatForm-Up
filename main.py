@@ -5337,6 +5337,19 @@ async def api_contact_stats(current_user: dict = Depends(login_required)):
     return get_marketing_stats()
 
 
+@app.get("/api/contact/prospect_tags")
+async def api_contact_prospect_tags(current_user: dict = Depends(login_required)):
+    """获取所有 prospect.tag 的 distinct 值（用于筛选下拉框，仅 pending 状态）"""
+    from Sills.base import get_db_connection
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT tag FROM uni_prospect WHERE status = 'pending' "
+            "AND tag IS NOT NULL ORDER BY tag"
+        ).fetchall()
+    tags = [r['tag'] if isinstance(r, dict) or hasattr(r, 'keys') else r[0] for r in rows]
+    return {"tags": tags}
+
+
 @app.get("/api/contact/export")
 async def api_contact_export(current_user: dict = Depends(login_required)):
     """

@@ -282,6 +282,15 @@ def count_contacts_by_criteria(criteria):
             "(last_sent_at IS NULL OR datetime(last_sent_at) < datetime('now', 'localtime', '-{} days'))".format(last_sent_days)
         )
 
+    # prospect_tag 筛选：仅匹配 pending 状态 prospect 的 tag（与联系人列表"标识"列语义一致）
+    # 注意：0 是合法值，必须用 is not None 判断
+    prospect_tag = criteria.get('prospect_tag')
+    if prospect_tag is not None:
+        where_clauses.append(
+            "domain IN (SELECT domain FROM uni_prospect WHERE status = 'pending' AND tag = ? AND domain IS NOT NULL AND domain != '')"
+        )
+        params.append(prospect_tag)
+
     where_sql = "WHERE " + " AND ".join(where_clauses)
 
     with get_db_connection() as conn:
@@ -389,6 +398,15 @@ def get_group_contacts(group_id, page=1, page_size=100):
         where_clauses.append(
             "(c.last_sent_at IS NULL OR datetime(c.last_sent_at) < datetime('now', 'localtime', '-{} days'))".format(last_sent_days)
         )
+
+    # prospect_tag 筛选：仅匹配 pending 状态 prospect 的 tag（与 count_contacts_by_criteria 对齐）
+    # 注意：0 是合法值，必须用 is not None 判断
+    prospect_tag = criteria.get('prospect_tag')
+    if prospect_tag is not None:
+        where_clauses.append(
+            "c.domain IN (SELECT domain FROM uni_prospect WHERE status = 'pending' AND tag = ? AND domain IS NOT NULL AND domain != '')"
+        )
+        params.append(prospect_tag)
 
     where_sql = "WHERE " + " AND ".join(where_clauses)
 

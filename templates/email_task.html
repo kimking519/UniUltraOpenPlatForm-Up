@@ -346,6 +346,9 @@
                     <input type="checkbox" id="newGroupIncludeConverted" style="width: 14px; height: 14px;">
                     包含已转客户
                 </label>
+                <select id="newGroupProspectTag" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);" title="按系统联系人标识筛选（来自待开发客户 tag，仅 pending 状态）">
+                    <option value="">标识：全部</option>
+                </select>
             </div>
             <span id="groupPreviewCount" style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 8px;"></span>
             <div style="margin-top: 12px;">
@@ -420,6 +423,9 @@
                 <input type="checkbox" id="editGroupIncludeConverted" style="width: 14px; height: 14px;">
                 包含已转客户
             </label>
+            <select id="editGroupProspectTag" style="width: 100px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);" title="按系统联系人标识筛选（来自待开发客户 tag，仅 pending 状态）">
+                <option value="">标识：全部</option>
+            </select>
         </div>
 
         <!-- 联系人列表区域（仅客户组显示） -->
@@ -1203,6 +1209,7 @@
         const bounceStatus = document.getElementById('newGroupBounceStatus').value;
         const sendCount = document.getElementById('newGroupSendCount').value;
         const lastSentDays = document.getElementById('newGroupLastSentDays').value;
+        const prospectTag = document.getElementById('newGroupProspectTag').value;
 
         if (countries.length > 0) filterCriteria.countries = countries;
         if (domain) filterCriteria.domain = domain;
@@ -1213,6 +1220,8 @@
         if (bounceStatus) filterCriteria.bounce_status = parseInt(bounceStatus);
         if (sendCount) filterCriteria.send_count = sendCount;
         if (lastSentDays) filterCriteria.last_sent_days = parseInt(lastSentDays);
+        // prospect_tag：用户选了"全部"或留空 → 不加条件；选了具体值（含0）→ 加条件
+        if (prospectTag !== '') filterCriteria.prospect_tag = parseInt(prospectTag);
 
         try {
             const res = await fetch('/api/group/add', {
@@ -1234,6 +1243,7 @@
                 document.getElementById('newGroupBounceStatus').value = '';
                 document.getElementById('newGroupSendCount').value = '';
                 document.getElementById('newGroupLastSentDays').value = '';
+                document.getElementById('newGroupProspectTag').value = '';
                 alert(data.message || '添加成功');
             } else {
                 alert('添加失败: ' + (data.message || '未知错误'));
@@ -1290,6 +1300,7 @@
         document.getElementById('editGroupBounceStatus').value = '';
         document.getElementById('editGroupSendCount').value = '';
         document.getElementById('editGroupLastSentDays').value = '';
+        document.getElementById('editGroupProspectTag').value = '';
 
         // 显示/隐藏联系人列表区域（仅客户组显示）
         const contactsSection = document.getElementById('editGroupContactsSection');
@@ -1315,6 +1326,10 @@
                 if (criteria.bounce_status !== undefined) document.getElementById('editGroupBounceStatus').value = criteria.bounce_status;
                 if (criteria.send_count) document.getElementById('editGroupSendCount').value = criteria.send_count;
                 if (criteria.last_sent_days) document.getElementById('editGroupLastSentDays').value = criteria.last_sent_days;
+                // prospect_tag 回显（注意 0 是合法值，必须用 !== undefined 判断）
+                if (criteria.prospect_tag !== undefined && criteria.prospect_tag !== null && criteria.prospect_tag !== '') {
+                    document.getElementById('editGroupProspectTag').value = String(criteria.prospect_tag);
+                }
             } catch (e) {
                 console.error('解析筛选条件失败', e);
             }
@@ -1481,6 +1496,7 @@
         const bounceStatus = document.getElementById('editGroupBounceStatus').value;
         const sendCount = document.getElementById('editGroupSendCount').value;
         const lastSentDays = document.getElementById('editGroupLastSentDays').value;
+        const prospectTag = document.getElementById('editGroupProspectTag').value;
 
         if (countries.length > 0) filterCriteria.countries = countries;
         if (domain) filterCriteria.domain = domain;
@@ -1491,6 +1507,8 @@
         if (bounceStatus) filterCriteria.bounce_status = parseInt(bounceStatus);
         if (sendCount) filterCriteria.send_count = sendCount;
         if (lastSentDays) filterCriteria.last_sent_days = parseInt(lastSentDays);
+        // prospect_tag：用户选了"全部"或留空 → 不加条件；选了具体值（含0）→ 加条件
+        if (prospectTag !== '') filterCriteria.prospect_tag = parseInt(prospectTag);
 
         try {
             const res = await fetch('/api/group/update', {
@@ -1529,6 +1547,30 @@
             renderCountryCheckboxes('editGroupCountryList', countries);
         } catch (e) {
             console.error('加载国家列表失败', e);
+        }
+    }
+
+    // 加载 prospect tag 列表（系统联系人标识下拉，仅 pending 状态的 distinct tag）
+    async function loadProspectTags() {
+        try {
+            const res = await fetch('/api/contact/prospect_tags');
+            const data = await res.json();
+            const tags = data.tags || [];
+            // 同时填充新增和编辑两个下拉框
+            ['newGroupProspectTag', 'editGroupProspectTag'].forEach(selId => {
+                const sel = document.getElementById(selId);
+                if (!sel) return;
+                // 保留第一个 "标识：全部" 选项，清掉其余
+                while (sel.options.length > 1) sel.remove(1);
+                tags.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = String(t);
+                    opt.textContent = String(t);
+                    sel.appendChild(opt);
+                });
+            });
+        } catch (e) {
+            console.error('加载 prospect tag 列表失败', e);
         }
     }
 
@@ -1685,6 +1727,7 @@
     // 页面初始化 - 自动检查运行中的任务并启动轮询
     async function initPage() {
         await loadCountries();
+        await loadProspectTags();
         await loadCliGroupOptions();
         await loadAccounts();
         await loadGroupsForTask();

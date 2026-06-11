@@ -66,3 +66,46 @@ openclaw_skills/
 *.png
 tests/reports/
 performance_test_report.txt
+
+# === 备份目录 ===
+.backups/
+
+# === Node / 大文件 / 第三方依赖 / 工具记录 ===
+node_modules/
+dependencies/
+exports/
+.playwright-mcp/
+package-lock.json
+
+# === 敏感数据 - 严禁提交 ===
+cookies.txt
+*.dump
+*.sql
+*_backup.*
+uni_mail_data.txt
+
+# === 临时调试文件 ===
+temp_*.txt
+*_check*.txt
+*_match*.txt
+*_analysis.txt
+bounce_analysis.txt
+decode_test.txt
+new_template.xlsx
+test_*.xlsx
+contact_restore.sql
+mail_restore.sql
+stats_check.txt
+original_recipient_match.txt
+
+# === 临时子项目（agency agents 是嵌入式 git 仓库，不应纳入主项目） ===
+temp_agency_agents/
+
+# === AI Agent skills（不上传到 GitHub） ===
+.agents/
+
+# === Node 项目文件（本项目主体为 Python，puppeteer 等仅为本地工具） ===
+package.json
+
+# === 一次性调试/交叉检查输出 ===
+*_cross.txt
