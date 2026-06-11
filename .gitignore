@@ -109,3 +109,4 @@ package.json
 
 # === 一次性调试/交叉检查输出 ===
 *_cross.txt
+diagnose_*.py

@@ -97,7 +97,7 @@ def get_blacklisted_list(page: int = 1, limit: int = 20, search: str = None, acc
         params.extend([search_param, search_param, search_param, search_param])
         count_params.extend([search_param, search_param, search_param, search_param])
 
-    query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY received_at DESC NULLS LAST, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with get_db_connection() as conn:
