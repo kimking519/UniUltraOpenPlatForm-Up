@@ -65,11 +65,12 @@ def get_mail_list(page: int = 1, limit: int = 20, is_sent: int = 0,
         }
 
     if search:
-        query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ?)"
-        count_query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ?)"
+        # 2026-06-11: 新增 content 搜索 - 支持搜邮件正文（用于验证自动分类回写情况）
+        query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
+        count_query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
         search_param = f"%{search}%"
-        params.extend([search_param, search_param, search_param])
-        count_params.extend([search_param, search_param, search_param])
+        params.extend([search_param, search_param, search_param, search_param])
+        count_params.extend([search_param, search_param, search_param, search_param])
 
     query += " ORDER BY received_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -121,11 +122,12 @@ def get_trash_list(page: int = 1, limit: int = 20, search: str = None, account_i
     # 回收站不按账户过滤，显示所有已删除邮件
 
     if search:
-        query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ?)"
-        count_query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ?)"
+        # 2026-06-11: 新增 content 搜索
+        query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
+        count_query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
         search_param = f"%{search}%"
-        params.extend([search_param, search_param, search_param])
-        count_params.extend([search_param, search_param, search_param])
+        params.extend([search_param, search_param, search_param, search_param])
+        count_params.extend([search_param, search_param, search_param, search_param])
 
     query += " ORDER BY deleted_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -476,11 +478,12 @@ def get_draft_list(page: int = 1, limit: int = 20, search: str = None, account_i
         count_params.append(account_id)
 
     if search:
-        query += " AND (subject LIKE ? OR to_addr LIKE ?)"
-        count_query += " AND (subject LIKE ? OR to_addr LIKE ?)"
+        # 2026-06-11: 新增 from_addr 和 content 搜索，对齐其他列表行为
+        query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
+        count_query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
         search_param = f"%{search}%"
-        params.extend([search_param, search_param])
-        count_params.extend([search_param, search_param])
+        params.extend([search_param, search_param, search_param, search_param])
+        count_params.extend([search_param, search_param, search_param, search_param])
 
     # 草稿按received_at排序，与前端显示的日期一致
     query += " ORDER BY received_at DESC NULLS LAST, id DESC LIMIT ? OFFSET ?"

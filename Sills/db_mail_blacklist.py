@@ -90,11 +90,12 @@ def get_blacklisted_list(page: int = 1, limit: int = 20, search: str = None, acc
         count_params.append(account_id)
 
     if search:
-        query += " AND (subject LIKE ? OR from_addr LIKE ?)"
-        count_query += " AND (subject LIKE ? OR from_addr LIKE ?)"
+        # 2026-06-11: 新增 to_addr 和 content 搜索，对齐其他列表行为
+        query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
+        count_query += " AND (subject LIKE ? OR from_addr LIKE ? OR to_addr LIKE ? OR content LIKE ?)"
         search_param = f"%{search}%"
-        params.extend([search_param, search_param])
-        count_params.extend([search_param, search_param])
+        params.extend([search_param, search_param, search_param, search_param])
+        count_params.extend([search_param, search_param, search_param, search_param])
 
     query += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
