@@ -3251,18 +3251,31 @@
         }
     }
 
-    // 取消同步
+    // 取消同步（强制解锁 + 立即重置UI）
     async function cancelSync() {
         try {
-            const response = await fetch('/api/mail/sync/cancel', { method: 'POST' });
-            const data = await response.json();
-            if (data.success) {
-                const textEl = document.getElementById('syncText');
-                textEl.textContent = '正在取消...';
-            }
+            await fetch('/api/mail/sync/cancel', { method: 'POST' });
         } catch (error) {
             console.error('取消同步失败:', error);
         }
+
+        // 无论后端是否成功，立即重置UI
+        const syncBtn = document.getElementById('syncBtn');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const statusEl = document.getElementById('syncStatus');
+        const textEl = document.getElementById('syncText');
+        const progressBar = document.getElementById('syncProgressBar');
+        const progressText = document.getElementById('syncProgressText');
+
+        statusEl.classList.remove('syncing');
+        progressBar.classList.remove('active');
+        progressText.textContent = '';
+        textEl.textContent = '就绪';
+        showCancelButton(false);
+        syncBtn.disabled = false;
+        refreshBtn.disabled = false;
+
+        showToast('同步已取消', 'info');
     }
 
     // 启动自动同步定时器
