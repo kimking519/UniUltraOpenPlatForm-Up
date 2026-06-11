@@ -5367,15 +5367,15 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
     # 直接全表查询，不应用任何筛选
     with get_db_connection() as conn:
         rows = conn.execute(
-            "SELECT domain, email, contact_name, position, remark "
+            "SELECT domain, email, contact_name, position, remark, "
+            "send_count, is_bounced, is_read "
             "FROM uni_contact ORDER BY created_at DESC"
         ).fetchall()
 
     wb = Workbook()
     ws = wb.active
     ws.title = "联系人导出"
-    # 表头必须与 /api/contact/template (main.py:5294) 完全一致
-    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注'])
+    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送次数', '退信', '已读'])
 
     for r in rows:
         ws.append([
@@ -5384,14 +5384,20 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
             r['contact_name'] or '',
             r['position'] or '',
             r['remark'] or '',
+            r['send_count'] or 0,
+            '是' if r['is_bounced'] else '否',
+            '是' if r['is_read'] else '否',
         ])
 
-    # 列宽与模板保持一致
+    # 列宽
     ws.column_dimensions['A'].width = 20
     ws.column_dimensions['B'].width = 25
     ws.column_dimensions['C'].width = 15
     ws.column_dimensions['D'].width = 15
     ws.column_dimensions['E'].width = 30
+    ws.column_dimensions['F'].width = 10
+    ws.column_dimensions['G'].width = 8
+    ws.column_dimensions['H'].width = 8
 
     output = io.BytesIO()
     wb.save(output)
