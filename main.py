@@ -6069,6 +6069,13 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
                 for n in downgraded_rows
             ] + errors
         print(f"导入结果: 成功={imported}, 跳过={skipped}, 错误={errors}")
+
+        # 导入后自动刷新关联联系人数量
+        if imported > 0:
+            from Sills.db_prospect import refresh_all_contact_counts
+            refresh_all_contact_counts()
+            print("已自动刷新关联联系人数量")
+
         print("===== Prospect文件导入结束 =====")
         return {
             "success": True,

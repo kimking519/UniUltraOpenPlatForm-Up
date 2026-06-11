@@ -396,6 +396,9 @@
                 <button class="btn btn-danger btn-sm" onclick="ProspectManager.batchDelete()" id="prospectBatchDeleteBtn" style="display: none;">批量删除</button>
                 <button class="btn btn-ghost btn-sm" onclick="ProspectManager.toggleAddModal()">新增客户</button>
                 <button class="btn btn-ghost btn-sm" onclick="ProspectManager.toggleImportModal()">批量导入</button>
+                <button class="btn btn-ghost btn-sm" onclick="ProspectManager.refreshContactCounts()" title="重新统计每个待开发客户的关联联系人数量">
+                    🔄 刷新联系人数量
+                </button>
                 <button class="btn btn-ghost btn-sm" onclick="ProspectManager.exportAll()">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
@@ -1757,6 +1760,23 @@
                 }
             } catch (e) {
                 showToast('操作失败', 'error');
+            }
+        },
+
+        // 刷新关联联系人数量
+        async refreshContactCounts() {
+            showToast('正在刷新联系人数量...', 'info');
+            try {
+                const res = await fetch('/api/prospect/refresh_counts', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message || '刷新完成', 'success');
+                    ProspectManager.load();
+                } else {
+                    showToast('刷新失败', 'error');
+                }
+            } catch (e) {
+                showToast('刷新失败', 'error');
             }
         },
 
