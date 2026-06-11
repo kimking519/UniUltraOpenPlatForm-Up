@@ -1491,16 +1491,39 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
         imap_client = IMAPClient(config)
         imap_client.connect()
 
-        # 检测文件夹
+        # 检测文件夹（一次性获取全部，避免多次请求）
         update_sync_progress(10, 100, "检测邮箱文件夹...")
-        sent_folder = imap_client.find_sent_folder()
-        spam_folder = imap_client.find_spam_folder()
-        draft_folder = imap_client.find_draft_folder()
+        all_folders = imap_client.list_folders()
+
+        sent_folder = None
+        spam_folder = None
+        draft_folder = None
+        sent_names = ['Sent', 'Sent Items', 'Sent Messages', '已发送', '发件箱', 'INBOX.Sent', 'INBOX/Sent', 'Sent Mail', '&XfJT0ZAB-']
+        spam_names = ['Spam', 'Junk', 'Junk E-mail', '垃圾邮件', '垃圾箱', 'Bulk Mail', '垃圾信', '&V4NXPpCuTvY-']
+        draft_names = ['Drafts', 'Draft', '草稿', '草稿箱', '&g0l6P3ux-']
+
+        for raw_name, decoded_name in all_folders:
+            decoded_lower = decoded_name.lower()
+            if not sent_folder:
+                if decoded_name in sent_names or raw_name in sent_names:
+                    sent_folder = raw_name
+                elif 'sent' in decoded_lower or '发件' in decoded_name or '发送' in decoded_name:
+                    sent_folder = raw_name
+            if not spam_folder:
+                if decoded_name in spam_names or raw_name in spam_names:
+                    spam_folder = raw_name
+                elif 'spam' in decoded_lower or 'junk' in decoded_lower or '垃圾' in decoded_name:
+                    spam_folder = raw_name
+            if not draft_folder:
+                if decoded_name in draft_names or raw_name in draft_names:
+                    draft_folder = raw_name
+                elif 'draft' in decoded_lower or '草稿' in decoded_name:
+                    draft_folder = raw_name
 
         from Sills.db_mail import get_or_create_spam_folder
         spam_folder_id = get_or_create_spam_folder(current_account_id) if spam_folder else None
 
-        # 构建要同步的文件夹列表
+        # 构建要同步的文件夹列表（含所有其他文件夹，避免遗漏退信等自定义文件夹）
         folders_to_sync = [('INBOX', 0, 0, '收件箱', None)]
         if sent_folder:
             folders_to_sync.append((sent_folder, 1, 0, '发件箱', None))
@@ -1508,6 +1531,13 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
             folders_to_sync.append((draft_folder, 0, 1, '草稿箱', None))
         if spam_folder:
             folders_to_sync.append((spam_folder, 0, 0, '垃圾邮件', spam_folder_id))
+
+        # 其他文件夹（退回、广告、自定义等）全部归入收件箱同步
+        for raw_name, decoded_name in all_folders:
+            if raw_name in ('INBOX', sent_folder, spam_folder, draft_folder):
+                continue
+            folders_to_sync.append((raw_name, 0, 0, '收件箱', None))
+            print(f"[Mail] 刷新：添加其他文件夹 {decoded_name}")
 
         total_saved = 0
 
