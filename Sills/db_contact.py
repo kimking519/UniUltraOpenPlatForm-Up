@@ -573,43 +573,47 @@ def get_marketing_stats():
     """获取营销统计数据
 
     统计逻辑：
-    - total_sent     = SUM(uni_contact.send_count)
-    - total_bounced  = mail_type=3 中 original_recipient JOIN uni_contact 的去重联系人数
-    - total_read     = mail_type=1 中 to_addr JOIN uni_contact 的去重联系人数
-    - total_unread   = mail_type=2 中 to_addr JOIN uni_contact 的去重联系人数
+    - total_sent    = SUM(uni_contact.send_count)
+    - total_bounced = mail_folder 名含"退信"的文件夹中 original_recipient 匹配联系人去重数
+    - total_read    = mail_folder 名含"읽음"且不含"않음"的文件夹中 from_addr 匹配联系人去重数
+    - total_unread  = mail_folder 名含"읽지 않음"的文件夹中 from_addr 匹配联系人去重数
 
-    全部用单次 JOIN 查询，避免 N+1 性能问题。
+    以 folder_id 为准，与 /mail 页面文件夹展示一致。
     """
     with get_db_connection() as conn:
         total_contacts = conn.execute("SELECT COUNT(*) FROM uni_contact").fetchone()[0]
         total_sent = conn.execute("SELECT COALESCE(SUM(send_count), 0) FROM uni_contact").fetchone()[0]
 
-        # 退信：original_recipient 是被退回的联系人邮箱（自动分类时提取）
+        # 退信：文件夹名含"退信"，用 original_recipient 匹配联系人
         total_bounced = conn.execute("""
             SELECT COUNT(DISTINCT c.contact_id)
             FROM uni_mail m
+            JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.original_recipient = c.email
-            WHERE m.mail_type = 3
+            WHERE f.folder_name LIKE '%退信%'
               AND m.original_recipient IS NOT NULL
               AND m.original_recipient != ''
         """).fetchone()[0]
 
-        # 已读回执：发件人(from_addr)就是打开邮件的联系人
+        # 已读：文件夹名含"읽음"且不含"않음"，用 from_addr 匹配联系人
         total_read = conn.execute("""
             SELECT COUNT(DISTINCT c.contact_id)
             FROM uni_mail m
+            JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.from_addr = c.email
-            WHERE m.mail_type = 1
+            WHERE f.folder_name LIKE '%읽음%'
+              AND f.folder_name NOT LIKE '%않음%'
               AND m.from_addr IS NOT NULL
               AND m.from_addr != ''
         """).fetchone()[0]
 
-        # 未读回执：发件人(from_addr)就是未读的联系人
+        # 未读：文件夹名含"읽지 않음"，用 from_addr 匹配联系人
         total_unread = conn.execute("""
             SELECT COUNT(DISTINCT c.contact_id)
             FROM uni_mail m
+            JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.from_addr = c.email
-            WHERE m.mail_type = 2
+            WHERE f.folder_name LIKE '%읽지 않음%'
               AND m.from_addr IS NOT NULL
               AND m.from_addr != ''
         """).fetchone()[0]
