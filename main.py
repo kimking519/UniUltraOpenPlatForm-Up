@@ -5375,9 +5375,17 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
     wb = Workbook()
     ws = wb.active
     ws.title = "联系人导出"
-    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送次数', '退信', '已读'])
+    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送', '退信', '已读', '状态'])
 
     for r in rows:
+        # 状态：与列表页一致，is_bounced=退信，send_count>0=已发送，可叠加
+        status_parts = []
+        if r['is_bounced']:
+            status_parts.append('退信')
+        if (r['send_count'] or 0) > 0:
+            status_parts.append('已发送')
+        status = ' '.join(status_parts) if status_parts else '未发送'
+
         ws.append([
             r['domain'] or '',
             r['email'] or '',
@@ -5387,6 +5395,7 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
             r['send_count'] or 0,
             '是' if r['is_bounced'] else '否',
             '是' if r['is_read'] else '否',
+            status,
         ])
 
     # 列宽
@@ -5398,6 +5407,7 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
     ws.column_dimensions['F'].width = 10
     ws.column_dimensions['G'].width = 8
     ws.column_dimensions['H'].width = 8
+    ws.column_dimensions['I'].width = 12
 
     output = io.BytesIO()
     wb.save(output)
