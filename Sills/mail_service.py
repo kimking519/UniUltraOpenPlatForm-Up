@@ -1454,12 +1454,13 @@ def sync_new_emails_async() -> Dict[str, Any]:
 
 def refresh_emails(background_tasks=None) -> Dict[str, Any]:
     """
-    刷新邮件：只同步上次同步之后的新邮件
+    刷新邮件：对比服务器UID与本地UID差集，同步遗漏的邮件
+    使用差集方式（与sync_new_emails一致），避免依赖last_uid递增假设导致漏邮件
 
     Returns:
         {"status": "completed", "new_count": int, "message": "..."}
     """
-    from Sills.db_mail import get_folder_last_uid, update_folder_last_uid, get_local_uids, batch_record_synced_uids
+    from Sills.db_mail import get_local_uids, batch_record_synced_uids
     from datetime import datetime
 
     # 重置取消标志
@@ -1478,11 +1479,12 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
             return {"status": "error", "message": "邮件配置未找到"}
 
         current_account_id = config.get('account_id')
+        sync_days = get_sync_days()
 
         # 获取同步日期范围设置
         from Sills.db_mail import get_sync_date_range
         date_range = get_sync_date_range()
-        print(f"[Mail] 刷新同步日期范围: {date_range}")
+        print(f"[Mail] 刷新: sync_days={sync_days}, date_range={date_range}")
 
         update_sync_progress(0, 100, "连接邮件服务器...")
 
@@ -1495,13 +1497,10 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
         spam_folder = imap_client.find_spam_folder()
         draft_folder = imap_client.find_draft_folder()
 
-        # 只获取垃圾邮件文件夹ID（已发送和草稿箱不需要folder_id，通过is_sent和is_draft字段区分）
         from Sills.db_mail import get_or_create_spam_folder
         spam_folder_id = get_or_create_spam_folder(current_account_id) if spam_folder else None
 
         # 构建要同步的文件夹列表
-        # (文件夹名, is_sent, is_draft, 显示标签, 本地folder_id)
-        # 已发送通过is_sent=1区分，草稿箱通过is_draft=1区分，都不需要folder_id
         folders_to_sync = [('INBOX', 0, 0, '收件箱', None)]
         if sent_folder:
             folders_to_sync.append((sent_folder, 1, 0, '发件箱', None))
@@ -1512,16 +1511,9 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
 
         total_saved = 0
 
-        # 获取每个文件夹的最后同步UID
-        last_uids = {}
-        for folder_name, is_sent, is_draft, folder_label, local_folder_id in folders_to_sync:
-            last_uid = get_folder_last_uid(current_account_id, folder_name)
-            last_uids[folder_name] = last_uid
-            print(f"[Mail] {folder_label} last_uid = {last_uid}")
-
-        # 获取新邮件UID
+        # 扫描各文件夹，用差集找出未同步的UID
         update_sync_progress(20, 100, "扫描新邮件...")
-        all_uids_to_fetch = []  # [(folder_name, is_sent, is_draft, folder_label, local_folder_id, uid), ...]
+        all_uids_to_fetch = []
 
         for folder_name, is_sent, is_draft, folder_label, local_folder_id in folders_to_sync:
             if is_sync_cancelled():
@@ -1530,29 +1522,21 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
                 return {"status": "cancelled", "message": "同步已取消"}
 
             try:
-                last_uid = last_uids.get(folder_name, 0)
+                # 获取服务器UID列表（按日期范围或天数限制）
+                server_uids = imap_client.get_uid_list(
+                    folder=folder_name,
+                    days=sync_days,
+                    date_range=date_range if date_range[0] and date_range[1] else None
+                )
+                if not server_uids:
+                    print(f"[Mail] {folder_label}: 无邮件")
+                    continue
 
-                # 使用日期范围过滤获取UID
-                if date_range[0] and date_range[1]:
-                    # 有日期范围设置，使用日期过滤
-                    folder_uids = imap_client.get_uid_list(
-                        folder=folder_name,
-                        date_range=date_range
-                    )
-                    # 如果有last_uid，过滤掉小于等于last_uid的UID（增量同步）
-                    if last_uid > 0:
-                        folder_uids = [uid for uid in folder_uids if uid > last_uid]
-                    new_uids = folder_uids
-                    print(f"[Mail] {folder_label}: 使用日期范围 {date_range[0]} 至 {date_range[1]}")
-                else:
-                    # 无日期范围设置，使用UID增量方式
-                    new_uids = imap_client.get_uids_after(folder_name, last_uid)
-
-                # 过滤掉本地已存在的UID（防止重复）
+                # 对比差集：服务器有、本地没有的UID
                 local_uids = get_local_uids(folder_name, current_account_id)
-                new_uids = [uid for uid in new_uids if uid not in local_uids]
+                new_uids = [uid for uid in server_uids if uid not in local_uids]
 
-                print(f"[Mail] {folder_label}: 发现 {len(new_uids)} 封新邮件")
+                print(f"[Mail] {folder_label}: 服务器{len(server_uids)}封, 本地{len(local_uids)}封, 新增{len(new_uids)}封")
 
                 for uid in new_uids:
                     all_uids_to_fetch.append((folder_name, is_sent, is_draft, folder_label, local_folder_id, uid))
@@ -1565,7 +1549,6 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
         if grand_total == 0:
             update_sync_progress(100, 100, "完成！没有新邮件")
             imap_client.disconnect()
-            release_sync_lock()
             return {"status": "completed", "new_count": 0, "message": "没有新邮件"}
 
         update_sync_progress(30, 100, f"发现 {grand_total} 封新邮件", total_emails=grand_total)
@@ -1578,7 +1561,6 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
             uids_by_folder[(folder_name, is_sent, is_draft, folder_label, local_folder_id)].append(uid)
 
         processed_count = 0
-        folder_max_uids = {}  # 记录每个文件夹的最大UID
 
         for (folder_name, is_sent, is_draft, folder_label, local_folder_id), uids in uids_by_folder.items():
             if is_sync_cancelled():
@@ -1588,10 +1570,8 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
 
             print(f"[Mail] 同步 {folder_label} 的 {len(uids)} 封邮件, is_sent={is_sent}, is_draft={is_draft}")
 
-            # 批量获取邮件
             batch_size = 50
             for i in range(0, len(uids), batch_size):
-                # 检查取消标志
                 if is_sync_cancelled():
                     update_sync_progress(0, 100, "同步已取消")
                     imap_client.disconnect()
@@ -1600,6 +1580,7 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
                 batch_uids = uids[i:i + batch_size]
                 emails = imap_client.fetch_emails_by_uid(folder_name, batch_uids)
 
+                synced_uid_pairs = []
                 for email_data in emails:
                     email_data['is_sent'] = is_sent
                     email_data['is_draft'] = is_draft
@@ -1609,30 +1590,20 @@ def refresh_emails(background_tasks=None) -> Dict[str, Any]:
                     if local_folder_id:
                         email_data['folder_id'] = local_folder_id
 
-                    # 调试日志
-                    if total_saved < 3:
-                        print(f"[DEBUG] Saving email: folder={folder_name}, is_sent={is_sent}, is_draft={is_draft}, label={folder_label}, subject={email_data.get('subject', 'N/A')[:30]}")
-
                     save_email(email_data)
                     total_saved += 1
                     processed_count += 1
 
-                    # 记录最大UID
-                    uid = email_data.get('imap_uid')
-                    if uid:
-                        if folder_name not in folder_max_uids or uid > folder_max_uids[folder_name]:
-                            folder_max_uids[folder_name] = uid
+                    if email_data.get('imap_uid'):
+                        synced_uid_pairs.append((email_data['imap_uid'], folder_name))
 
-                # 更新进度
+                if synced_uid_pairs:
+                    batch_record_synced_uids(current_account_id, synced_uid_pairs)
+
                 percent = int(30 + (processed_count / grand_total) * 65)
                 update_sync_progress(percent, 100, f"同步中 {processed_count}/{grand_total}", synced_emails=processed_count)
 
-                time.sleep(0.1)  # 短暂暂停
-
-            # 更新文件夹的最后同步UID
-            if folder_name in folder_max_uids:
-                update_folder_last_uid(current_account_id, folder_name, folder_max_uids[folder_name])
-                print(f"[Mail] 更新 {folder_label} last_uid = {folder_max_uids[folder_name]}")
+                time.sleep(0.1)
 
         imap_client.disconnect()
         update_sync_progress(100, 100, f"完成！新增 {total_saved} 封邮件")
