@@ -5759,13 +5759,13 @@ async def api_prospect_template(current_user: dict = Depends(login_required)):
     # 模板字段（10列，倒数第二列为状态、最后一列为标识）：与 /api/prospect/export 完全对齐
     # 状态值可填：待开发 / 已转化 / 无效；留空默认 待开发
     # 标识：用户自定义整数标识，默认 0
-    # 注意：导入"已转化"会被降级为"待开发"（必须通过页面转化操作才能创建客户）
+    # 注意：导入"已转化"时会按域名自动匹配已有客户，匹配不到则降级为"待开发"
     ws.append(['客户名称*', '公司网站', '域名*', '国家', '主要业务', '业务明细', '价值分级(1-3)', '备注', '状态', '标识'])
     ws.append(['示例公司', 'https://example.com', 'example.com', '中国', '电子元器件', '半导体分销', '2', '备注信息', '待开发', '0'])
 
     # 给状态表头加批注，告诉用户取值范围
     ws['I1'].comment = Comment(
-        "状态取值：待开发 / 已转化 / 无效\n留空默认为 待开发\n注意：导入'已转化'会被降级为'待开发'，必须通过页面转化操作创建客户",
+        "状态取值：待开发 / 已转化 / 无效\n留空默认为 待开发\n注意：导入'已转化'时按域名自动匹配客户，未匹配到则降级为'待开发'",
         "System"
     )
     # 给标识表头加批注
@@ -6014,11 +6014,10 @@ async def api_prospect_import(request: Request, current_user: dict = Depends(log
 
         # 解析Excel数据
         # 状态中文→英文映射；不识别的值或空都降级为 pending
-        # 注意：导入"已转化"也会被降级为 pending（防止产生 cli_id 为空的幽灵已转化记录）
+        # 注意：导入"已转化"时会按 domain 自动匹配 cli_id，匹配不到则降级为 pending
         STATUS_MAP = {
             '待开发': 'pending', 'pending': 'pending', '': 'pending',
-            '已转化': 'converted_blocked',  # 特殊标记，下方降级处理
-            'converted': 'converted_blocked',
+            '已转化': 'converted', 'converted': 'converted',
             '无效': 'invalid', 'invalid': 'invalid',
         }
         data_list = []

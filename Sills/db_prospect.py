@@ -292,15 +292,22 @@ def import_prospects(data_list):
                     value_level = 0
 
                 # 状态白名单校验，不在范围内强制 pending
-                # 注意：上游（main.py /api/prospect/import）已对"已转化"做降级处理
-                # 此处仅作为最后防线
                 allowed_status = {'pending', 'converted', 'invalid'}
                 status = data.get('status') or 'pending'
                 if status not in allowed_status:
                     status = 'pending'
-                # 防御性：即使上游忘了拦截，"已转化"在没有 cli_id 的情况下强制改 pending
+
+                # 已转化：按 domain 自动匹配 cli_id，匹配不到则降级为 pending
+                cli_id = data.get('cli_id') or None
                 if status == 'converted':
-                    status = 'pending'
+                    if not cli_id:
+                        matched = conn.execute(
+                            "SELECT cli_id FROM uni_cli WHERE domain = ?", (domain,)
+                        ).fetchone()
+                        if matched:
+                            cli_id = matched[0]
+                        else:
+                            status = 'pending'  # 没有对应客户，降级
 
                 # tag 处理（用户自定义标识，整数，默认0；非法值兜底为0）
                 tag = data.get('tag', 0)
@@ -313,8 +320,8 @@ def import_prospects(data_list):
                     INSERT INTO uni_prospect (
                         prospect_id, prospect_name, company_website, domain,
                         country, business_type, business_detail, value_level,
-                        status, contact_count, is_public_domain, tag, remark
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        status, cli_id, contact_count, is_public_domain, tag, remark
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     prospect_id, prospect_name,
                     data.get('company_website', ''),
@@ -324,6 +331,7 @@ def import_prospects(data_list):
                     data.get('business_detail', ''),
                     value_level,
                     status,
+                    cli_id,
                     0,
                     is_public,
                     tag,
