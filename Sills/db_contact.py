@@ -181,14 +181,9 @@ def add_contact(data):
                 if matched_cli:
                     cli_id = matched_cli[0]
 
-                # 如果公司为空，尝试从 prospect 获取
+                # 如果公司为空，用域名填充（保持与列表显示一致）
                 if not company and domain:
-                    matched_prospect = conn.execute(
-                        "SELECT prospect_name FROM uni_prospect WHERE domain = ? AND status = 'pending'",
-                        (domain,)
-                    ).fetchone()
-                    if matched_prospect:
-                        company = matched_prospect[0]
+                    company = domain
 
         with get_db_connection() as conn:
             conn.execute("""
@@ -347,14 +342,9 @@ def batch_import_contacts(contacts_list, auto_create_cli=False):
                         else:
                             errors.append(f"{domain}: 创建客户失败 - {msg}")
 
-                    # 如果公司为空，尝试从 prospect 获取
+                    # 如果公司为空，用域名填充（保持与列表显示一致）
                     if not company and domain:
-                        matched_prospect = conn.execute(
-                            "SELECT prospect_name FROM uni_prospect WHERE domain = ? AND status = 'pending'",
-                            (domain,)
-                        ).fetchone()
-                        if matched_prospect:
-                            company = matched_prospect[0]
+                        company = domain
 
                 conn.execute("""
                     INSERT INTO uni_contact (
