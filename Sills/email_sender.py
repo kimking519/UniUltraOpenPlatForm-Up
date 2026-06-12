@@ -99,7 +99,11 @@ class EmailSenderWorker:
                     pass
 
         self.accounts = accounts_info
-        self.current_account_index = self.task.get('current_account_index', 0) or 0
+        # 重试模式从第0个账号重新开始，不沿用上次的失败账号索引
+        if self.retry_mode:
+            self.current_account_index = 0
+        else:
+            self.current_account_index = self.task.get('current_account_index', 0) or 0
 
         # 获取联系人列表：重试模式只获取失败联系人
         if self.retry_mode:
@@ -323,13 +327,35 @@ class EmailSenderWorker:
             # 获取账号数量限制
             daily_limit_per_account = self.task.get('daily_limit_per_account', 1800) or 1800
 
-            # 连接第一个账号的SMTP
+            # 连接SMTP：从当前账号开始，失败则从头逐个尝试
             current_account = self.get_current_account()
             if not current_account:
                 raise ValueError("没有可用的发件人账号")
 
-            server = self.connect_smtp(current_account)
-            print(f"[Worker] 使用账号 {self.current_account_index + 1}: {current_account.get('email')}")
+            server = None
+            init_errors = []
+            # 先尝试当前账号
+            try:
+                server = self.connect_smtp(current_account)
+                print(f"[Worker] 使用账号 {self.current_account_index + 1}: {current_account.get('email')}")
+            except Exception as e:
+                init_errors.append(f"{current_account.get('email')}: {e}")
+                print(f"[Worker] 当前账号({current_account.get('email')})连接失败: {e}，从第1个账号重新尝试...")
+                # 从第0个账号逐个尝试
+                for idx, acc in enumerate(self.accounts):
+                    try:
+                        server = self.connect_smtp(acc)
+                        self.current_account_index = idx
+                        from Sills.db_email_task import update_current_account_index
+                        update_current_account_index(self.task_id, idx)
+                        print(f"[Worker] 切换到账号 {idx + 1}: {acc.get('email')} 成功")
+                        break
+                    except Exception as e2:
+                        init_errors.append(f"{acc.get('email')}: {e2}")
+                        print(f"[Worker] 账号 {acc.get('email')} 连接失败: {e2}")
+
+            if server is None:
+                raise ValueError(f"所有账号均无法连接: {' | '.join(init_errors)}")
 
             # 初始化账号发送计数
             for i, acc in enumerate(self.accounts):
@@ -655,6 +681,9 @@ class EmailSenderWorker:
             self.send_report_email(sent_count, failed_count, skipped_count, accounts_summary)
 
         except Exception as e:
+            import traceback
+            error_detail = f"{str(e)} | {traceback.format_exc()}"
+            print(f"[Worker] 任务异常终止: {error_detail}")
             error_task(self.task_id, str(e))
             print(f"[Worker] 任务出错: {e}")
 
