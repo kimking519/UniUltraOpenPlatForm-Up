@@ -214,28 +214,33 @@ class EmailSenderWorker:
             old_server: 旧的SMTP连接
 
         Returns:
-            (success, new_server) - success=True时new_server为有效连接
+            (success, new_server, error_detail) - success=True时new_server为有效连接
         """
+        all_errors = []
+
         # 1. 尝试重连当前账号
         new_server = self._reconnect_smtp(old_server, max_retries=2)
         if new_server:
-            return True, new_server
+            return True, new_server, ""
 
         # 2. 当前账号重连失败，逐个尝试剩余账号
         print(f"[Worker] 当前账号重连失败，尝试切换到其他账号")
-        for _ in range(len(self.accounts) - 1):
+        for _ in range(len(self.accounts)):
             if self.switch_to_next_account():
                 acc = self.get_current_account()
                 try:
                     new_server = self.connect_smtp(acc)
                     print(f"[Worker] 切换到账号 {acc.get('email')} 成功")
-                    return True, new_server
+                    return True, new_server, ""
                 except Exception as e:
+                    err_msg = f"{acc.get('email')}: {e}"
+                    all_errors.append(err_msg)
                     print(f"[Worker] 切换到账号 {acc.get('email')} 失败: {e}")
 
         # 3. 所有账号都连不上
-        print(f"[Worker] 所有账号均无法连接")
-        return False, None
+        error_detail = " | ".join(all_errors)
+        print(f"[Worker] 所有账号均无法连接: {error_detail}")
+        return False, None, error_detail
 
     def send_single_email(self, server, to_email, company_name=""):
         """发送单封邮件（支持代理发送）
@@ -407,10 +412,10 @@ class EmailSenderWorker:
                         server.noop()
                     except Exception as e:
                         print(f"[Worker] NOOP探活失败: {e}，尝试重连...")
-                        success, server = self._try_reconnect_or_switch(server)
+                        success, server, err_detail = self._try_reconnect_or_switch(server)
                         if not success:
                             update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
-                            error_task(self.task_id, "SMTP连接断开且所有账号均无法重连")
+                            error_task(self.task_id, f"SMTP连接断开且所有账号均无法重连: {err_detail}")
                             return
 
                 # 每200封主动重连，避免长连接被中途断开
@@ -425,10 +430,10 @@ class EmailSenderWorker:
                         print(f"[Worker] 主动重连: {current_account.get('email')}")
                     except Exception as e:
                         print(f"[Worker] 主动重连失败: {e}，尝试切换账号...")
-                        success, server = self._try_reconnect_or_switch(server)
+                        success, server, err_detail = self._try_reconnect_or_switch(server)
                         if not success:
                             update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
-                            error_task(self.task_id, "SMTP主动重连失败且所有账号均无法连接")
+                            error_task(self.task_id, f"SMTP主动重连失败且所有账号均无法连接: {err_detail}")
                             return
 
                 email_addr = contact.get('email', '')
@@ -505,7 +510,7 @@ class EmailSenderWorker:
                     # 判断是否为连接类错误 → 自动重连并重试当前邮件
                     if self._is_connection_error(e):
                         print(f"[Worker] {mode_str} 检测到连接错误: {error_msg}，尝试重连...")
-                        success, server = self._try_reconnect_or_switch(server)
+                        success, server, err_detail = self._try_reconnect_or_switch(server)
 
                         if success:
                             # 重连成功，重试发送当前邮件
@@ -553,7 +558,7 @@ class EmailSenderWorker:
                         else:
                             # 所有账号都无法重连，任务终止
                             update_task_progress(self.task_id, base_sent + sent_count, base_failed + failed_count, base_skipped + skipped_count)
-                            error_task(self.task_id, "SMTP连接断开且所有账号均无法重连")
+                            error_task(self.task_id, f"SMTP连接断开且所有账号均无法重连: {err_detail}")
                             return
 
                     # 非连接错误，或重连后重试仍失败 → 检查550 DT:SPM
