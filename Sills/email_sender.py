@@ -433,7 +433,8 @@ class EmailSenderWorker:
 
                 email_addr = contact.get('email', '')
                 contact_id = contact.get('contact_id', '')
-                company_name = contact.get('company', '')
+                # 优先用 prospect_name（真实公司名），fallback 到 company
+                company_name = contact.get('prospect_name') or contact.get('company', '')
 
                 if not email_addr:
                     continue
