@@ -9,11 +9,9 @@ from Sills.crypto_utils import encrypt_password, decrypt_password  # AES加密
 
 
 def get_next_account_id():
-    """获取下一个账号ID (EA+时间戳+随机数格式)"""
-    import random
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    rand_suffix = random.randint(1000, 9999)
-    return f"EA{timestamp}{rand_suffix}"
+    """获取下一个账号ID (EA + 微秒时间戳 + 3位计数器, 批量导入安全)"""
+    from Sills.base import gen_unique_id
+    return gen_unique_id('EA')
 
 
 def get_account_list(page=1, page_size=20, search_kw=""):

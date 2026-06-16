@@ -4,7 +4,7 @@
 """
 import sqlite3
 from datetime import datetime
-from Sills.base import get_db_connection
+from Sills.base import get_db_connection, gen_unique_id
 
 
 # 公共邮箱域名列表
@@ -24,11 +24,10 @@ def is_public_domain(domain):
 
 
 def get_next_prospect_id():
-    """获取下一个Prospect ID (PK+时间戳+随机数格式)"""
-    import random
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    rand_suffix = random.randint(1000, 9999)
-    return f"PK{timestamp}{rand_suffix}"
+    """获取下一个 Prospect ID (PK + 微秒时间戳 + 3位计数器)
+    Bug 修复(2026-06-16): 原秒级时间戳+4位随机在批量导入时产生约 5% 重复。
+    """
+    return gen_unique_id('PK')
 
 
 def count_contacts_by_domain(domain):

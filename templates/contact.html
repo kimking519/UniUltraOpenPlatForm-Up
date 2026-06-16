@@ -1310,6 +1310,32 @@
         setTimeout(() => toast.remove(), 3000);
     }
 
+    // 显示/隐藏全屏 loading 遮罩 (用于长时间批量操作)
+    function showLoadingMask(message) {
+        let mask = document.getElementById('globalLoadingMask');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.id = 'globalLoadingMask';
+            mask.style.cssText = `
+                position: fixed; top:0; left:0; width:100%; height:100%;
+                background: rgba(0,0,0,0.45); z-index: 20000;
+                display: flex; align-items: center; justify-content: center;
+                color: white; font-size: 16px;
+            `;
+            mask.innerHTML = `<div style="background:#1f2937;padding:24px 36px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);"><div style="display:flex;align-items:center;gap:12px;"><div style="width:18px;height:18px;border:3px solid #6366F1;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></div><span id="globalLoadingText"></span></div></div>`;
+            const styleTag = document.createElement('style');
+            styleTag.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+            document.head.appendChild(styleTag);
+            document.body.appendChild(mask);
+        }
+        document.getElementById('globalLoadingText').textContent = message || '处理中...';
+        mask.style.display = 'flex';
+    }
+    function hideLoadingMask() {
+        const mask = document.getElementById('globalLoadingMask');
+        if (mask) mask.style.display = 'none';
+    }
+
     // Tab切换函数
     let prospectInitialized = false;  // 标记是否已初始化
     function toggleTab(tab) {
@@ -1919,21 +1945,40 @@
             }
             const formData = new FormData();
             formData.append('file', file);
+            // 显示 loading 遮罩 + 禁用按钮
+            const btns = document.querySelectorAll('#prospectImportModal button');
+            btns.forEach(b => b.disabled = true);
+            showLoadingMask('正在导入文件，请勿关闭页面...');
             try {
                 const res = await fetch('/api/prospect/import', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await res.json();
+                hideLoadingMask();
                 if (data.success) {
-                    showToast(`导入完成：成功 ${data.imported}，跳过 ${data.skipped || 0}`, 'success');
+                    const imported = data.imported || 0;
+                    const skipped = data.skipped || 0;
+                    const errors = data.errors || [];
+                    const msg = `导入完成：成功 ${imported} 条，跳过 ${skipped} 条` +
+                                (errors.length ? `，错误 ${errors.length} 条` : '');
+                    const level = (skipped > 0 || errors.length > 0) ? 'warning' : 'success';
+                    showToast(msg, level);
+                    if (errors.length > 0) {
+                        alert(`错误明细（前 ${errors.length} 条）:\n\n` + errors.join('\n'));
+                    } else if (skipped > 0) {
+                        alert(`提示：${skipped} 条因域名已存在被跳过（属正常去重，不影响数据）。`);
+                    }
                     this.toggleImportModal();
                     this.load();
                 } else {
                     showToast('导入失败: ' + (data.message || '未知错误'), 'error');
                 }
             } catch (e) {
-                showToast('导入出错', 'error');
+                hideLoadingMask();
+                showToast('导入出错: ' + (e.message || e), 'error');
+            } finally {
+                btns.forEach(b => b.disabled = false);
             }
         },
 
@@ -1964,6 +2009,9 @@
                 };
             });
 
+            const btns = document.querySelectorAll('#prospectImportModal button');
+            btns.forEach(b => b.disabled = true);
+            showLoadingMask(`正在导入 ${data_list.length} 条，请勿关闭页面...`);
             try {
                 const res = await fetch('/api/prospect/import/text', {
                     method: 'POST',
@@ -1971,15 +2019,30 @@
                     body: JSON.stringify({ data_list })
                 });
                 const data = await res.json();
+                hideLoadingMask();
                 if (data.success) {
-                    showToast(`导入完成：成功 ${data.imported}，跳过 ${data.skipped || 0}`, 'success');
+                    const imported = data.imported || 0;
+                    const skipped = data.skipped || 0;
+                    const errors = data.errors || [];
+                    const msg = `导入完成：成功 ${imported} 条，跳过 ${skipped} 条` +
+                                (errors.length ? `，错误 ${errors.length} 条` : '');
+                    const level = (skipped > 0 || errors.length > 0) ? 'warning' : 'success';
+                    showToast(msg, level);
+                    if (errors.length > 0) {
+                        alert(`错误明细（前 ${errors.length} 条）:\n\n` + errors.join('\n'));
+                    } else if (skipped > 0) {
+                        alert(`提示：${skipped} 条因域名已存在被跳过（属正常去重，不影响数据）。`);
+                    }
                     this.toggleImportModal();
                     this.load();
                 } else {
                     showToast('导入失败: ' + (data.message || '未知错误'), 'error');
                 }
             } catch (e) {
-                showToast('导入出错', 'error');
+                hideLoadingMask();
+                showToast('导入出错: ' + (e.message || e), 'error');
+            } finally {
+                btns.forEach(b => b.disabled = false);
             }
         },
 

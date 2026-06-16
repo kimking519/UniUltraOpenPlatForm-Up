@@ -244,3 +244,52 @@ pytest tests/ --junitxml=test-results.xml
 ---
 
 *最后更新：2026-02-28*
+
+---
+
+## 测试用例: ID 生成器批量唯一性
+
+**新增日期**: 2026-06-16
+**触发 Bug**: errors.md Bug 3
+
+### TC-ID-001: 6 个 ID 生成器在 5000 次连续调用中零重复
+**模块**: `Sills/base.py::gen_unique_id` 及调用方
+**步骤**:
+```python
+from Sills.db_prospect import get_next_prospect_id
+from Sills.db_contact import get_next_contact_id
+from Sills.db_contact_group import get_next_group_id
+from Sills.db_email_task import get_next_task_id
+from Sills.db_email_template import get_next_template_id
+from Sills.db_email_account import get_next_account_id
+
+for f in [get_next_prospect_id, get_next_contact_id, get_next_group_id,
+          get_next_task_id, get_next_template_id, get_next_account_id]:
+    ids = [f() for _ in range(5000)]
+    assert len(set(ids)) == 5000, f'{f.__name__} 出现重复'
+```
+**预期**: 6 个函数各自 5000 次调用全部唯一。
+
+### TC-ID-002: 待开发客户批量导入 100 条零丢失
+**模块**: `Sills/db_prospect.py::import_prospects`
+**步骤**:
+```python
+fake = [{'prospect_name':f'T{i}','domain':f'test-id-fix-{i}.example'} for i in range(100)]
+imported, skipped, errors = import_prospects(fake)
+assert imported == 100 and skipped == 0 and len(errors) == 0
+# 清理: DELETE FROM uni_prospect WHERE remark='AUTO_TEST_TEMP'
+```
+**预期**: 100 全部导入，0 跳过，0 错误。
+
+### TC-ID-003: 联系人 ID 长度与格式
+**预期**:
+- prospect_id: `PK` + 20位时间戳 + 3位计数器 = 25 字符
+- contact_id: `CT` + 同上 = 25 字符
+- group_id: `GP` = 25 字符
+- task_id: `ET` = 25 字符
+- template_id: `TPL` + 同上 = 26 字符
+- account_id: `EA` = 25 字符
+
+---
+
+*最后更新：2026-06-16*

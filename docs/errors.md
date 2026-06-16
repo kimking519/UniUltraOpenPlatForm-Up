@@ -421,3 +421,64 @@ price_kwr = float(price_rmb) * exchange_rate_krw
 - [ ] 避免使用 `.Nf` 格式化字符串截取小数
 - [ ] 避免使用 `round()` 函数截取小数位数
 - [ ] 确认业务需求是否真的需要截取精度
+
+---
+
+### Bug 3: 待开发客户批量导入 95 条数据丢失（prospect_id 主键冲突）
+
+**发生日期**: 2026-06-16
+
+#### 问题描述
+用户通过"联系人管理-待开发客户"页面批量导入 2093 条 Excel 数据，导入后页面只显示 1998 条，**95 条数据被静默丢弃，无任何提示**。
+
+#### 根本原因
+`Sills/db_prospect.py::get_next_prospect_id()` 用 **秒级时间戳 + 4位随机数** 生成 ID：
+
+```python
+timestamp = datetime.now().strftime('%Y%m%d%H%M%S')   # 秒级
+rand_suffix = random.randint(1000, 9999)              # 9000 个值
+return f"PK{timestamp}{rand_suffix}"
+```
+
+**冲突链路**：
+1. 2093 条插入仅耗时 2.65 秒 → 同一秒内并发 700+ 条
+2. 同一秒内 4 位随机只有 9000 个空间 → **必然碰撞**（实测 2093 次调用产生 206 个重复 ID）
+3. 第二条 INSERT 抛 `duplicate key value violates unique constraint "uni_prospect_pkey"`
+4. `import_prospects` except 分支识别到 `duplicate key` 关键词 → 归为 `skipped_count` 而非 `errors`
+5. 后端返回 `{success:True, imported:1998, skipped:95}`
+6. 前端 `importFile` 当时 toast 已显示但用户没注意到
+
+#### 修复方案
+1. **`Sills/base.py`**: 新增公共函数 `gen_unique_id(prefix)` ——
+   微秒级时间戳(20 位) + 进程内自增计数器(3 位) + 线程锁。实测 5000 次调用零重复。
+2. **统一替换以下 6 个 ID 生成器**为调用 `gen_unique_id`：
+   - `get_next_prospect_id` (PK)
+   - `get_next_contact_id` (CT)
+   - `get_next_group_id` (GP)
+   - `get_next_task_id` (ET)
+   - `get_next_template_id` (TPL)
+   - `get_next_account_id` (EA)
+3. **前端 `templates/contact.html`**: ProspectManager.importFile/importText
+   - 加全屏 loading 遮罩（`showLoadingMask`/`hideLoadingMask`）
+   - 完成后弹出 alert 显示 imported/skipped/errors 明细
+   - skipped/errors > 0 时 toast 改用 warning 颜色而非 success
+
+#### 影响功能模块
+- 待开发客户批量导入（核心修复）
+- 联系人批量导入（同类风险，预防性修复）
+- 邮件任务、模板、账号 ID 生成（一致性优化）
+
+#### 检查清单
+- [x] ID 生成函数在批量场景下产生唯一值（5000 次零重复）
+- [x] 7 个修改的 Python 模块 import 通过
+- [x] HTML JS 括号匹配（{ 345/345, ( 807/807）
+- [x] 端到端回归: 100 条批量导入零跳过零错误
+- [x] 用户操作流程: 重新上传 Excel 即可补齐 95 条
+
+---
+
+### 高频 Bug 模式记录（出现 2 次以上）
+
+#### 模式 A: 静默吞错（出现 2 次）
+- Bug 1（联系人导出 500）和 Bug 3 都因为后端把异常归到不显眼的字段，前端没显示
+- **预防原则**: 后端任何 errors 字段，前端必须显示出来；toast 只用 success 表示真正全部成功

@@ -47,12 +47,11 @@ def extract_domain(email):
 
 
 def get_next_contact_id():
-    """获取下一个联系人ID (CT+时间戳+随机数格式)"""
-    from datetime import datetime
-    import random
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    rand_suffix = random.randint(1000, 9999)
-    return f"CT{timestamp}{rand_suffix}"
+    """获取下一个联系人ID (CT + 微秒时间戳 + 3位计数器)
+    Bug 修复(2026-06-16): 原秒级时间戳+4位随机在批量导入时产生约 5% 重复。
+    """
+    from Sills.base import gen_unique_id
+    return gen_unique_id('CT')
 
 
 def get_contact_list(page=1, page_size=20, search_kw="", filters=None):

@@ -11,11 +11,9 @@ from Sills.db_config import get_datetime_now
 
 
 def get_next_task_id():
-    """获取下一个任务ID (ET+时间戳+随机数格式)"""
-    import random
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    rand_suffix = random.randint(1000, 9999)
-    return f"ET{timestamp}{rand_suffix}"
+    """获取下一个任务ID (ET + 微秒时间戳 + 3位计数器, 批量导入安全)"""
+    from Sills.base import gen_unique_id
+    return gen_unique_id('ET')
 
 
 def get_task_list(page=1, page_size=20, status_filter="", search_kw=""):

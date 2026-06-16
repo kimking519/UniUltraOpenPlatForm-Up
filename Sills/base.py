@@ -27,6 +27,25 @@ POOL_TIMEOUT = 5.0
 _pg_pool = None
 
 
+# ===== 唯一 ID 生成器（批量导入安全） =====
+# Bug 修复(2026-06-16): 原秒级时间戳+4位随机在批量导入(每秒700+条)时
+# 会产生 PK 重复, 整批数据约 5% 因 duplicate key 被静默 skip。
+# 改为微秒级时间戳(20位) + 进程内自增计数器(3位 000-999), 单进程内绝对唯一。
+_uid_counter_lock = threading.Lock()
+_uid_counter = [0]
+
+
+def gen_unique_id(prefix: str) -> str:
+    """生成形如 <prefix><yyyymmddHHMMSSffffff><000-999> 的唯一 ID。
+    单进程内 1000/微秒 内零碰撞，远超实际批量导入吞吐。
+    """
+    with _uid_counter_lock:
+        _uid_counter[0] = (_uid_counter[0] + 1) % 1000
+        c = _uid_counter[0]
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')  # 20位含微秒
+    return f"{prefix}{timestamp}{c:03d}"
+
+
 def _init_pg_pool():
     """初始化 PostgreSQL 连接池"""
     global _pg_pool

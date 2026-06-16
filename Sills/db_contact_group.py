@@ -12,11 +12,9 @@ from Sills.db_contact import get_contact_by_email
 
 
 def get_next_group_id():
-    """获取下一个联系人组ID (GP+时间戳+随机数格式)"""
-    import random
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    rand_suffix = random.randint(1000, 9999)
-    return f"GP{timestamp}{rand_suffix}"
+    """获取下一个联系人组ID (GP + 微秒时间戳 + 3位计数器, 批量导入安全)"""
+    from Sills.base import gen_unique_id
+    return gen_unique_id('GP')
 
 
 def get_group_list(page=1, page_size=20, search_kw=""):
