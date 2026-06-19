@@ -5367,17 +5367,21 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
     import io
 
     # 直接全表查询，不应用任何筛选
+    # LEFT JOIN uni_prospect 以获取国家数据（uni_contact.country 多数为空）
     with get_db_connection() as conn:
         rows = conn.execute(
-            "SELECT domain, email, contact_name, position, remark, "
-            "send_count, is_bounced, is_read "
-            "FROM uni_contact ORDER BY created_at DESC"
+            "SELECT c.domain, c.email, c.contact_name, c.position, c.remark, "
+            "COALESCE(c.country, p.country) AS country, "
+            "c.send_count, c.is_bounced, c.is_read "
+            "FROM uni_contact c "
+            "LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending' "
+            "ORDER BY c.created_at DESC"
         ).fetchall()
 
     wb = Workbook()
     ws = wb.active
     ws.title = "联系人导出"
-    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送', '退信', '已读', '状态'])
+    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送', '退信', '已读', '状态', '国家'])
 
     for r in rows:
         # 状态：与列表页一致，is_bounced=退信，send_count>0=已发送，可叠加
@@ -5398,6 +5402,7 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
             '是' if r['is_bounced'] else '否',
             '是' if r['is_read'] else '否',
             status,
+            r['country'] or '',
         ])
 
     # 列宽
@@ -5410,6 +5415,7 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
     ws.column_dimensions['G'].width = 8
     ws.column_dimensions['H'].width = 8
     ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 15
 
     output = io.BytesIO()
     wb.save(output)

@@ -86,6 +86,7 @@ uni_mail_data.txt
 
 # === 临时调试文件 ===
 temp_*.txt
+temp_*.py
 *_check*.txt
 *_match*.txt
 *_analysis.txt
