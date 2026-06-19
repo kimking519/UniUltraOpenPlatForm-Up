@@ -292,4 +292,39 @@ assert imported == 100 and skipped == 0 and len(errors) == 0
 
 ---
 
-*最后更新：2026-06-16*
+## 开发信任务管理模块 (Email Task)
+
+### TC-ETASK-001: 任意时间创建任务（已移除时间段限制）
+**模块**: `templates/email_task.html` + `main.py::api_task_create`
+**步骤**:
+1. 打开"开发信任务管理"页面
+2. 检查表单：UI 上**不再有**「发送时间段」输入框
+3. 填写任务名 / 账号 / 联系人组 / 主题 / 内容，点击创建
+**预期**: 创建成功，POST body 不包含 schedule_start/end 字段。
+
+### TC-ETASK-002: 任意时间启动任务（不再阻拦）
+**模块**: `templates/email_task.html::startTask`
+**步骤**:
+1. 调整系统时间到 23:00 或 03:00（原时间段 09:00-18:00 之外）
+2. 点击任务列表上的"开始执行"
+**预期**: 不再弹出"不在发送时间段"alert，进入"确定开始执行该任务"确认。
+
+### TC-ETASK-003: 老任务（含 schedule_start/end）自动放行
+**模块**: `Sills/email_sender.py::is_in_schedule_time`
+**步骤**:
+1. 取一条历史任务（数据库中 schedule_start='09:00', schedule_end='18:00'）
+2. 在非时间段（如 22:00）启动该任务
+**预期**: 任务正常发送，不被时间段卡住（`is_in_schedule_time` 永远 return True）。
+
+### TC-ETASK-004: 后端 API 接收时强制 NULL
+**模块**: `main.py::api_task_create`
+**步骤**:
+```python
+# 即使前端传了 schedule_start/end，后端也强制写 None
+POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
+```
+**预期**: 数据库 `uni_email_task` 中 schedule_start/end 字段为 NULL。
+
+---
+
+*最后更新：2026-06-19*

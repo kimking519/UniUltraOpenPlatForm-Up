@@ -135,13 +135,9 @@
             <input type="text" id="taskSubject" placeholder="邮件主题（支持{公司名}占位符）" style="width: 100%; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: #ffffff; color: #000000;">
         </div>
         <div style="margin-top: 10px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
-            <!-- 发送时间段 -->
+            <!-- 发送间隔（已移除发送时间段限制，任意时间均可发送） -->
             <div style="display: flex; gap: 6px; align-items: center;">
-                <span style="font-size: 12px; color: var(--text-muted);">发送时间段:</span>
-                <input type="time" id="taskScheduleStart" value="09:00" style="padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <span style="font-size: 12px; color: var(--text-muted);">至</span>
-                <input type="time" id="taskScheduleEnd" value="18:00" style="padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-                <span style="font-size: 12px; color: var(--text-muted);">间隔</span>
+                <span style="font-size: 12px; color: var(--text-muted);">发送间隔</span>
                 <input type="number" id="taskSendInterval" value="2" min="1" max="60" style="width: 50px; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
                 <span style="font-size: 12px; color: var(--text-muted);">秒</span>
             </div>
@@ -910,7 +906,7 @@
                     progressBar = `<span style="font-size: 12px; color: var(--text-muted);">${sentCount}/${totalCount}</span>`;
                 }
 
-                tbody.innerHTML += `<tr data-task-id="${t.task_id}" data-schedule-start="${t.schedule_start || '09:00'}" data-schedule-end="${t.schedule_end || '18:00'}">
+                tbody.innerHTML += `<tr data-task-id="${t.task_id}">
                     <td><input type="checkbox" class="task-checkbox" value="${t.task_id}" onchange="updateBatchDeleteBtn()"></td>
                     <td style="font-size: 12px; color: var(--text-muted);">${t.task_id}</td>
                     <td>${t.task_name}</td>
@@ -933,8 +929,6 @@
         const group_ids = selectedGroups.map(g => g.group_id);  // 从selectedGroups获取
         const subject = document.getElementById('taskSubject').value;
         const body = document.getElementById('taskBody').innerHTML;
-        const scheduleStart = document.getElementById('taskScheduleStart').value;
-        const scheduleEnd = document.getElementById('taskScheduleEnd').value;
         const sendInterval = parseInt(document.getElementById('taskSendInterval').value) || 2;
         const skipEnabled = document.getElementById('taskSkipEnabled').checked ? 1 : 0;
         const skipDays = parseInt(document.getElementById('taskSkipDays').value) || 7;
@@ -955,8 +949,6 @@
                     group_ids: group_ids,
                     subject: subject,
                     body: body,
-                    schedule_start: scheduleStart,
-                    schedule_end: scheduleEnd,
                     send_interval: sendInterval,
                     skip_enabled: skipEnabled,
                     skip_days: skipDays,
@@ -981,23 +973,7 @@
 
     // 开始执行任务
     async function startTask(task_id) {
-        // 先获取任务详情检查时间段
-        const row = document.querySelector(`tr[data-task-id="${task_id}"]`);
-        if (row) {
-            const scheduleStart = row.dataset.scheduleStart || '09:00';
-            const scheduleEnd = row.dataset.scheduleEnd || '18:00';
-
-            // 获取当前时间
-            const now = new Date();
-            const currentTime = now.toTimeString().slice(0, 5); // HH:MM 格式
-
-            // 检查是否在时间段内
-            if (currentTime < scheduleStart || currentTime > scheduleEnd) {
-                alert(`当前时间 ${currentTime} 不在发送时间段 ${scheduleStart} - ${scheduleEnd} 内，无法执行任务！\n请修改时间段后再启动。`);
-                return;
-            }
-        }
-
+        // 已移除发送时间段限制，任意时间均可启动
         if (!confirm('确定开始执行该任务？')) return;
         try {
             const res = await fetch('/api/task/start', {

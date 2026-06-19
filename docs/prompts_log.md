@@ -58,3 +58,31 @@
 - 修复 6 个 ID 生成器: prospect/contact/group/task/template/email_account
 - 修复前端 `templates/contact.html`: 加 loading 遮罩 + 错误明细 alert
 - 端到端回归测试通过（100/100/0/0）
+
+---
+
+## 2026-06-19 09:54 - 联系人导出 Excel 新增国家列
+
+**Prompt**: `push到github`
+
+**响应摘要**:
+- 修改 `main.py::api_contact_export`: LEFT JOIN uni_prospect 回退获取国家数据，COALESCE(c.country, p.country)
+- Excel 表头新增"国家"列（J 列，宽度 15）
+- 提交 `84a056d`，推送到 origin/main
+- 同时新增 `.gitignore` 规则：`temp_*.py` 永久忽略
+
+---
+
+## 2026-06-19 10:30 - 开发信任务管理移除发送时间段限制
+
+**Prompt 序列**:
+1. `开发信任务管理-任务列表 中的发送时间段移除，不做发送时间段限制`
+2. `按推荐的来`（确认方案 B + A + A + B）
+3. `发送时间段验证ok，继续执行其他任务`
+
+**响应摘要**:
+- 影响范围分析：前端 `email_task.html` + `mail.html`、后端 `main.py` + `Sills/email_sender.py` + `Sills/db_email_task.py`、数据库表字段（保留不动）
+- 前端：`email_task.html` 移除时间段 input UI、`<tr>` data 属性、createTask 提交字段、startTask 时间段校验 alert；`mail.html` 同步清理 input + 提交字段
+- 后端：`email_sender.py::is_in_schedule_time` 永远 `return True` 让老任务自动放行；`main.py::api_task_create` 强制 schedule_start/end = None（保留参数兼容旧客户端）
+- 数据库表 `uni_email_task.schedule_start/end` 字段保留不动（按 CLAUDE.md 表结构变动需单独审批）
+- 用户自测验证 OK

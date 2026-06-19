@@ -297,17 +297,8 @@ class EmailSenderWorker:
         }
 
     def is_in_schedule_time(self):
-        """检查当前是否在发送时间段内"""
-        now = datetime.now()
-        current_time = now.strftime('%H:%M')
-
-        schedule_start = self.task.get('schedule_start', '')
-        schedule_end = self.task.get('schedule_end', '')
-
-        if not schedule_start or not schedule_end:
-            return True  # 无时间段限制
-
-        return schedule_start <= current_time <= schedule_end
+        """已移除发送时间段限制，任意时间均允许发送"""
+        return True
 
     def run(self):
         """Worker主循环（支持多账号轮换）"""

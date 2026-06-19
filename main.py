@@ -6528,8 +6528,9 @@ async def api_task_create(request: Request, current_user: dict = Depends(login_r
     subject = data.get('subject', '')
     body = data.get('body', '')
     placeholders = data.get('placeholders', None)
-    schedule_start = data.get('schedule_start', None)
-    schedule_end = data.get('schedule_end', None)
+    # 已移除发送时间段限制，schedule_start/end 强制写 NULL
+    schedule_start = None
+    schedule_end = None
     send_interval = data.get('send_interval', 2)  # 发送间隔（秒）
     skip_enabled = data.get('skip_enabled', 1)    # 是否启用跳过规则（默认开启）
     skip_days = data.get('skip_days', 7)          # 跳过天数（默认7天）
