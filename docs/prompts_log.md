@@ -101,3 +101,19 @@
 - 前端：`templates/email_task.html` line 882/888/890/892 共 4 处 `<button>` 删除 `改账号` 按钮；line 892 删除 `查看日志` 按钮
 - 删除 `viewTaskLogs(id)` 占位函数（仅 alert 占位无价值）
 - 5 个任务状态按钮组合校验通过：pending/paused/error/completed 均不再含改账号；completed 不再含查看日志
+
+---
+
+## 2026-06-19 11:22 - 移除"有任务在跑时禁止创建新任务"限制
+
+**Prompt 序列**:
+1. `开发信任务管理-任务列表 中的任务 当有任务在跑的时候也要允许创建任务，现在是禁止的，这个需求有没有实现？`
+2. `按推荐`（确认方案 B+A+A = 只放开创建限制 + 旧版 mail.html 一并清理 + 保留 has_running_task 函数）
+
+**响应摘要**:
+- 排查 `has_running_task` 调用点：仅在 `Sills/db_email_task.py::create_task` 内被调用拦截，无其他依赖
+- 删除 `Sills/db_email_task.py:166-168` 创建任务时的 `if has_running_task(): return False, "已有任务正在进行,无法创建新任务"` 拦截逻辑
+- 删除 `templates/mail.html` 旧版前端创建前的 `/api/task/active` 检查 + alert
+- 保留 `has_running_task()` 函数本身（其他场景可能用到）
+- 保留 `loadActiveTask()` 中对 `/api/task/active` 的合法调用（用于展示当前任务面板，与创建无关）
+- 数据库表结构未动

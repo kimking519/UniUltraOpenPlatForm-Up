@@ -163,10 +163,8 @@ def create_task(task_name, account_ids, group_ids, subject, body,
         (success, message_or_task_id) tuple
     """
     try:
-        # 检查是否有正在进行的任务
-        if has_running_task():
-            return False, "已有任务正在进行,无法创建新任务"
-
+        # 已移除"有任务在跑时禁止创建"的限制 (2026-06-19)
+        # 现在任意时刻都允许创建新任务（启动时仍受其他规则约束）
         if not task_name or not task_name.strip():
             return False, "任务名称不能为空"
         if not account_ids or len(account_ids) == 0:

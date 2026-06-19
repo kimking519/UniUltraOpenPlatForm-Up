@@ -343,6 +343,18 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 **步骤**: 浏览器 Console 执行 `typeof viewTaskLogs`
 **预期**: 返回 `'undefined'`（函数已删）。
 
+### TC-ETASK-007: 有任务运行时仍可创建新任务
+**模块**: `Sills/db_email_task.py::create_task`
+**步骤**:
+1. 创建任务 A 并启动（status='running'）
+2. 在任务 A 运行期间，创建任务 B
+**预期**: 任务 B 创建成功，不再返回 `"已有任务正在进行,无法创建新任务"` 错误。
+
+### TC-ETASK-008: 旧版 mail.html 创建拦截已移除
+**模块**: `templates/mail.html`
+**步骤**: 旧版页面在有任务运行时尝试创建新任务
+**预期**: 不再弹出 `"已有任务正在进行，请等待完成或取消后再创建新任务"` alert，直接进入 `/api/task/create`。
+
 ---
 
 *最后更新：2026-06-19*

@@ -6160,15 +6160,7 @@
             if (!subject) { alert('请输入邮件主题'); return; }
             if (!body) { alert('请输入邮件内容'); return; }
 
-            // 检查是否有正在进行的任务
-            try {
-                const checkRes = await fetch('/api/task/active');
-                const checkData = await checkRes.json();
-                if (checkData.task) {
-                    alert('已有任务正在进行，请等待完成或取消后再创建新任务');
-                    return;
-                }
-            } catch (e) {}
+            // 已移除"有任务在跑时禁止创建"的检查 (2026-06-19)
 
             try {
                 const res = await fetch('/api/task/create', {
