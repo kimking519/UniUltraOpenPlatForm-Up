@@ -446,11 +446,28 @@ def batch_duplicate_offers(offer_ids, emp_id):
     return success_count, failed_count, new_ids
 
 def batch_import_offer_text(text, emp_id):
-    import io, csv
+    import io, csv, re
     from datetime import datetime
-    f = io.StringIO(text.strip())
-    reader = csv.reader(f)
-    rows = list(reader)
+
+    # 智能分隔符策略 (2026-06-19)：
+    # - 行内含英文逗号 → 走 csv.reader（保留双引号字段保护、空字段位置）
+    # - 行内不含英文逗号 → 走正则切分，支持中文逗号/中英文分号/Tab/竖线/≥2个空格
+    # 与前端 offer.html 智能带入框（≥2空格分隔规则）保持一致体验
+    SEP_RE = re.compile(r'[，;；\t|]+|\s{2,}')
+    rows = []
+    for raw_line in text.strip().splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if ',' in line:
+            # 走 csv.reader（保留原行为）
+            csv_reader = csv.reader(io.StringIO(line))
+            for parsed in csv_reader:
+                rows.append(parsed)
+        else:
+            # 走正则切分，过滤空段
+            parts = [p for p in SEP_RE.split(line) if p.strip()]
+            rows.append(parts)
     success_count = 0
     errors = []
 

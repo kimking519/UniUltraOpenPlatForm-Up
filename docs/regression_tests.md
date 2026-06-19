@@ -357,4 +357,33 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 
 ---
 
+## 报价模块 (OFF) 新增
+
+### TC-OFF-013: 批量导入支持 ≥2 空格作为分隔符
+**模块**: `Sills/db_offer.py::batch_import_offer_text`
+**步骤**:
+```
+输入文本：
+STM32F103  ST  100  Samsung
+LM358  TI  50  LG
+```
+**预期**: 成功导入 2 条，每条 4 列正确切分（≥2 空格命中正则分支）。
+
+### TC-OFF-014: 批量导入保留单空格型号（如 BAT 54C）
+**模块**: `Sills/db_offer.py::batch_import_offer_text`
+**步骤**: 输入 `BAT 54C  TI  500`（型号内部 1 空格、字段间 2 空格）
+**预期**: `inquiry_mpn='BAT 54C'`，3 列。
+
+### TC-OFF-015: 批量导入兼容老 CSV 格式（含逗号）
+**模块**: `Sills/db_offer.py::batch_import_offer_text`
+**步骤**: 输入老模板（含双引号字段、空字段）：`2026-06-19,"含,逗号,的备注",STM32,,ST,,100,...`
+**预期**: 行为与原 csv.reader 完全等价 —— 双引号字段保留、空字段索引保留。
+
+### TC-OFF-016: 多分隔符混合
+**模块**: `Sills/db_offer.py::batch_import_offer_text`
+**步骤**: 输入 `STM32\tST|100；Samsung，备注`
+**预期**: 5 列正确切分（Tab / | / ； / ，）。
+
+---
+
 *最后更新：2026-06-19*
