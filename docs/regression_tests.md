@@ -325,6 +325,24 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 ```
 **预期**: 数据库 `uni_email_task` 中 schedule_start/end 字段为 NULL。
 
+### TC-ETASK-005: 任务列表按钮组合（已移除改账号/查看日志）
+**模块**: `templates/email_task.html::loadTaskHistory`
+**步骤**: 创建多个任务覆盖 5 种状态（pending/running/paused/error/completed），逐一观察操作列。
+**预期**:
+| 状态 | 应有按钮 | 不应有按钮 |
+|---|---|---|
+| pending | 开始执行/导出/删除 | 改账号 |
+| running | 停止执行/导出 | — |
+| retrying | 停止执行/导出 | — |
+| paused | 继续执行/导出/删除 | 改账号 |
+| error | 重新执行/重试失败/导出/删除 | 改账号 |
+| completed | 重试失败/导出/删除 | 改账号、查看日志 |
+
+### TC-ETASK-006: viewTaskLogs 占位函数已删除
+**模块**: `templates/email_task.html`
+**步骤**: 浏览器 Console 执行 `typeof viewTaskLogs`
+**预期**: 返回 `'undefined'`（函数已删）。
+
 ---
 
 *最后更新：2026-06-19*

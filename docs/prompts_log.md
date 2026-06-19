@@ -86,3 +86,18 @@
 - 后端：`email_sender.py::is_in_schedule_time` 永远 `return True` 让老任务自动放行；`main.py::api_task_create` 强制 schedule_start/end = None（保留参数兼容旧客户端）
 - 数据库表 `uni_email_task.schedule_start/end` 字段保留不动（按 CLAUDE.md 表结构变动需单独审批）
 - 用户自测验证 OK
+
+---
+
+## 2026-06-19 10:23 - 开发信任务列表移除「改账号」「查看日志」按钮
+
+**Prompt 序列**:
+1. `开发信任务管理-任务列表 中的任务 去掉改账号和查看日志按钮`
+2. `按照你推荐的来`（确认方案 A B 是 = 全删按钮 + 删 viewTaskLogs 占位 + 先排查调用入口）
+
+**响应摘要**:
+- 排查 `showChangeAccountModal` / `viewTaskLogs` / `change_account` 全部调用入口，确认仅按钮 onclick 处使用
+- 排查后端 API：`/api/task/update-account` (main.py:6601) **真实存在**——改账号是真功能；按 B 方案保留所有改账号死代码（模态框 HTML / showChangeAccountModal / closeChangeAccountModal / changeTaskAccount JS 函数 / 后端 API），便于回退
+- 前端：`templates/email_task.html` line 882/888/890/892 共 4 处 `<button>` 删除 `改账号` 按钮；line 892 删除 `查看日志` 按钮
+- 删除 `viewTaskLogs(id)` 占位函数（仅 alert 占位无价值）
+- 5 个任务状态按钮组合校验通过：pending/paused/error/completed 均不再含改账号；completed 不再含查看日志

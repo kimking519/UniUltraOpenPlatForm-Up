@@ -879,17 +879,17 @@
                 // 根据状态显示不同操作按钮
                 let actionButtons = '';
                 if (t.status === 'pending') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'running') {
                     actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
                 } else if (t.status === 'retrying') {
                     actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
                 } else if (t.status === 'paused') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'error') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'completed') {
-                    actionButtons = `<button class="btn btn-sm" onclick="viewTaskLogs('${t.task_id}')">查看日志</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="showChangeAccountModal('${t.task_id}')">改账号</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 }
 
                 // 进度条
@@ -1505,10 +1505,7 @@
         }
     }
 
-    // 查看任务日志
-    function viewTaskLogs(id) {
-        alert('日志功能开发中...');
-    }
+    // 查看任务日志（已移除按钮入口；功能未实现，占位函数已删除）
 
     // 加载国家列表（复选框）
     async function loadCountries() {
