@@ -386,4 +386,46 @@ LM358  TI  50  LG
 
 ---
 
-*最后更新：2026-06-19*
+## 联系人模块 (CTM) 增强 (2026-06-20)
+
+### TC-CTM-011: 导出按筛选条件
+**模块**: `main.py::api_contact_export` + `templates/contact.html::exportContacts`
+**步骤**:
+1. 列表页选 country=韩国 → 点导出
+2. 对比全量导出条数
+**预期**: 导出文件只含韩国联系人，条数 ≤ 全量；不传参数时全量导出（向后兼容）。
+
+### TC-CTM-012: 5 个统计数字随筛选联动
+**模块**: `main.py::api_contact_stats` + `templates/contact.html::loadStats`
+**步骤**:
+1. 列表页选筛选条件（如 prospect_tag=0）
+2. 观察"联系人总数/已发送/已读/未读/退信"5 个数字
+**预期**: 数字随筛选条件实时变化（防抖 200ms），筛选无匹配时归零。
+
+### TC-CTM-013: 标识筛选下拉
+**模块**: `templates/contact.html::filterTag + loadProspectTagFilter`
+**步骤**:
+1. 打开联系人列表页
+2. 查看"标识"下拉选项
+**预期**: 含"全部标识"/"无标识" + 所有 prospect.tag distinct 值（来自 `/api/contact/prospect_tags`）。
+
+### TC-CTM-014: 导出 Excel 含标识列
+**模块**: `main.py::api_contact_export`
+**步骤**: 导出 Excel，查看列结构
+**预期**: 11 列，末列为"标识"（prospect.tag，无 prospect 关联时为空）。
+
+### TC-CTM-015: 导出国家与列表一致（Bug A 回归）
+**模块**: `main.py::api_contact_export`
+**步骤**:
+1. 取一条列表页显示有国家（来自 prospect 回退）的联系人
+2. 导出 Excel 查同一条记录
+**预期**: 导出的国家值与列表页显示一致（Python `c.country or prospect_country` 回退，空字符串视为 falsy）。
+
+### TC-CTM-016: psycopg 中文 LIKE 参数化（回归）
+**模块**: `Sills/db_contact.py::get_marketing_stats`
+**步骤**: 在 PostgreSQL 环境下，带任意 filter 调 `get_marketing_stats(filters={...})`
+**预期**: 不再触发 `UnicodeDecodeError`（中文关键词已参数化为 `?`）。
+
+---
+
+*最后更新：2026-06-20*

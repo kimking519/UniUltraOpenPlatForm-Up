@@ -1,5 +1,29 @@
 # 错误记录与修复方案
 
+## 2026-06-20: 联系人导出国家为空（国家相关 bug 第 2 次）⚠️ 重复 bug
+
+### 问题描述
+联系人管理 → 导出 Excel，"国家"列大部分为空，但联系人列表页能正常显示国家。
+
+### 根本原因
+**SQL `COALESCE` 与前端 JS `||` 对空字符串处理不一致**：
+- `uni_contact.country` 字段存的是**空字符串 `''`**（不是 NULL）
+- 导出 SQL：`COALESCE(c.country, p.country)` —— COALESCE 只在 NULL 时回退，空字符串 `''` 不回退 → 返回 `''`
+- 列表前端 JS：`item.country || item.prospect_country` —— JS `||` 把空字符串当 falsy → 正确回退到 prospect_country
+
+### 修复方案
+导出改用复用 `get_contact_list` 取数据，国家在 **Python 层用 `r.get('country') or r.get('prospect_country') or ''`**（与前端 `||` 语义完全一致），不再用 SQL COALESCE。
+
+### ⚠️ 重复 bug 警示（CLAUDE.md：出现 2 次以上的 bug 要记录）
+| 时间 | 现象 | 根因 |
+|---|---|---|
+| 2026-06-19 (`84a056d`) | 导出 Excel 没有国家列 | 原 SQL 只查 uni_contact 没 JOIN prospect |
+| **2026-06-20 (本次)** | 导出国家大部分为空 | JOIN 用了 COALESCE，空字符串不回退；且多余 `AND p.status='pending'` 排除了已转化 prospect |
+
+**教训**：导出/列表同一字段必须用**完全相同的取值逻辑**，跨语言（SQL vs Python vs JS）的空值语义差异是高发 bug 源。后续涉及"列表/导出一致性"应直接复用同一数据获取函数，禁止各自写 SQL。
+
+---
+
 ## 2026-02-28: Session 筛选条件导致"全部状态"不生效
 
 ### 问题描述

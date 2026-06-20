@@ -252,6 +252,10 @@
                 <option value="0">未发送</option>
                 <option value="1">已发送</option>
             </select>
+            <select id="filterTag" onchange="loadContacts()">
+                <option value="">全部标识</option>
+                <option value="__none__">无标识</option>
+            </select>
             <button class="btn btn-ghost btn-sm" onclick="resetFilters()">重置</button>
         </div>
         <div class="page-actions" id="contactsActions">
@@ -749,28 +753,60 @@
 
     // 初始化
     document.addEventListener('DOMContentLoaded', () => {
+        loadProspectTagFilter();  // 加载"标识"筛选下拉选项
         loadContacts();
         // ProspectManager 延迟初始化，只在用户切换到待开发客户 tab 时才加载
     });
 
-    // 加载联系人列表
-    async function loadContacts(page = 1) {
-        currentPage = page;
-        const pageSize = document.getElementById('pageSizeSelect').value;
+    // 加载标识（prospect.tag）筛选下拉选项
+    async function loadProspectTagFilter() {
+        try {
+            const res = await fetch('/api/contact/prospect_tags');
+            const data = await res.json();
+            const select = document.getElementById('filterTag');
+            if (!select || !data.tags) return;
+            // 固定两项：全部标识 / 无标识；追加动态 tag 值
+            let opts = '<option value="">全部标识</option><option value="__none__">无标识</option>';
+            data.tags.forEach(t => {
+                if (t !== null && t !== '') opts += `<option value="${t}">${t}</option>`;
+            });
+            select.innerHTML = opts;
+        } catch (e) {
+            console.error('加载标识选项失败:', e);
+        }
+    }
+
+    // 获取当前筛选条件（loadContacts / exportContacts / loadStats 共用）
+    function getCurrentFilters() {
         const search = document.getElementById('searchInput').value;
         const country = document.getElementById('filterCountry').value;
         const isBounced = document.getElementById('filterBounced').value;
         const isRead = document.getElementById('filterRead').value;
         const hasSent = document.getElementById('filterSent').value;
+        const tag = document.getElementById('filterTag').value;
+
+        const filters = {};
+        if (search) filters.search = search;
+        if (country) filters.country = country;
+        if (isBounced !== '') filters.is_bounced = isBounced;
+        if (isRead !== '') filters.is_read = isRead;
+        if (hasSent !== '') filters.has_sent = hasSent;
+        // 标识筛选：__none__ → 无标识；其他值 → 具体 tag
+        if (tag === '__none__') filters.no_prospect_tag = '1';
+        else if (tag !== '') filters.prospect_tag = tag;
+        return filters;
+    }
+
+    // 加载联系人列表
+    async function loadContacts(page = 1) {
+        currentPage = page;
+        const pageSize = document.getElementById('pageSizeSelect').value;
+        const filters = getCurrentFilters();
 
         const params = new URLSearchParams({
             page,
             page_size: pageSize,
-            ...(search && { search }),
-            ...(country && { country }),
-            ...(isBounced !== '' && { is_bounced: isBounced }),
-            ...(isRead !== '' && { is_read: isRead }),
-            ...(hasSent !== '' && { has_sent: hasSent })
+            ...filters
         });
 
         try {
@@ -781,6 +817,32 @@
             renderPagination(data.total, pageSize, page);
         } catch (e) {
             console.error('加载失败:', e);
+        }
+
+        // 联动刷新统计数字（防抖 200ms）
+        loadStatsDebounced(filters);
+    }
+
+    // 统计数字加载（带筛选条件联动）
+    let _statsTimer = null;
+    function loadStatsDebounced(filters) {
+        clearTimeout(_statsTimer);
+        _statsTimer = setTimeout(() => loadStats(filters), 200);
+    }
+
+    async function loadStats(filters) {
+        try {
+            const params = new URLSearchParams(filters || {});
+            const res = await fetch(`/api/contact/stats?${params}`);
+            const data = await res.json();
+            const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? 0; };
+            setVal('totalContacts', data.total_contacts);
+            setVal('totalSent', data.total_sent);
+            setVal('totalRead', data.total_read);
+            setVal('totalUnread', data.total_unread);
+            setVal('totalBounced', data.total_bounced);
+        } catch (e) {
+            console.error('统计加载失败:', e);
         }
     }
 
@@ -982,6 +1044,7 @@
         document.getElementById('filterBounced').value = '';
         document.getElementById('filterRead').value = '';
         document.getElementById('filterSent').value = '';
+        document.getElementById('filterTag').value = '';
         document.getElementById('searchInput').value = '';
         loadContacts();
     }
@@ -1119,11 +1182,13 @@
         }
     }
 
-    // 导出联系人Excel
+    // 导出联系人Excel（按当前筛选条件导出）
     async function exportContacts() {
         showToast('正在导出...', 'info');
         try {
-            const res = await fetch('/api/contact/export');
+            const filters = getCurrentFilters();
+            const params = new URLSearchParams(filters);
+            const res = await fetch(`/api/contact/export?${params}`);
             if (!res.ok) {
                 showToast('导出失败', 'error');
                 return;

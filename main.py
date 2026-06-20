@@ -5333,10 +5333,44 @@ async def api_contact_countries(current_user: dict = Depends(login_required)):
 
 
 @app.get("/api/contact/stats")
-async def api_contact_stats(current_user: dict = Depends(login_required)):
-    """获取营销统计数据"""
+async def api_contact_stats(
+    search: str = None,
+    cli_id: str = None,
+    country: str = None,
+    is_bounced: int = None,
+    is_read: int = None,
+    has_sent: int = None,
+    prospect_tag: str = None,
+    no_prospect_tag: str = None,
+    current_user: dict = Depends(login_required)
+):
+    """获取营销统计数据（支持按筛选条件联动统计）
+
+    不传参数 → 全表统计（向后兼容）
+    传参数 → 5 个数字按筛选范围统计，与 /api/contact/list 筛选逻辑一致
+    """
     from Sills.db_contact import get_marketing_stats
-    return get_marketing_stats()
+
+    filters = {}
+    if cli_id:
+        filters['cli_id'] = cli_id
+    if country:
+        filters['country'] = country
+    if is_bounced is not None:
+        filters['is_bounced'] = is_bounced
+    if is_read is not None:
+        filters['is_read'] = is_read
+    if has_sent is not None:
+        filters['has_sent'] = has_sent
+    if no_prospect_tag in ('1', 'true', 'True', 'yes'):
+        filters['no_prospect_tag'] = True
+    elif prospect_tag is not None and prospect_tag != '':
+        filters['prospect_tag'] = prospect_tag
+
+    return get_marketing_stats(
+        search_kw=search or "",
+        filters=filters if filters else None
+    )
 
 
 @app.get("/api/contact/prospect_tags")
@@ -5353,56 +5387,90 @@ async def api_contact_prospect_tags(current_user: dict = Depends(login_required)
 
 
 @app.get("/api/contact/export")
-async def api_contact_export(current_user: dict = Depends(login_required)):
-    """
-    导出全部联系人为 Excel（全量，不接受任何筛选参数）
-    导出字段与 /api/contact/template 完全一致：域名*、邮箱*、姓名、职位、备注
-    这样导出的文件可以直接反向 import。
+async def api_contact_export(
+    search: str = None,
+    cli_id: str = None,
+    country: str = None,
+    is_bounced: int = None,
+    is_read: int = None,
+    has_sent: int = None,
+    prospect_tag: str = None,
+    no_prospect_tag: str = None,
+    current_user: dict = Depends(login_required)
+):
+    """导出联系人为 Excel（支持按筛选条件导出，与列表页筛选逻辑一致）
+
+    不传任何参数 → 全量导出（向后兼容）
+    传参数 → 按 /api/contact/list 相同的筛选规则导出匹配的联系人
+
+    导出字段：域名、邮箱、姓名、职位、备注、发送、退信、已读、状态、国家、标识
+    - 国家：与列表页一致，优先 c.country，空则回退 prospect.country（Python || 语义）
+    - 标识：prospect.tag（无 prospect 关联时为空）
     """
     from openpyxl import Workbook
     from fastapi.responses import StreamingResponse
-    from Sills.base import get_db_connection
+    from Sills.db_contact import get_contact_list
     from urllib.parse import quote
     from datetime import datetime
     import io
 
-    # 直接全表查询，不应用任何筛选
-    # LEFT JOIN uni_prospect 以获取国家数据（uni_contact.country 多数为空）
-    with get_db_connection() as conn:
-        rows = conn.execute(
-            "SELECT c.domain, c.email, c.contact_name, c.position, c.remark, "
-            "COALESCE(c.country, p.country) AS country, "
-            "c.send_count, c.is_bounced, c.is_read "
-            "FROM uni_contact c "
-            "LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending' "
-            "ORDER BY c.created_at DESC"
-        ).fetchall()
+    # 构建与 list 一致的 filters
+    filters = {}
+    if cli_id:
+        filters['cli_id'] = cli_id
+    if country:
+        filters['country'] = country
+    if is_bounced is not None:
+        filters['is_bounced'] = is_bounced
+    if is_read is not None:
+        filters['is_read'] = is_read
+    if has_sent is not None:
+        filters['has_sent'] = has_sent
+    # 标识筛选：no_prospect_tag 优先
+    if no_prospect_tag in ('1', 'true', 'True', 'yes'):
+        filters['no_prospect_tag'] = True
+    elif prospect_tag is not None and prospect_tag != '':
+        filters['prospect_tag'] = prospect_tag
+
+    # 复用 get_contact_list 取数据（page_size 设大值导出全部匹配）
+    # 国家用 Python || 回退（修复 Bug A：原 SQL COALESCE 不把空字符串 '' 当 NULL）
+    rows, total = get_contact_list(
+        page=1, page_size=1000000,
+        search_kw=search or "",
+        filters=filters if filters else None
+    )
 
     wb = Workbook()
     ws = wb.active
     ws.title = "联系人导出"
-    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送', '退信', '已读', '状态', '国家'])
+    ws.append(['域名*', '邮箱*', '姓名', '职位', '备注', '发送', '退信', '已读', '状态', '国家', '标识'])
 
     for r in rows:
         # 状态：与列表页一致，is_bounced=退信，send_count>0=已发送，可叠加
         status_parts = []
-        if r['is_bounced']:
+        if r.get('is_bounced'):
             status_parts.append('退信')
-        if (r['send_count'] or 0) > 0:
+        if (r.get('send_count') or 0) > 0:
             status_parts.append('已发送')
         status = ' '.join(status_parts) if status_parts else '未发送'
 
+        # 国家：与列表页前端一致 c.country || prospect_country（'' 视为 falsy 回退）
+        country_val = r.get('country') or r.get('prospect_country') or ''
+        # 标识：prospect.tag（无 prospect 关联时为空）
+        tag_val = r.get('prospect_tag') if r.get('prospect_tag') not in (None, '') else ''
+
         ws.append([
-            r['domain'] or '',
-            r['email'] or '',
-            r['contact_name'] or '',
-            r['position'] or '',
-            r['remark'] or '',
-            r['send_count'] or 0,
-            '是' if r['is_bounced'] else '否',
-            '是' if r['is_read'] else '否',
+            r.get('domain') or '',
+            r.get('email') or '',
+            r.get('contact_name') or '',
+            r.get('position') or '',
+            r.get('remark') or '',
+            r.get('send_count') or 0,
+            '是' if r.get('is_bounced') else '否',
+            '是' if r.get('is_read') else '否',
             status,
-            r['country'] or '',
+            country_val,
+            tag_val,
         ])
 
     # 列宽
@@ -5416,6 +5484,7 @@ async def api_contact_export(current_user: dict = Depends(login_required)):
     ws.column_dimensions['H'].width = 8
     ws.column_dimensions['I'].width = 12
     ws.column_dimensions['J'].width = 15
+    ws.column_dimensions['K'].width = 8
 
     output = io.BytesIO()
     wb.save(output)

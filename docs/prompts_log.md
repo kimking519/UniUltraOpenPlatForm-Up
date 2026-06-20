@@ -134,3 +134,23 @@
 - 采用 R-A 智能选择策略：行内含英文逗号→走 csv.reader 保留原行为；不含英文逗号→走正则切分支持 ≥2 空格 / 中文逗号 / 中英文分号 / Tab / 竖线
 - 修改 `Sills/db_offer.py:448-470`：把 `csv.reader(io.StringIO(text))` 替换为按行检测 + 分流的解析逻辑
 - 7 个单元测试用例全部通过：CSV 空字段保留 / 双引号保护 / ≥2 空格切分 / 单空格保留 (BAT 54C) / 多分隔符混合 / 多行 CSV+空格混合 / 空行容错
+
+---
+
+## 2026-06-20 17:03 - 联系人模块导出按筛选+统计联动+标识筛选（4需求合并）+修复国家bug
+
+**Prompt 序列**:
+1. `联系人管理 联系人模块，导出的时候全量导出，条件没有生效，希望根据已选条件导出`
+2. `联系人管理 联系人模块，没有随着条件让数量发生变化，希望数字根据选择的条件发生变化，联动`
+3. `联系人管理 联系人模块，添加标识筛选项`
+4. `联系人管理 联系人模块，导出的Excel中添加标识筛选项`
+5. `Q3 是12864...指这些数字 其他按照推荐来`
+6. `按推荐` → `继续`
+
+**响应摘要**:
+- 后端 `Sills/db_contact.py`：抽取 `_build_contact_filter_clauses` 公共筛选函数 + `_CONTACT_FILTER_JOIN` 模板；`get_contact_list` 复用并支持 `prospect_tag`/`no_prospect_tag` 筛选；`get_marketing_stats` 加 search_kw/filters 参数，5 个统计查询支持筛选联动
+- 修复 psycopg 带参查询中文 LIKE 触发 UnicodeDecodeError：将硬编码中文关键词（'%退信%'等）参数化为 `?`，避免 SQL 字面量含中文
+- 后端 `main.py`：`api_contact_export` 加 8 个 Query 参数，复用 `get_contact_list` 取数据，国家用 Python `or` 回退（修复 Bug A），Excel 新增"标识"列；`api_contact_stats` 加 8 个 Query 参数转 filters
+- 前端 `templates/contact.html`：新增 `getCurrentFilters` 公共函数；`loadContacts` 同步触发 `loadStatsDebounced`（防抖200ms）；新增 `loadStats` 刷新5个统计数字；筛选区新增"标识"下拉（调 `/api/contact/prospect_tags` 动态填充 + "无标识"选项）；`exportContacts` 带筛选参数；`resetFilters` 重置标识
+- 测试：db_contact 单元测试 16/16 通过；main.py 集成测试 6/6 通过（stats 全量 contacts=12864 sent=87948 与用户反馈一致）
+- 数据库表结构未动

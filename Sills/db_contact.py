@@ -54,13 +54,19 @@ def get_next_contact_id():
     return gen_unique_id('CT')
 
 
-def get_contact_list(page=1, page_size=20, search_kw="", filters=None):
-    """
-    获取联系人列表
-    filters: {cli_id, country, is_bounced, is_read, has_sent}
-    """
-    offset = (page - 1) * page_size
+def _build_contact_filter_clauses(search_kw="", filters=None):
+    """构建联系人筛选 WHERE 子句与参数（公共函数）
 
+    被 get_contact_list / get_marketing_stats 复用，保证筛选逻辑一致。
+
+    filters: {cli_id, country, is_bounced, is_read, has_sent, prospect_tag, no_prospect_tag}
+
+    prospect_tag 筛选约定：
+    - filters['no_prospect_tag'] = True → 仅"无标识"（p.prospect_id IS NULL）
+    - filters['prospect_tag'] 为字符串值（如 "0"/"1"/"2"）→ p.tag = ?
+
+    返回: (where_sql, params)  where_sql 不含 " WHERE" 前缀，空条件时为 ""
+    """
     where_clauses = []
     params = []
 
@@ -87,8 +93,34 @@ def get_contact_list(page=1, page_size=20, search_kw="", filters=None):
                 where_clauses.append("c.send_count > 0")
             else:
                 where_clauses.append("c.send_count = 0")
+        # 标识（prospect.tag）筛选
+        if filters.get('no_prospect_tag'):
+            where_clauses.append("p.prospect_id IS NULL")
+        elif filters.get('prospect_tag') is not None and filters.get('prospect_tag') != '':
+            where_clauses.append("p.tag = ?")
+            params.append(filters['prospect_tag'])
 
-    where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+    where_sql = " AND ".join(where_clauses) if where_clauses else ""
+    return where_sql, params
+
+
+# 联系人筛选 SQL 公共模板（含 prospect/country 关联），供 list / stats / export 复用
+_CONTACT_FILTER_JOIN = """
+    FROM uni_contact c
+    LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
+    LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+"""
+
+
+def get_contact_list(page=1, page_size=20, search_kw="", filters=None):
+    """
+    获取联系人列表
+    filters: {cli_id, country, is_bounced, is_read, has_sent, prospect_tag, no_prospect_tag}
+    """
+    offset = (page - 1) * page_size
+
+    where_sql, params = _build_contact_filter_clauses(search_kw, filters)
+    where_clause = f" WHERE {where_sql}" if where_sql else ""
 
     # LEFT JOIN uni_cli（正式客户）和 uni_prospect（待开发客户）
     # 注：prospect_tag 仅在联系人关联到 pending 状态的 prospect 时有值；CLI 表暂无 tag 字段
@@ -97,20 +129,16 @@ def get_contact_list(page=1, page_size=20, search_kw="", filters=None):
            cli.cli_name, cli.region as cli_region,
            p.prospect_name, p.country as prospect_country, p.prospect_id,
            p.tag as prospect_tag
-    FROM uni_contact c
-    LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
-    LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
-    {where_sql}
+    {_CONTACT_FILTER_JOIN}
+    {where_clause}
     ORDER BY c.created_at DESC
     LIMIT ? OFFSET ?
     """
 
     count_query = f"""
     SELECT COUNT(*)
-    FROM uni_contact c
-    LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
-    LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
-    {where_sql}
+    {_CONTACT_FILTER_JOIN}
+    {where_clause}
     """
 
     with get_db_connection() as conn:
@@ -558,8 +586,8 @@ def get_contact_countries():
         return sorted(list(countries))
 
 
-def get_marketing_stats():
-    """获取营销统计数据
+def get_marketing_stats(search_kw="", filters=None):
+    """获取营销统计数据（支持按筛选条件联动统计）
 
     统计逻辑：
     - total_sent    = SUM(uni_contact.send_count)
@@ -568,44 +596,74 @@ def get_marketing_stats():
     - total_unread  = mail_folder 名含"읽지 않음"的文件夹中 from_addr 匹配联系人去重数
 
     以 folder_id 为准，与 /mail 页面文件夹展示一致。
+
+    search_kw/filters: 与 get_contact_list 相同的筛选条件，5 个数字按筛选范围统计。
+    不传参数时等价于原全表统计（向后兼容）。
     """
+    # 构建联系人筛选子句（c.xxx 字段，复用公共函数保证与列表一致）
+    where_sql, params = _build_contact_filter_clauses(search_kw, filters)
+    contact_from = _CONTACT_FILTER_JOIN.strip()
+    contact_where = f" WHERE {where_sql}" if where_sql else ""
+    and_where = f" AND {where_sql}" if where_sql else ""
+
+    # 注：中文关键词通过 ? 参数传入，避免 SQL 字面量含中文触发 psycopg 查询解析 UnicodeDecodeError
+    # （带 params 时 psycopg 解析 query 字符串会在中文字节边界出错，参数化后 SQL 无中文字面量）
+    FOLDER_BOUNCE = '%退信%'
+    FOLDER_READ = '%읽음%'
+    FOLDER_READ_EXCLUDE = '%않음%'
+    FOLDER_UNREAD = '%읽지 않음%'
+
     with get_db_connection() as conn:
-        total_contacts = conn.execute("SELECT COUNT(*) FROM uni_contact").fetchone()[0]
-        total_sent = conn.execute("SELECT COALESCE(SUM(send_count), 0) FROM uni_contact").fetchone()[0]
+        total_contacts = conn.execute(
+            f"SELECT COUNT(*) {contact_from} {contact_where}", params
+        ).fetchone()[0]
+        total_sent = conn.execute(
+            f"SELECT COALESCE(SUM(c.send_count), 0) {contact_from} {contact_where}", params
+        ).fetchone()[0]
 
         # 退信：文件夹名含"退信"，用 original_recipient 匹配联系人
-        total_bounced = conn.execute("""
+        # 联系人侧筛选通过 LEFT JOIN prospect/cli + and_where 应用
+        total_bounced = conn.execute(f"""
             SELECT COUNT(DISTINCT c.contact_id)
             FROM uni_mail m
             JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.original_recipient = c.email
-            WHERE f.folder_name LIKE '%退信%'
+            LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+            LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
+            WHERE f.folder_name LIKE ?
               AND m.original_recipient IS NOT NULL
               AND m.original_recipient != ''
-        """).fetchone()[0]
+              {and_where}
+        """, [FOLDER_BOUNCE] + params).fetchone()[0]
 
         # 已读：文件夹名含"읽음"且不含"않음"，用 from_addr 匹配联系人
-        total_read = conn.execute("""
+        total_read = conn.execute(f"""
             SELECT COUNT(DISTINCT c.contact_id)
             FROM uni_mail m
             JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.from_addr = c.email
-            WHERE f.folder_name LIKE '%읽음%'
-              AND f.folder_name NOT LIKE '%않음%'
+            LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+            LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
+            WHERE f.folder_name LIKE ?
+              AND f.folder_name NOT LIKE ?
               AND m.from_addr IS NOT NULL
               AND m.from_addr != ''
-        """).fetchone()[0]
+              {and_where}
+        """, [FOLDER_READ, FOLDER_READ_EXCLUDE] + params).fetchone()[0]
 
         # 未读：文件夹名含"읽지 않음"，用 from_addr 匹配联系人
-        total_unread = conn.execute("""
+        total_unread = conn.execute(f"""
             SELECT COUNT(DISTINCT c.contact_id)
             FROM uni_mail m
             JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.from_addr = c.email
-            WHERE f.folder_name LIKE '%읽지 않음%'
+            LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+            LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
+            WHERE f.folder_name LIKE ?
               AND m.from_addr IS NOT NULL
               AND m.from_addr != ''
-        """).fetchone()[0]
+              {and_where}
+        """, [FOLDER_UNREAD] + params).fetchone()[0]
 
         bounce_rate = round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0
 
