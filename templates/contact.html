@@ -765,12 +765,19 @@
             const data = await res.json();
             const select = document.getElementById('filterTag');
             if (!select || !data.tags) return;
-            // 固定两项：全部标识 / 无标识；追加动态 tag 值
-            let opts = '<option value="">全部标识</option><option value="__none__">无标识</option>';
+            // 用 DOM API 构建，避免 tag 值含 HTML 字符（可被 Excel 导入）导致存储型 XSS
+            select.innerHTML = '';
+            const addOpt = (val, text) => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = text;   // textContent 自动转义 HTML
+                select.appendChild(opt);
+            };
+            addOpt('', '全部标识');
+            addOpt('__none__', '无标识');
             data.tags.forEach(t => {
-                if (t !== null && t !== '') opts += `<option value="${t}">${t}</option>`;
+                if (t !== null && t !== '') addOpt(String(t), String(t));
             });
-            select.innerHTML = opts;
         } catch (e) {
             console.error('加载标识选项失败:', e);
         }
