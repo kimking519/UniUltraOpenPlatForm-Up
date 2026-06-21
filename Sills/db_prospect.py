@@ -50,7 +50,7 @@ def count_contacts_by_domain(domain):
 def get_prospect_list(page=1, page_size=20, search_kw="", filters=None):
     """
     获取Prospect列表
-    filters: {country, status, has_contacts}
+    filters: {country, status, has_contacts, tag}
     """
     offset = (page - 1) * page_size
     where_clauses = []
@@ -67,6 +67,10 @@ def get_prospect_list(page=1, page_size=20, search_kw="", filters=None):
         if filters.get('status'):
             where_clauses.append("p.status = ?")
             params.append(filters['status'])
+        # 标识筛选（tag=0 视为"无标识"，其他值精确匹配；与联系人模块语义一致）
+        if filters.get('tag') is not None and filters.get('tag') != '':
+            where_clauses.append("p.tag = ?")
+            params.append(int(filters['tag']))
         if filters.get('is_public') is not None:
             where_clauses.append("p.is_public_domain = ?")
             params.append(int(filters['is_public']))

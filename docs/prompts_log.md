@@ -154,3 +154,45 @@
 - 前端 `templates/contact.html`：新增 `getCurrentFilters` 公共函数；`loadContacts` 同步触发 `loadStatsDebounced`（防抖200ms）；新增 `loadStats` 刷新5个统计数字；筛选区新增"标识"下拉（调 `/api/contact/prospect_tags` 动态填充 + "无标识"选项）；`exportContacts` 带筛选参数；`resetFilters` 重置标识
 - 测试：db_contact 单元测试 16/16 通过；main.py 集成测试 6/6 通过（stats 全量 contacts=12864 sent=87948 与用户反馈一致）
 - 数据库表结构未动
+
+---
+
+## 2026-06-21 - 联系人标识筛选两个 Bug 修复
+
+**Prompt 序列**:
+1. `继续上次 没有完成的任务`（恢复工作区 4 个未提交文件的上下文）
+2. `联系人管理 - 联系人模块 切换标识的时候下面数据没有变化，希望修复这个bug`
+3. `按推荐的来`（授权写只读诊断脚本取证）
+4. `联系人管理 - 联系人模块 有些联系人没有标识，而关联的待开发公司实际上是有标识的，为什么没有关联出来？修复一下`（经诊断实为 tag=0 显示口径问题，非关联失败）
+5. `联系人管理 - 联系人模块 切换标识的时候下面联系人数据没有随着变化，希望修复这个bug`（回到主线 bug）
+6. `修改后我手动验证`
+7. `筛选选了无标识，但是包含了标识为0 的联系人`（引出第二个 bug）
+8. `A`（确认"无标识"=未关联任何 prospect，与 tag=0 分开）
+9. `无标识 应该是没有关联成功的联系人`（明确语义）
+10. `前者`（确认当前数据下"无标识"为 0 条可接受）
+11. `push到github，谢谢`
+
+**响应摘要**:
+
+**Bug 1 — 切换标识列表数据不变**:
+- 系统化调试取证：诊断脚本直接调 `get_contact_list(filters={'prospect_tag':'100'})` 返回 484 条（db 函数正确）；浏览器抓包 `?prospect_tag=100` 响应却返回 12864 全量（后端忽略参数）
+- 根因：`main.py:5261` 的 `/api/contact/list` 路由函数 `api_contact_list` 漏了 `prospect_tag`/`no_prospect_tag` 参数，FastAPI 静默丢弃未知 query 参数。上次提交给 stats/export 补了参数，唯独 list 漏改
+- 注：`routes/contact.py` 虽参数齐全，但 `main.py` 未 import 它，是死代码（本次不处理，记录在案）
+- 修复 `main.py::api_contact_list`：补 2 个可选参数 + filters 赋值，逻辑抄已验证的 `api_contact_stats` 同款写法；纯参数透传，不传时行为不变（向后兼容）
+
+**Bug 2 — "无标识"包含 tag=0 联系人**:
+- 取证：prospect.tag 分布 0(1634)/1(474)/100(188)，无 NULL；tag 默认值 0（建表 DEFAULT 0）
+- 根因：`db_contact.py::_build_contact_filter_clauses` 的 `no_prospect_tag` 条件为 `(p.prospect_id IS NULL OR p.tag IS NULL OR p.tag = 0)`，把 tag=0 也算入"无标识"，与"0"选项数据重合（均 11037 条）
+- 语义对齐（用户定义）：无标识 = 未关联任何 prospect（`p.prospect_id IS NULL`）；0 = 关联了 tag=0 的 prospect；两者分开
+- 修复 `db_contact.py:96-99`：条件改为只 `p.prospect_id IS NULL`，注释同步
+- 用户确认当前数据下"无标识"=0 条可接受（12864 联系人 100% 已关联 prospect）
+
+**自测结果**（服务重启 PID 30640）:
+| 标识选项 | 列表 total | 改前 |
+|---|---|---|
+| 无标识 | 0 | 11037 |
+| 0 | 11037 | 11037 |
+| 1 | 1343 | 1343 |
+| 100 | 484 | 484 |
+- `0+1+100 = 12864 = 总数`，互斥可累加，统计数字同步联动
+- 数据库表结构未动

@@ -45,9 +45,11 @@ async def api_contact_list(
     is_bounced: int = None,
     is_read: int = None,
     has_sent: int = None,
+    prospect_tag: str = None,
+    no_prospect_tag: str = None,
     current_user: dict = Depends(login_required)
 ):
-    """获取联系人列表"""
+    """获取联系人列表（支持按标识 prospect_tag 筛选）"""
     filters = {}
     if cli_id:
         filters['cli_id'] = cli_id
@@ -59,6 +61,11 @@ async def api_contact_list(
         filters['is_read'] = is_read
     if has_sent is not None:
         filters['has_sent'] = has_sent
+    # 标识筛选：no_prospect_tag 优先（tag IS NULL OR tag=0）
+    if no_prospect_tag in ('1', 'true', 'True', 'yes'):
+        filters['no_prospect_tag'] = True
+    elif prospect_tag is not None and prospect_tag != '':
+        filters['prospect_tag'] = prospect_tag
 
     items, total = get_contact_list(
         page=page,

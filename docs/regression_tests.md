@@ -426,6 +426,21 @@ LM358  TI  50  LG
 **步骤**: 在 PostgreSQL 环境下，带任意 filter 调 `get_marketing_stats(filters={...})`
 **预期**: 不再触发 `UnicodeDecodeError`（中文关键词已参数化为 `?`）。
 
+### TC-CTM-017: 标识筛选列表数据联动（Bug 1 回归）
+**模块**: `main.py::api_contact_list` + `templates/contact.html::filterTag`
+**步骤**:
+1. 打开联系人列表页，"标识"下拉依次切到 全部/100/1/0/无标识
+2. 每次记录列表 total 和统计栏 5 个数字
+**预期**: total 随选项变化（全部=12864, 100=484, 1=1343, 0=11037, 无标识=0）；统计数字同步联动；`0+1+100 = 总数` 互斥可累加。
+
+### TC-CTM-018: "无标识"与"0"语义分离（Bug 2 回归）
+**模块**: `Sills/db_contact.py::_build_contact_filter_clauses`
+**步骤**:
+1. 选"无标识" → 列表应为未关联任何 prospect 的联系人
+2. 选"0" → 列表为关联了 tag=0 prospect 的联系人
+3. 两者数据不重叠
+**预期**: "无标识"条件 = `p.prospect_id IS NULL`；"0"条件 = `p.tag = 0`；当前数据下"无标识"=0 条（所有联系人均已关联 prospect）。
+
 ---
 
-*最后更新：2026-06-20*
+*最后更新：2026-06-21*

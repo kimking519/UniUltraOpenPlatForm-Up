@@ -94,6 +94,8 @@ def _build_contact_filter_clauses(search_kw="", filters=None):
             else:
                 where_clauses.append("c.send_count = 0")
         # 标识（prospect.tag）筛选
+        # no_prospect_tag：无标识 = 未关联到任何 prospect（p.prospect_id IS NULL）
+        #   注：tag=0 是一个具体的标识值（prospect 建表默认0），属于"0"选项，不归入"无标识"
         if filters.get('no_prospect_tag'):
             where_clauses.append("p.prospect_id IS NULL")
         elif filters.get('prospect_tag') is not None and filters.get('prospect_tag') != '':
@@ -105,10 +107,11 @@ def _build_contact_filter_clauses(search_kw="", filters=None):
 
 
 # 联系人筛选 SQL 公共模板（含 prospect/country 关联），供 list / stats / export 复用
+# 注：prospect JOIN 不限 status，已转化(converted)的 prospect 也能关联（修复 B2：联系人与prospect标识/国家一致性）
 _CONTACT_FILTER_JOIN = """
     FROM uni_contact c
     LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
-    LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+    LEFT JOIN uni_prospect p ON c.domain = p.domain
 """
 
 
@@ -628,7 +631,7 @@ def get_marketing_stats(search_kw="", filters=None):
             FROM uni_mail m
             JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.original_recipient = c.email
-            LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+            LEFT JOIN uni_prospect p ON c.domain = p.domain
             LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
             WHERE f.folder_name LIKE ?
               AND m.original_recipient IS NOT NULL
@@ -642,7 +645,7 @@ def get_marketing_stats(search_kw="", filters=None):
             FROM uni_mail m
             JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.from_addr = c.email
-            LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+            LEFT JOIN uni_prospect p ON c.domain = p.domain
             LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
             WHERE f.folder_name LIKE ?
               AND f.folder_name NOT LIKE ?
@@ -657,7 +660,7 @@ def get_marketing_stats(search_kw="", filters=None):
             FROM uni_mail m
             JOIN mail_folder f ON m.folder_id = f.id
             JOIN uni_contact c ON m.from_addr = c.email
-            LEFT JOIN uni_prospect p ON c.domain = p.domain AND p.status = 'pending'
+            LEFT JOIN uni_prospect p ON c.domain = p.domain
             LEFT JOIN uni_cli cli ON c.cli_id = cli.cli_id
             WHERE f.folder_name LIKE ?
               AND m.from_addr IS NOT NULL

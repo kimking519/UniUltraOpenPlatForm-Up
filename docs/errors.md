@@ -501,6 +501,26 @@ return f"PK{timestamp}{rand_suffix}"
 
 ---
 
+## 2026-06-21: 联系人标识筛选两个 Bug
+
+### Bug 1: 切换标识下拉，列表数据不变
+**现象**: 联系人页"标识"下拉切到 100/1/无标识，下方列表 total 始终 12864 不变，统计数字也不联动。
+**根因**: `main.py::api_contact_list`（`/api/contact/list`）路由函数签名漏了 `prospect_tag`/`no_prospect_tag` 参数。前端发 `?prospect_tag=100`，FastAPI 对未声明的 query 参数静默丢弃 → 后端用空 filters 查全量。
+**排查关键**: 直接调 `get_contact_list(filters={'prospect_tag':'100'})` 返回 484 条（db 层正确），浏览器抓包响应却 12864 → 断点在 HTTP 路由层，不在 db 层。
+**修复**: `api_contact_list` 补 `prospect_tag`/`no_prospect_tag` 2 个可选参数 + filters 赋值，抄已验证的 `api_contact_stats` 同款写法。
+**教训**: 同一批功能（stats/export/list 三端点都要支持 prospect_tag），改了 stats 和 export 却漏了 list。**多端点同步加参数时，必须逐个核对端点清单，不能只改"看到的那几个"。**
+
+### Bug 2: "无标识"筛选包含 tag=0 的联系人
+**现象**: 选"无标识"，结果里混入了标识为 0 的联系人；"无标识"和"0"两个选项数据完全重合（均 11037 条）。
+**根因**: `db_contact.py::_build_contact_filter_clauses` 的 `no_prospect_tag` 条件为 `(p.prospect_id IS NULL OR p.tag IS NULL OR p.tag = 0)`，把 tag=0 也算入"无标识"。而 tag=0 是 prospect 建表默认值，是一个具体的标识值，不该归入"无标识"。
+**修复**: 条件改为只 `p.prospect_id IS NULL`。语义对齐：无标识=未关联任何 prospect；0=关联了 tag=0 的 prospect。
+**教训**: "默认值"≠"空值"。tag 默认 0，但 0 是合法标识值。**筛选条件里把默认值当"无"处理，会与"值为默认值"的真实数据混淆。** 设计筛选语义时必须明确区分"未关联"和"关联了默认值"。
+
+### 死代码发现（未处理，记录在案）
+`routes/contact.py` 整个文件未被 `main.py` import/注册，是死代码。其 `api_contact_list` 参数齐全但从不生效。后续若清理，需确认无其他入口引用。
+
+---
+
 ### 高频 Bug 模式记录（出现 2 次以上）
 
 #### 模式 A: 静默吞错（出现 2 次）
