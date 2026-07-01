@@ -1528,6 +1528,13 @@ def _init_db_sqlite():
         except sqlite3.OperationalError:
             pass  # 列已存在，忽略
 
+        # 迁移：为 uni_email_task 添加 excluded_contacts 字段（任务级别排除联系人）
+        try:
+            conn.execute("ALTER TABLE uni_email_task ADD COLUMN excluded_contacts TEXT DEFAULT ''")
+            print("[DB] 迁移完成：uni_email_task 添加 excluded_contacts 列")
+        except sqlite3.OperationalError:
+            pass  # 列已存在，忽略
+
         conn.execute("""
             INSERT INTO uni_emp (emp_id, emp_name, account, password, rule)
             VALUES ('000', '超级管理员', 'Admin', '088426ba2d6e02949f54ef1e62a2aa73', '3')
