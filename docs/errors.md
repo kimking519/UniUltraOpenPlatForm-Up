@@ -521,6 +521,15 @@ return f"PK{timestamp}{rand_suffix}"
 
 ---
 
+### 测试踩坑（2026-07-03）
+
+**现象**: 为 `reexecute_task` 写 SQLite 临时库单元测试时，`reexecute_task` 在 completed/error 任务上返回失败，错误信息 `no such function: NOW`。
+**根因**: `Sills/db_config.py::get_datetime_now()` 按 DB 模式返回——PG 模式返回 `'NOW()'`，SQLite 模式返回 `"datetime('now','localtime')"`。测试环境变量命中了 PG 模式，但临时库是原生 sqlite3，不认识 `NOW()`。`reexecute_task` / `start_task` / `complete_task` 都用 `started_at = {dt_now}` 这个模式，生产中按模式自动切换是对的，**不是代码 bug**。
+**处理**: 测试 fixture 里 `monkeypatch.setattr(db_email_task, "get_datetime_now", lambda: "datetime('now','localtime')")` 强制 SQLite 变体。
+**教训**: 写隔离单测时，凡是被测函数依赖了「按运行环境切换输出」的工具函数（如 get_datetime_now、get_db_connection），必须在 fixture 里一并 patch 到与测试库匹配的变体，否则会误报代码 bug。
+
+---
+
 ### 高频 Bug 模式记录（出现 2 次以上）
 
 #### 模式 A: 静默吞错（出现 2 次）

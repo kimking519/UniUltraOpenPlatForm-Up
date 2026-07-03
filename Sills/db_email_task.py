@@ -430,6 +430,35 @@ def get_task_contacts(task_id):
     return unsent_contacts
 
 
+def get_task_all_contacts(task_id):
+    """获取任务全部联系人（仅排除手动排除的邮箱，不排除已发送成功）——用于重新执行
+
+    Returns:
+        list 全部联系人列表 [{"contact_id", "email", "company", ...}, ...]
+    """
+    task = get_task_by_id(task_id)
+    if not task:
+        return []
+
+    group_ids = json.loads(task.get('group_ids', '[]') or '[]')
+    all_contacts = get_all_groups_contacts_all_types(group_ids)
+
+    # 获取本任务手动排除的邮箱列表
+    excluded_json = task.get('excluded_contacts', '') or ''
+    excluded_emails = set()
+    if excluded_json:
+        try:
+            excluded_emails = set(e.lower() for e in json.loads(excluded_json))
+        except:
+            pass
+
+    # 仅过滤手动排除的联系人，不排除已发送成功的（重新执行需重发全部）
+    return [
+        c for c in all_contacts
+        if c.get('email', '').lower() not in excluded_emails
+    ]
+
+
 def get_task_contacts_with_excluded(task_id, search=""):
     """获取任务的全部联系人列表（带排除标记，用于编辑弹窗）
 
@@ -681,6 +710,45 @@ def retry_failed_task(task_id):
             conn.commit()
 
         return True, f"任务已设置为重试模式，将重新发送 {len(failed_contacts)} 个失败邮件"
+    except Exception as e:
+        return False, str(e)
+
+
+def reexecute_task(task_id):
+    """重新执行任务：重置进度并对全部联系人重新发送（仅 completed/error 可用）
+
+    Args:
+        task_id: 任务ID
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        task = get_task_by_id(task_id)
+        if not task:
+            return False, "任务不存在"
+
+        status = task.get('status', '')
+        if status not in ['completed', 'error']:
+            return False, "只有已完成或执行错误的任务可以重新执行"
+
+        contacts = get_task_all_contacts(task_id)
+        if not contacts:
+            return False, "任务没有可发送的联系人"
+
+        # 重置进度计数，状态置为 running，重新发送全部联系人
+        dt_now = get_datetime_now()
+        with get_db_connection() as conn:
+            conn.execute(f"""
+                UPDATE uni_email_task
+                SET status = 'running', started_at = {dt_now},
+                    cancel_requested = 0, error_message = '',
+                    sent_count = 0, failed_count = 0, skipped_count = 0
+                WHERE task_id = ?
+            """, (task_id,))
+            conn.commit()
+
+        return True, f"任务已重新启动，将发送 {len(contacts)} 个联系人"
     except Exception as e:
         return False, str(e)
 

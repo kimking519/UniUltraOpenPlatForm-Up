@@ -11,7 +11,7 @@ from email.mime.text import MIMEText
 import os
 
 from Sills.db_email_task import (
-    get_task_by_id, get_task_contacts, get_task_failed_contacts, update_task_progress,
+    get_task_by_id, get_task_contacts, get_task_all_contacts, get_task_failed_contacts, update_task_progress,
     is_cancel_requested, complete_task, error_task
 )
 from Sills.db_email_log import add_log
@@ -68,9 +68,10 @@ PRIMARY_EMAIL = "joy@unicornsemi.com"
 class EmailSenderWorker:
     """邮件发送Worker类"""
 
-    def __init__(self, task_id, retry_mode=False):
+    def __init__(self, task_id, retry_mode=False, reexecute_mode=False):
         self.task_id = task_id
         self.retry_mode = retry_mode  # 是否重试模式（只发失败邮件）
+        self.reexecute_mode = reexecute_mode  # 是否重新执行模式（重发全部联系人）
         self.task = None
         self.accounts = []  # 账号列表（支持多账号轮换）
         self.current_account_index = 0  # 当前账号索引
@@ -99,17 +100,21 @@ class EmailSenderWorker:
                     pass
 
         self.accounts = accounts_info
-        # 重试模式从第0个账号重新开始，不沿用上次的失败账号索引
-        if self.retry_mode:
+        # 重试/重新执行模式从第0个账号重新开始，不沿用上次的失败账号索引
+        if self.retry_mode or self.reexecute_mode:
             self.current_account_index = 0
         else:
             self.current_account_index = self.task.get('current_account_index', 0) or 0
 
-        # 获取联系人列表：重试模式只获取失败联系人
+        # 获取联系人列表：重试模式只获取失败联系人，重新执行模式获取全部联系人
         if self.retry_mode:
             self.contacts = get_task_failed_contacts(self.task_id)
             if not self.contacts:
                 raise ValueError("没有发送失败的联系人，无需重试")
+        elif self.reexecute_mode:
+            self.contacts = get_task_all_contacts(self.task_id)
+            if not self.contacts:
+                raise ValueError("任务没有可发送的联系人")
         else:
             self.contacts = get_task_contacts(self.task_id)
 
@@ -353,7 +358,7 @@ class EmailSenderWorker:
                 account_sent_counts[i] = 0
 
             total = len(self.contacts)
-            mode_str = "[重试模式]" if self.retry_mode else ""
+            mode_str = "[重新执行]" if self.reexecute_mode else ("[重试模式]" if self.retry_mode else "")
 
             # 获取已发送成功的联系人列表（用于跳过当前任务重复）
             from Sills.db_email_log import get_sent_emails_for_task
@@ -366,7 +371,7 @@ class EmailSenderWorker:
 
             # 如果启用跳过规则，获取最近N天内成功发送的邮箱列表（不限任务）
             recently_sent_set = set()
-            if skip_enabled == 1 and not self.retry_mode:
+            if skip_enabled == 1 and not self.retry_mode and not self.reexecute_mode:
                 from Sills.db_email_log import get_recently_sent_emails
                 recently_sent_set = get_recently_sent_emails(skip_days)
                 print(f"[Worker] 启用跳过规则：{skip_days}天内已发送的邮箱将被跳过，共{len(recently_sent_set)}个")
@@ -689,8 +694,9 @@ class EmailSenderWorker:
 
             server = self.connect_smtp(primary_account)
 
-            mode_str = "(重试)" if self.retry_mode else ""
-            subject = f"[开发信管理] 任务完成报告{mode_str} - {self.task['task_name']}"
+            mode_str = "[重新执行]" if self.reexecute_mode else ("[重试模式]" if self.retry_mode else "")
+            mode_str_short = "(重新执行)" if self.reexecute_mode else ("(重试)" if self.retry_mode else "")
+            subject = f"[开发信管理] 任务完成报告{mode_str_short} - {self.task['task_name']}"
             skip_info = f"<p><strong style=\"color: orange;\">跳过(已发送):</strong> {skipped_count}</p>" if skipped_count > 0 else ""
             accounts_info = f"<p><strong>各账号发送:</strong> {accounts_summary}</p>" if accounts_summary else ""
 
@@ -702,7 +708,7 @@ class EmailSenderWorker:
             <h2>邮件任务完成报告</h2>
             <p><strong>任务名称:</strong> {self.task['task_name']}</p>
             <p><strong>发件人:</strong> {primary_email}</p>
-            <p><strong>发送模式:</strong> {mode_str if self.retry_mode else "正常发送"}</p>
+            <p><strong>发送模式:</strong> {mode_str if (self.retry_mode or self.reexecute_mode) else "正常发送"}</p>
             <p><strong>发送时间:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <hr>
             <p><strong>本次处理:</strong> {len(self.contacts)}</p>
@@ -749,17 +755,18 @@ class EmailSenderWorker:
         self.stop_flag = True
 
 
-def start_email_worker(task_id, retry_mode=False):
+def start_email_worker(task_id, retry_mode=False, reexecute_mode=False):
     """启动邮件发送Worker
 
     Args:
         task_id: 任务ID
         retry_mode: 是否重试模式（只发送失败邮件）
+        reexecute_mode: 是否重新执行模式（重发全部联系人）
 
     Returns:
         EmailSenderWorker instance
     """
-    worker = EmailSenderWorker(task_id, retry_mode)
+    worker = EmailSenderWorker(task_id, retry_mode, reexecute_mode)
     worker.start()
     return worker
 

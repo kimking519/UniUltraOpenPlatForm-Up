@@ -196,3 +196,22 @@
 | 100 | 484 | 484 |
 - `0+1+100 = 12864 = 总数`，互斥可累加，统计数字同步联动
 - 数据库表结构未动
+
+---
+
+## 2026-07-03
+
+### Prompt
+**时间**: 2026-07-03
+**内容**: 开发信任务管理 任务管理  任务列表中已创建任务上添加一个重新执行按钮，按了之后重新执行发送任务，同时移除重试失败按钮
+
+**响应**:
+- 新增 `reexecute_task` / `get_task_all_contacts`（db_email_task.py）：重置 sent/failed/skipped 计数为 0，状态置 running，取全部联系人（仅排除手动 excluded，不排除已发送）
+- `EmailSenderWorker` 增加 `reexecute_mode`：用 get_task_all_contacts 取联系人，绕过跳过规则，完成报告区分模式
+- 新增 `POST /api/task/reexecute` 接口（main.py）
+- 前端：error/completed 状态「重试失败」按钮改为「重新执行」（调 reexecuteTask）；删除 retryFailedEmails 函数
+- 新增单元测试 tests/test_email_task_reexecute.py（6 用例全过）
+- 文档：features.md 新增 ETASK-012、regression_tests.md 新增 TC-ETASK-009
+- 数据库表结构未动；原 /api/task/retry + retry_failed_task 后端保留为死代码便于回退
+
+---

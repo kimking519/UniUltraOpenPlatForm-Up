@@ -6758,6 +6758,26 @@ async def api_task_retry(request: Request, current_user: dict = Depends(login_re
     return {"success": False, "message": message}
 
 
+@app.post("/api/task/reexecute")
+async def api_task_reexecute(request: Request, current_user: dict = Depends(login_required)):
+    """重新执行任务：重置进度并对全部联系人重新发送"""
+    from Sills.db_email_task import reexecute_task
+    from Sills.email_sender import start_email_worker
+
+    data = await request.json()
+    task_id = data.get('task_id', '')
+
+    if not task_id:
+        return {"success": False, "message": "任务ID不能为空"}
+
+    success, message = reexecute_task(task_id)
+    if success:
+        # 启动后台Worker（重新执行模式，重发全部联系人）
+        start_email_worker(task_id, reexecute_mode=True)
+        return {"success": True, "message": message}
+    return {"success": False, "message": message}
+
+
 @app.get("/api/task/{task_id}/stats")
 async def api_task_stats(task_id: str, current_user: dict = Depends(login_required)):
     """获取任务完整统计信息"""

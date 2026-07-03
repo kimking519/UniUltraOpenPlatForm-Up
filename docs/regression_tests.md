@@ -325,7 +325,7 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 ```
 **预期**: 数据库 `uni_email_task` 中 schedule_start/end 字段为 NULL。
 
-### TC-ETASK-005: 任务列表按钮组合（已移除改账号/查看日志）
+### TC-ETASK-005: 任务列表按钮组合（已移除改账号/查看日志/重试失败）
 **模块**: `templates/email_task.html::loadTaskHistory`
 **步骤**: 创建多个任务覆盖 5 种状态（pending/running/paused/error/completed），逐一观察操作列。
 **预期**:
@@ -335,8 +335,8 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 | running | 停止执行/导出 | — |
 | retrying | 停止执行/导出 | — |
 | paused | 继续执行/导出/删除 | 改账号 |
-| error | 重新执行/重试失败/导出/删除 | 改账号 |
-| completed | 重试失败/导出/删除 | 改账号、查看日志 |
+| error | 重新执行/导出/删除 | 改账号、重试失败 |
+| completed | 重新执行/导出/删除 | 改账号、查看日志、重试失败 |
 
 ### TC-ETASK-006: viewTaskLogs 占位函数已删除
 **模块**: `templates/email_task.html`
@@ -354,6 +354,21 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 **模块**: `templates/mail.html`
 **步骤**: 旧版页面在有任务运行时尝试创建新任务
 **预期**: 不再弹出 `"已有任务正在进行，请等待完成或取消后再创建新任务"` alert，直接进入 `/api/task/create`。
+
+### TC-ETASK-009: 重新执行任务（重发全部联系人）
+**模块**: `main.py::api_task_reexecute` + `Sills/db_email_task.py::reexecute_task` + `Sills/email_sender.py::EmailSenderWorker(reexecute_mode=True)`
+**步骤**:
+1. 准备一个 `completed` 或 `error` 状态的任务（含若干联系人，部分已发送成功）
+2. 任务列表点击「重新执行」按钮，确认弹窗后提交
+3. 观察 `/api/task/reexecute` 返回、任务状态、进度计数、Worker 日志
+**预期**:
+- 接口返回 `success=true`，message 提示将发送 N 个联系人（N=全部联系人，含已发送成功的）
+- 任务 `status` 变为 `running`，`sent_count/failed_count/skipped_count` 均清零
+- Worker 以 `[重新执行]` 模式运行，重发全部联系人（不排除已发送成功的邮箱）
+- 跳过规则（N天内已发送）在重新执行模式下被绕过，不跳过任何联系人
+- 历史发送日志（`uni_email_log`）保留不删
+- `pending`/`running`/`paused`/`retrying` 状态任务点重新执行应被拒绝（返回 `success=false`）
+- 任务列表 `error`/`completed` 行显示「重新执行」按钮，不再显示「重试失败」按钮
 
 ---
 

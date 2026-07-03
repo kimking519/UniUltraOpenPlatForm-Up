@@ -906,9 +906,9 @@
                 } else if (t.status === 'paused') {
                     actionButtons = `${editBtn} <button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'error') {
-                    actionButtons = `${editBtn} <button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `${editBtn} <button class="btn btn-primary btn-sm" onclick="reexecuteTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'completed') {
-                    actionButtons = `<button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="reexecuteTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 }
 
                 // 进度条
@@ -2034,26 +2034,26 @@
         }
     }
 
-    // 重试失败邮件
-    async function retryFailedEmails(task_id) {
-        if (!confirm('确定要重试发送失败的邮件？')) return;
+    // 重新执行任务（重置进度并对全部联系人重新发送）
+    async function reexecuteTask(task_id) {
+        if (!confirm('确定重新执行该任务？\n将重置进度并对全部联系人重新发送。')) return;
         try {
-            const res = await fetch('/api/task/retry', {
+            const res = await fetch('/api/task/reexecute', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({task_id})
             });
             const data = await res.json();
             if (data.success) {
-                alert(data.message || '重试已启动');
+                alert(data.message || '任务已重新启动');
                 loadTaskHistory();
                 // 启动进度轮询
                 startProgressPolling(task_id);
             } else {
-                alert('重试失败: ' + (data.message || '未知错误'));
+                alert('重新执行失败: ' + (data.message || '未知错误'));
             }
         } catch (e) {
-            alert('重试失败: ' + e.message);
+            alert('重新执行失败: ' + e.message);
         }
     }
 
