@@ -617,6 +617,9 @@ ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS current_account_index INTEGE
 -- 数据迁移：将旧的account_id转为account_ids JSON数组
 UPDATE uni_email_task SET account_ids = json_build_array(account_id) WHERE account_ids IS NULL AND account_id IS NOT NULL;
 
+-- 迁移：为 uni_email_task 添加 excluded_contacts 字段（任务级别排除联系人）
+ALTER TABLE uni_email_task ADD COLUMN IF NOT EXISTS excluded_contacts TEXT DEFAULT '';
+
 -- ============ 银行流水管理表（财务管理模块） ============
 
 -- 银行流水主表

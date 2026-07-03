@@ -482,6 +482,24 @@
     </div>
 </div>
 
+<!-- 编辑任务名单弹窗 -->
+<div id="editTaskContactsModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 600px; max-height: 85vh; display: flex; flex-direction: column;">
+        <h3 style="margin: 0 0 10px 0;">编辑任务名单 - <span id="editTaskContactsName"></span></h3>
+        <input type="hidden" id="editTaskContactsId">
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="editTaskContactsSearch" placeholder="搜索客户名或邮箱..." oninput="loadEditTaskContacts()" style="flex: 1; padding: 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
+        </div>
+        <div id="editTaskContactsStats" style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;"></div>
+        <div id="editTaskContactsList" style="flex: 1; overflow-y: auto; max-height: 50vh;">
+            <!-- 联系人列表动态加载 -->
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 15px; padding-top: 10px; border-top: 1px solid var(--border);">
+            <button class="btn" onclick="closeEditTaskContactsModal()">关闭</button>
+        </div>
+    </div>
+</div>
+
 <!-- 保存模板弹窗 -->
 <div id="saveTemplateModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
     <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 400px;">
@@ -878,16 +896,17 @@
 
                 // 根据状态显示不同操作按钮
                 let actionButtons = '';
+                let editBtn = `<button class="btn btn-sm" onclick="showEditTaskContactsModal('${t.task_id}', '${t.task_name.replace(/'/g, "\\'")}')">编辑名单</button>`;
                 if (t.status === 'pending') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `${editBtn} <button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">开始执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'running') {
                     actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
                 } else if (t.status === 'retrying') {
                     actionButtons = `<button class="btn btn-sm" onclick="stopTask('${t.task_id}')">停止执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button>`;
                 } else if (t.status === 'paused') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `${editBtn} <button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">继续执行</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'error') {
-                    actionButtons = `<button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
+                    actionButtons = `${editBtn} <button class="btn btn-primary btn-sm" onclick="startTask('${t.task_id}')">重新执行</button> <button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 } else if (t.status === 'completed') {
                     actionButtons = `<button class="btn btn-sm" onclick="retryFailedEmails('${t.task_id}')">重试失败</button> <button class="btn btn-sm" onclick="exportTaskContacts('${t.task_id}')">导出</button> <button class="btn btn-sm" onclick="deleteTask('${t.task_id}')">删除</button>`;
                 }
@@ -1736,6 +1755,116 @@
     }
 
     initPage();
+
+    // ==================== 编辑任务名单 ====================
+
+    // 显示编辑任务名单弹窗
+    function showEditTaskContactsModal(taskId, taskName) {
+        document.getElementById('editTaskContactsId').value = taskId;
+        document.getElementById('editTaskContactsName').textContent = taskName;
+        document.getElementById('editTaskContactsSearch').value = '';
+        document.getElementById('editTaskContactsModal').style.display = 'flex';
+        loadEditTaskContacts();
+    }
+
+    // 关闭编辑任务名单弹窗
+    function closeEditTaskContactsModal() {
+        document.getElementById('editTaskContactsModal').style.display = 'none';
+    }
+
+    // 加载任务联系人列表
+    async function loadEditTaskContacts() {
+        const taskId = document.getElementById('editTaskContactsId').value;
+        const search = document.getElementById('editTaskContactsSearch').value;
+        try {
+            const res = await fetch(`/api/task/${taskId}/contacts?search=${encodeURIComponent(search)}`);
+            const data = await res.json();
+            if (!data.success) {
+                alert('加载失败: ' + (data.message || '未知错误'));
+                return;
+            }
+
+            // 统计信息
+            document.getElementById('editTaskContactsStats').innerHTML =
+                `共 ${data.total} 人，已排除 ${data.excluded_count} 人`;
+
+            // 联系人列表
+            const listEl = document.getElementById('editTaskContactsList');
+            listEl.innerHTML = '';
+            if (data.contacts.length === 0) {
+                listEl.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--text-muted);">暂无联系人</div>';
+                return;
+            }
+
+            data.contacts.forEach(c => {
+                const displayName = c.name || c.company || '-';
+                const rowStyle = c.is_excluded
+                    ? 'text-decoration: line-through; opacity: 0.6;'
+                    : '';
+                const actionBtn = c.is_excluded
+                    ? `<button class="btn btn-sm" style="background: #22C55E; color: white;" onclick="restoreTaskContact('${taskId}', '${c.email.replace(/'/g, "\\'")}')">恢复</button>`
+                    : `<button class="btn btn-sm" style="color: #DC2626;" onclick="excludeTaskContact('${taskId}', '${c.email.replace(/'/g, "\\'")}')">删除</button>`;
+
+                listEl.innerHTML += `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); ${rowStyle}">
+                        <div style="flex: 1; min-width: 0;">
+                            <span style="font-size: 13px; color: var(--text-main);">${displayName}</span>
+                            <span style="font-size: 12px; color: var(--text-muted); margin-left: 8px;">${c.email}</span>
+                        </div>
+                        <div style="flex-shrink: 0; margin-left: 12px;">
+                            ${actionBtn}
+                        </div>
+                    </div>`;
+            });
+        } catch (e) {
+            console.error('加载任务联系人失败:', e);
+            alert('加载失败');
+        }
+    }
+
+    // 排除联系人
+    async function excludeTaskContact(taskId, email) {
+        if (!confirm(`确定从名单中移除 ${email} 吗？`)) return;
+        try {
+            const res = await fetch(`/api/task/${taskId}/contacts/exclude`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email })
+            });
+            const data = await res.json();
+            if (data.success) {
+                loadEditTaskContacts();
+                loadTaskHistory();  // 刷新任务列表中的 total_count
+            } else {
+                alert('操作失败: ' + data.message);
+            }
+        } catch (e) {
+            console.error('排除联系人失败:', e);
+            alert('操作失败');
+        }
+    }
+
+    // 恢复联系人
+    async function restoreTaskContact(taskId, email) {
+        if (!confirm(`确定将 ${email} 恢复到名单中吗？`)) return;
+        try {
+            const res = await fetch(`/api/task/${taskId}/contacts/restore`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email })
+            });
+            const data = await res.json();
+            if (data.success) {
+                loadEditTaskContacts();
+                loadTaskHistory();  // 刷新任务列表中的 total_count
+            } else {
+                alert('操作失败: ' + data.message);
+            }
+        } catch (e) {
+            console.error('恢复联系人失败:', e);
+            alert('操作失败');
+        }
+    }
 
     // ==================== 手动邮件组功能 ====================
     let staticGroupEmails = [];  // 临时存储添加的邮件

@@ -394,7 +394,7 @@ def is_cancel_requested(task_id):
 
 
 def get_task_contacts(task_id):
-    """获取任务的联系人列表（排除已发送成功的邮箱）
+    """获取任务的联系人列表（排除已发送成功的邮箱 + 手动排除的邮箱）
 
     Returns:
         list 未发送联系人列表 [{"contact_id", "email", "company", ...}, ...]
@@ -411,10 +411,203 @@ def get_task_contacts(task_id):
     sent_emails = get_sent_emails_for_task(task_id)
     sent_email_set = set(e.lower() for e in sent_emails)
 
-    # 过滤掉已发送成功的联系人
-    unsent_contacts = [c for c in all_contacts if c.get('email', '').lower() not in sent_email_set]
+    # 获取本任务手动排除的邮箱列表
+    excluded_json = task.get('excluded_contacts', '') or ''
+    excluded_emails = set()
+    if excluded_json:
+        try:
+            excluded_emails = set(e.lower() for e in json.loads(excluded_json))
+        except:
+            pass
+
+    # 过滤掉已发送成功 + 手动排除的联系人
+    unsent_contacts = [
+        c for c in all_contacts
+        if c.get('email', '').lower() not in sent_email_set
+        and c.get('email', '').lower() not in excluded_emails
+    ]
 
     return unsent_contacts
+
+
+def get_task_contacts_with_excluded(task_id, search=""):
+    """获取任务的全部联系人列表（带排除标记，用于编辑弹窗）
+
+    Args:
+        task_id: 任务ID
+        search: 搜索关键词（匹配客户名或邮箱）
+
+    Returns:
+        (contacts_list, excluded_count, total) tuple
+        contacts_list 中每个联系人包含 is_excluded 字段
+    """
+    task = get_task_by_id(task_id)
+    if not task:
+        return [], 0, 0
+
+    group_ids = json.loads(task.get('group_ids', '[]') or '[]')
+    all_contacts = get_all_groups_contacts_all_types(group_ids)
+
+    # 获取手动排除的邮箱
+    excluded_json = task.get('excluded_contacts', '') or ''
+    excluded_set = set()
+    if excluded_json:
+        try:
+            excluded_set = set(e.lower() for e in json.loads(excluded_json))
+        except:
+            pass
+
+    # 构建联系人列表（带排除标记）
+    results = []
+    for c in all_contacts:
+        email = c.get('email', '').lower()
+        if not email:
+            continue
+        # 搜索过滤
+        if search:
+            kw = search.lower()
+            name = (c.get('name', '') or c.get('contact_name', '') or '').lower()
+            company = (c.get('company', '') or c.get('company_name', '') or '').lower()
+            if kw not in email and kw not in name and kw not in company:
+                continue
+        results.append({
+            'contact_id': c.get('contact_id', ''),
+            'email': c.get('email', ''),
+            'name': c.get('name', '') or c.get('contact_name', '') or '',
+            'company': c.get('company', '') or c.get('company_name', '') or '',
+            'is_excluded': email in excluded_set
+        })
+
+    # 去重（按email）
+    seen = set()
+    deduped = []
+    for c in results:
+        email_lower = c['email'].lower()
+        if email_lower not in seen:
+            seen.add(email_lower)
+            deduped.append(c)
+
+    excluded_count = sum(1 for c in deduped if c['is_excluded'])
+
+    return deduped, excluded_count, len(deduped)
+
+
+def exclude_task_contact(task_id, email):
+    """从任务中排除某个联系人邮箱
+
+    Args:
+        task_id: 任务ID
+        email: 要排除的邮箱地址
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        task = get_task_by_id(task_id)
+        if not task:
+            return False, "任务不存在"
+
+        # 只允许在 pending/paused/error 状态编辑
+        if task.get('status') not in ('pending', 'paused', 'error'):
+            return False, "当前任务状态不允许编辑名单"
+
+        email_lower = email.strip().lower()
+        if not email_lower:
+            return False, "邮箱地址不能为空"
+
+        # 获取现有排除列表
+        excluded_json = task.get('excluded_contacts', '') or ''
+        excluded_list = []
+        if excluded_json:
+            try:
+                excluded_list = json.loads(excluded_json)
+            except:
+                excluded_list = []
+
+        if email_lower in [e.lower() for e in excluded_list]:
+            return False, "该邮箱已在排除列表中"
+
+        excluded_list.append(email.strip())
+        new_excluded_json = json.dumps(excluded_list)
+
+        # 同步更新 total_count（减少1，但不能低于已处理数）
+        task_total = task.get('total_count', 0) or 0
+        sent = task.get('sent_count', 0) or 0
+        skipped = task.get('skipped_count', 0) or 0
+        new_total = max(task_total - 1, sent + skipped)
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE uni_email_task SET excluded_contacts = ?, total_count = ? WHERE task_id = ?",
+                (new_excluded_json, new_total, task_id)
+            )
+            conn.commit()
+
+        return True, "邮箱已从名单中移除"
+    except Exception as e:
+        return False, str(e)
+
+
+def restore_task_contact(task_id, email):
+    """恢复任务中被排除的联系人邮箱
+
+    Args:
+        task_id: 任务ID
+        email: 要恢复的邮箱地址
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        task = get_task_by_id(task_id)
+        if not task:
+            return False, "任务不存在"
+
+        # 只允许在 pending/paused/error 状态编辑
+        if task.get('status') not in ('pending', 'paused', 'error'):
+            return False, "当前任务状态不允许编辑名单"
+
+        email_lower = email.strip().lower()
+        if not email_lower:
+            return False, "邮箱地址不能为空"
+
+        # 获取现有排除列表
+        excluded_json = task.get('excluded_contacts', '') or ''
+        excluded_list = []
+        if excluded_json:
+            try:
+                excluded_list = json.loads(excluded_json)
+            except:
+                excluded_list = []
+
+        # 查找并移除
+        found = False
+        new_list = []
+        for e in excluded_list:
+            if e.lower() == email_lower:
+                found = True
+            else:
+                new_list.append(e)
+
+        if not found:
+            return False, "该邮箱不在排除列表中"
+
+        new_excluded_json = json.dumps(new_list) if new_list else ""
+
+        # 同步更新 total_count（增加1）
+        task_total = task.get('total_count', 0) or 0
+        new_total = task_total + 1
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE uni_email_task SET excluded_contacts = ?, total_count = ? WHERE task_id = ?",
+                (new_excluded_json, new_total, task_id)
+            )
+            conn.commit()
+
+        return True, "邮箱已恢复到名单中"
+    except Exception as e:
+        return False, str(e)
 
 
 def get_task_failed_contacts(task_id):

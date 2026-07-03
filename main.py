@@ -6238,7 +6238,8 @@ from Sills.db_email_task import (
     get_task_list, get_task_by_id, get_active_task, has_running_task,
     create_task, start_task, update_task_progress, cancel_task,
     complete_task, get_task_progress, get_task_contacts,
-    delete_task, delete_tasks_batch
+    delete_task, delete_tasks_batch,
+    get_task_contacts_with_excluded, exclude_task_contact, restore_task_contact
 )
 from Sills.db_email_template import (
     get_template_list, get_template_by_id, create_template,
@@ -6765,6 +6766,54 @@ async def api_task_stats(task_id: str, current_user: dict = Depends(login_requir
     if stats:
         return {"success": True, "stats": stats}
     return {"success": False, "message": "任务不存在"}
+
+
+@app.get("/api/task/{task_id}/contacts")
+async def api_task_contacts(
+    task_id: str,
+    search: str = "",
+    current_user: dict = Depends(login_required)
+):
+    """获取任务联系人列表（用于编辑名单弹窗）"""
+    contacts, excluded_count, total = get_task_contacts_with_excluded(task_id, search)
+    return {
+        "success": True,
+        "contacts": contacts,
+        "excluded_count": excluded_count,
+        "total": total
+    }
+
+
+@app.post("/api/task/{task_id}/contacts/exclude")
+async def api_task_exclude_contact(
+    task_id: str,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """从任务名单中排除联系人"""
+    data = await request.json()
+    email = data.get('email', '')
+    if not email:
+        return {"success": False, "message": "邮箱地址不能为空"}
+
+    success, message = exclude_task_contact(task_id, email)
+    return {"success": success, "message": message}
+
+
+@app.post("/api/task/{task_id}/contacts/restore")
+async def api_task_restore_contact(
+    task_id: str,
+    request: Request,
+    current_user: dict = Depends(login_required)
+):
+    """恢复任务名单中被排除的联系人"""
+    data = await request.json()
+    email = data.get('email', '')
+    if not email:
+        return {"success": False, "message": "邮箱地址不能为空"}
+
+    success, message = restore_task_contact(task_id, email)
+    return {"success": success, "message": message}
 
 
 @app.get("/api/task/{task_id}/export")
