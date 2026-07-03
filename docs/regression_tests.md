@@ -365,10 +365,23 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 - 接口返回 `success=true`，message 提示将发送 N 个联系人（N=全部联系人，含已发送成功的）
 - 任务 `status` 变为 `running`，`sent_count/failed_count/skipped_count` 均清零
 - Worker 以 `[重新执行]` 模式运行，重发全部联系人（不排除已发送成功的邮箱）
-- 跳过规则（N天内已发送）在重新执行模式下被绕过，不跳过任何联系人
+- 跳过规则（N天内已发送）在重新执行模式下**同样生效**：7 天内已发送（任意任务）的邮箱被跳过并计入 `skipped_count`；`skip_enabled=0` 时不跳过
 - 历史发送日志（`uni_email_log`）保留不删
 - `pending`/`running`/`paused`/`retrying` 状态任务点重新执行应被拒绝（返回 `success=false`）
 - 任务列表 `error`/`completed` 行显示「重新执行」按钮，不再显示「重试失败」按钮
+
+### TC-ETASK-010: 重新执行遵守 7 天跳过规则（Bug 回归）
+**模块**: `Sills/email_sender.py::EmailSenderWorker.run()` 跳过逻辑（第 374/470/480 行）
+**步骤**:
+1. 准备 `completed` 任务 A，其联系人含邮箱 `e1@x.com`（3 天前已发送成功，日志在 `uni_email_log`）
+2. 重新执行任务 A
+3. 另准备联系人 `e2@x.com`（10 天前发送或从未发送）
+**预期**:
+- `e1@x.com` 在 7 天窗口内 → 被跳过，不计入 sent，计入 `skipped_count`，Worker 日志打印 `跳过(最近7天已发送)`
+- `e2@x.com` 不在 7 天窗口内 → 正常重发
+- `skip_enabled=0` 时 `e1@x.com` 也被重发（跳过规则关闭）
+- 重新执行模式下不按"当前任务已发送"跳过（即旧日志里的 `e1@x.com` 不会被第 470 行误跳过，而是统一走 7 天规则）
+- 单元测试 `tests/test_email_task_reexecute.py` 中 `test_reexecute_skips_recently_sent` / `test_reexecute_skip_disabled_sends_all` / `test_reexecute_ignores_current_task_old_sent` / `test_normal_mode_keeps_current_task_dedup` 4 用例全过
 
 ---
 
@@ -458,4 +471,4 @@ LM358  TI  50  LG
 
 ---
 
-*最后更新：2026-06-21*
+*最后更新：2026-07-03*

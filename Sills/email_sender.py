@@ -370,8 +370,9 @@ class EmailSenderWorker:
             skip_days = self.task.get('skip_days', 7)
 
             # 如果启用跳过规则，获取最近N天内成功发送的邮箱列表（不限任务）
+            # 重新执行模式同样适用：7天内已发送的邮箱一律跳过，避免对同一联系人短期重复发送
             recently_sent_set = set()
-            if skip_enabled == 1 and not self.retry_mode and not self.reexecute_mode:
+            if skip_enabled == 1 and not self.retry_mode:
                 from Sills.db_email_log import get_recently_sent_emails
                 recently_sent_set = get_recently_sent_emails(skip_days)
                 print(f"[Worker] 启用跳过规则：{skip_days}天内已发送的邮箱将被跳过，共{len(recently_sent_set)}个")
@@ -466,8 +467,9 @@ class EmailSenderWorker:
                 if not email_addr:
                     continue
 
-                # 跳过已发送成功的联系人（当前任务内重复）
-                if email_addr.lower() in sent_email_set:
+                # 跳过已发送成功的联系人（当前任务内重复）；重新执行模式绕过此判断，
+                # 改由下方7天规则统一判定，否则旧日志会让重新执行时全部被跳过、7天规则无法生效
+                if not self.reexecute_mode and email_addr.lower() in sent_email_set:
                     print(f"[Worker] {mode_str} 跳过已发送(当前任务): {email_addr}")
                     # 去重计数：同一个邮箱只计一次跳过
                     if email_addr.lower() not in skipped_email_set:

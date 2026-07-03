@@ -215,3 +215,21 @@
 - 数据库表结构未动；原 /api/task/retry + retry_failed_task 后端保留为死代码便于回退
 
 ---
+
+## 2026-07-03 17:00 - 重新执行任务绕过 7 天跳过规则修复
+
+**Prompt 序列**:
+1. `跳过规则 设置了7天内不重发，但是实际上可以发送，规则没有生效`
+2. （AFK 未答，按 CLAUDE.md 不动代码，先完成分析等待确认）
+3. `1.点了"重新执行"按钮遇到 的  2. A（推荐）`（确认触发场景 = 重新执行；方案 A = 重新执行也遵守 7 天跳过）
+4. `可以`（授权开始修改）
+
+**响应摘要**:
+- 根因定位：`Sills/email_sender.py:374` 的 `not self.reexecute_mode` 让重新执行显式绕过 7 天跳过规则（commit 2de9e7a 当时有意设计"绕过跳过规则"，与产品预期冲突）；连带发现 `:470` 的"当前任务已发送"去重在重新执行时不绕过 + 旧日志未清理 → 重新执行 completed 任务会 0 发出
+- 改动 1（`:374`）：去掉 `and not self.reexecute_mode`，重新执行时也加载 7 天已发送集合
+- 改动 2（`:470`）：加 `not self.reexecute_mode` 守卫，重新执行时绕过当前任务去重，统一交 7 天规则判定
+- 新增 4 个 worker 跳过逻辑单测（mock SMTP/DB）：`test_reexecute_skips_recently_sent` / `test_reexecute_skip_disabled_sends_all` / `test_reexecute_ignores_current_task_old_sent` / `test_normal_mode_keeps_current_task_dedup`；原 6 用例保留，共 10 用例全过
+- 文档：errors.md 记录 bug、features.md ETASK-012 行为修正 + 变更说明、regression_tests.md TC-ETASK-009 修正预期 + 新增 TC-ETASK-010
+- 数据库表结构未动
+
+---

@@ -530,6 +530,35 @@ return f"PK{timestamp}{rand_suffix}"
 
 ---
 
+## 2026-07-03: 重新执行任务绕过 7 天跳过规则
+
+### 问题描述
+开发信任务设置"7 天内不重发"跳过规则后，点击「重新执行」按钮，7 天内已发送的邮箱仍被重发，跳过规则未生效。
+
+### 根本原因
+`Sills/email_sender.py` 在引入重新执行功能（commit `2de9e7a`）时，在两处对 `reexecute_mode` 做了特殊处理，与跳过规则的产品预期冲突：
+
+1. **第 374 行**（加载 7 天已发送集合）：
+   ```python
+   if skip_enabled == 1 and not self.retry_mode and not self.reexecute_mode:
+       recently_sent_set = get_recently_sent_emails(skip_days)
+   ```
+   重新执行时条件不成立 → `recently_sent_set` 为空集 → 第 480 行的 7 天跳过判断永远不命中 → 全部重发。
+
+2. **第 470 行**（当前任务已发送去重，连带 bug）：`reexecute_task` 重置计数但**不清理旧日志**，`sent_email_set`（第 365 行）仍含上次运行的全部已发送邮箱；而该判断**未**对 reexecute 做绕过 → 重新执行 `completed` 任务时所有联系人被按"当前任务已发送"跳过、0 封发出，7 天规则根本没机会生效。
+
+### 修复方案
+- 第 374 行：去掉 `and not self.reexecute_mode`，重新执行时也加载 7 天已发送集合并跳过。
+- 第 470 行：加 `not self.reexecute_mode` 守卫，重新执行时绕过"当前任务已发送"去重，统一交由 7 天规则判定。
+- 效果：重新执行 = 重发全部联系人，但 7 天内已发送（任意任务）的跳过并计入 `skipped_count`；`skip_enabled=0` 时不跳过。
+
+### 教训
+- "重新执行"语义是"重发全部联系人"，但不等于"无视一切跳过规则"。**跳过规则（7 天内不重发）是防骚扰的硬性约束，应在所有发送路径生效**，除非用户显式关闭（skip_enabled=0）。
+- 新增模式（reexecute_mode）时，必须同步审视所有与该模式相关的既有判断（374 行跳过、470 行去重），不能只改一处。
+- 该 bug 是上一个需求（重新执行功能）引入的回归。当时单测只覆盖了 `reexecute_task` 的 DB 重置逻辑，**未覆盖 worker 发送循环的跳过行为**，导致漏网。已补 4 个 worker 跳过逻辑单测（reexecute 7 天内跳过 / skip 关闭全发 / reexecute 绕过当前任务去重 / 普通模式去重不破坏）。
+
+---
+
 ### 高频 Bug 模式记录（出现 2 次以上）
 
 #### 模式 A: 静默吞错（出现 2 次）
