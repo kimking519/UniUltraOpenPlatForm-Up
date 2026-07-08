@@ -653,6 +653,14 @@
         });
     }
 
+    // 方案C行解析：强分隔符能拆出≥3段就用它(保护含空格型号)，否则退到空格分割(含单个空格)
+    function splitOfferLine(line) {
+        if (!line) return [];
+        const strong = line.split(/[,，;；\t|]+/).filter(p => p.trim());
+        if (strong.length >= 3) return strong;
+        return line.split(/\s+/).filter(p => p.trim());
+    }
+
     // 智能带入解析函数
     function parseSmartInput() {
         const input = document.getElementById('smartInput').value.trim();
@@ -674,8 +682,9 @@
 
         const firstLine = lines[0].trim();
 
-        // 使用正则分割：支持逗号、分号、Tab、|、中文逗号等（不包含斜杠/反斜杠/#，因为型号中可能包含这些字符）
-        const parts = firstLine.split(/[,，;；\t|]+|\s{2,}/).filter(p => p.trim());
+        // 方案C解析：强分隔符(逗号/分号/Tab/竖线)能拆出≥3段就用它(保护含空格型号)，
+        // 否则退到空格分割(含单个空格)，兼容无空格型号如 "LM358 TI 50"
+        const parts = splitOfferLine(firstLine);
 
         if (parts.length < 3) {
             msgEl.textContent = '数据不足，至少需要：型号、品牌、数量';
@@ -750,7 +759,7 @@
         const errorLines = [];
 
         lines.forEach((line, idx) => {
-            const parts = line.trim().split(/[,，;；\t|]+|\s{2,}/).filter(p => p.trim());
+            const parts = splitOfferLine(line.trim());
             if (parts.length < 3) {
                 errorLines.push(`第 ${idx + 1} 行: 数据不足`);
                 return;
@@ -1044,7 +1053,7 @@
     }
 
     // 执行批量插入
-    function executeBatchInsert() {
+    async function executeBatchInsert() {
         const previewList = window._previewInsertData;
         const msgEl = window._previewMsgEl;
 
@@ -1056,30 +1065,33 @@
 
         let successCount = 0;
         let failCount = 0;
-        const promises = [];
 
-        previewList.forEach(item => {
+        // 倒序提交：按 4->3->2->1 逐条插入，使原第一行最后落库(created_at最大)、配合 ORDER BY created_at DESC 排最前 -> 显示 1->2->3->4。
+        // 必须顺序提交(非并发)，否则 created_at 随机、倒序失效。
+        for (const item of [...previewList].reverse()) {
             const formData = new FormData();
             for (const [key, value] of Object.entries(item.formData)) {
                 if (value) formData.append(key, value);
             }
 
-            promises.push(fetch('/api/offer/add_simple', {
-                method: 'POST',
-                body: formData
-            }).then(res => res.json()).then(data => {
+            try {
+                const res = await fetch('/api/offer/add_simple', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
                 if (data.success) successCount++;
                 else failCount++;
-            }).catch(() => failCount++));
-        });
-
-        Promise.all(promises).then(() => {
-            msgEl.textContent = `插入完成：成功 ${successCount} 条，失败 ${failCount} 条`;
-            msgEl.style.color = successCount > 0 ? 'var(--success)' : 'var(--danger)';
-            if (successCount > 0) {
-                setTimeout(() => window.location.reload(), 1000);
+            } catch (err) {
+                failCount++;
             }
-        });
+        }
+
+        msgEl.textContent = `插入完成：成功 ${successCount} 条，失败 ${failCount} 条`;
+        msgEl.style.color = successCount > 0 ? 'var(--success)' : 'var(--danger)';
+        if (successCount > 0) {
+            setTimeout(() => window.location.reload(), 1000);
+        }
     }
 
     // 顶部滚动条同步功能

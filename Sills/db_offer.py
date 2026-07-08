@@ -49,7 +49,7 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
             ROUND(CAST(o.offer_price_rmb - o.cost_price_rmb AS numeric), 3) as profit,
             CAST(ROUND(CAST((o.offer_price_rmb - o.cost_price_rmb) * o.quoted_qty AS numeric), 0) AS INTEGER) as total_profit
     {base_query}
-    ORDER BY o.offer_date DESC, o.created_at DESC
+    ORDER BY o.offer_date DESC, o.created_at DESC, o.offer_id DESC
     LIMIT ? OFFSET ?
     """
 

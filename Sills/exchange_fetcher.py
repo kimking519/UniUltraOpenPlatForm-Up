@@ -150,13 +150,43 @@ def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:
                     else:  # USD, EUR: 1币种 = X RMB
                         recommended = round(1 / original * (1 - rate_ratio), 4)
 
-                    # 只更新固定记录，不插入新数据
-                    conn.execute(
-                        """UPDATE uni_daily
-                           SET exchange_rate=?, original_rate=?, last_refresh_time=?, record_date=?
-                           WHERE currency_code=?""",
-                        (recommended, original, refresh_time, record_date, currency_code)
-                    )
+                    # 按今天是否已有该币种记录分三种情况处理，避免 record_date 改写时撞唯一约束：
+                    # 1) 今天已有 -> 只更新汇率，不动 record_date（它本来就是今天，不会撞）
+                    today_row = conn.execute(
+                        "SELECT id FROM uni_daily WHERE currency_code=? AND record_date=?",
+                        (currency_code, record_date)
+                    ).fetchone()
+                    if today_row:
+                        conn.execute(
+                            """UPDATE uni_daily
+                               SET exchange_rate=?, original_rate=?, last_refresh_time=?
+                               WHERE id=?""",
+                            (recommended, original, refresh_time, today_row['id'])
+                        )
+                    else:
+                        # 2) 今天没有、但有历史记录 -> 按 id 精确更新一条历史记录的汇率和日期
+                        #    只动一条，不批量改该币种所有记录，避免把多条都改成今天而互相撞车
+                        history_row = conn.execute(
+                            "SELECT id FROM uni_daily WHERE currency_code=? ORDER BY id DESC LIMIT 1",
+                            (currency_code,)
+                        ).fetchone()
+                        if history_row:
+                            conn.execute(
+                                """UPDATE uni_daily
+                                   SET exchange_rate=?, original_rate=?, last_refresh_time=?, record_date=?
+                                   WHERE id=?""",
+                                (recommended, original, refresh_time, record_date, history_row['id'])
+                            )
+                        else:
+                            # 3) 该币种完全没记录 -> 插入新记录
+                            conn.execute(
+                                """INSERT INTO uni_daily
+                                   (record_date, currency_code, exchange_rate, original_rate,
+                                    last_refresh_time, rate_ratio)
+                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                (record_date, currency_code, recommended, original,
+                                 refresh_time, rate_ratio)
+                            )
             conn.commit()
 
         return True, "汇率已更新"
