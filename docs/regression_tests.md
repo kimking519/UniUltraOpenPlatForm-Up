@@ -101,6 +101,11 @@
 | OFF-TC009 | 批量删除报价 | 调用 batch_delete_offer() | 批量删除成功 | ⬜ |
 | OFF-TC010 | 报价转订单 | 调用 batch_convert_from_offer() | 生成订单，报价标记为已转 | ⬜ |
 | OFF-TC011 | 重复转换检查 | 对已转换的询价再次转换 | 转换失败，提示已存在 | ⬜ |
+| OFF-TC012 | 更新报价-解析匹配当天 | 输入"型号 成本价 批号 交期"调 preview_update_cost | 匹配当天录入同型号最新一条，预览含旧值/新值 | ✅ |
+| OFF-TC013 | 更新报价-字段不足解析 | 仅输入"型号 成本价" | 只更新成本价，批号/交期不变 | ✅ |
+| OFF-TC014 | 更新报价-执行落库 | 预览确认后调 execute_update_cost | 库中 cost_price_rmb/date_code/delivery_date 更新，offer_price 不联动 | ✅ |
+| OFF-TC015 | 更新报价-历史数据不动 | 把记录 created_at 改为昨天再 preview | 匹配不到当天记录，进 errors，库值不变 | ✅ |
+| OFF-TC016 | 更新报价-非法成本价跳过 | 成本价填非数字(abc) | 该行报"成本价格式错误"跳过，不更新 | ✅ |
 
 ---
 

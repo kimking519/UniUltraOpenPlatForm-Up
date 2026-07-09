@@ -1437,11 +1437,13 @@ def _generate_koquote_excel(offers, template_dir, output_path, exchange_rate_krw
         # 单价: offer_price_rmb * 汇率
         price_rmb = offer.get("offer_price_rmb")
         if price_rmb and float(price_rmb or 0) > 0:
-            price_kwr = float(price_rmb) * exchange_rate_krw
+            price_kwr = round(float(price_rmb) * exchange_rate_krw, 1)
         else:
             price_kwr = 0
         price_cell = ws1.cell(row, 7)
         price_cell.value = price_kwr                           # G: 단가
+        # 韩元单价精确到小数点后1位，与其他KRW模板一致
+        price_cell.number_format = '#,##0.0'
 
         # 交期
         ws1.cell(row, 8).value = offer.get("delivery_date", "")      # H: 납기

@@ -18,7 +18,7 @@ import os
 import json
 import tempfile
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -399,6 +399,219 @@ class TestOffer:
         data = response.json()
         assert "krw" in data or "usd" in data
         test_results.add_result("报价", "汇率获取", "PASS")
+
+    # ===== 更新报价（仅当天录入）回归测试 =====
+    @pytest.fixture(autouse=True)
+    def _cleanup_update_cost_test_data(self):
+        """每个测试方法结束自动清理本用例产生的测试数据。
+
+        根因：项目在 PG 模式下 get_db_connection() 忽略 DB_PATH，测试数据会进真实库。
+        故用唯一前缀标识测试数据，用例结束后扫描删除，避免污染。
+        """
+        yield
+        # 收集并删除所有测试前缀的报价记录
+        prefixes = ['TEST-UPDATECOST-%', 'TESTDBG-%']
+        try:
+            with get_db_connection() as conn:
+                oids = []
+                for p in prefixes:
+                    rows = conn.execute(
+                        "SELECT offer_id FROM uni_offer WHERE inquiry_mpn LIKE ? OR quoted_mpn LIKE ?",
+                        (p, p),
+                    ).fetchall()
+                    oids.extend(r['offer_id'] for r in rows)
+                if oids:
+                    ph = ','.join(['?'] * len(oids))
+                    conn.execute(f"DELETE FROM uni_offer WHERE offer_id IN ({ph})", oids)
+                    conn.commit()
+        except Exception:
+            pass  # 清理失败不应影响测试结果判定
+
+    def _prepare_today_offer(self, mpn, cost_price=1.0, date_code="3년내", delivery_date="1~3days"):
+        """插入一条当天录入的报价记录，返回 offer_id"""
+        from Sills.db_offer import add_offer
+        data = {
+            "inquiry_mpn": mpn,
+            "quoted_mpn": mpn,
+            "inquiry_brand": "TEST-BRAND",
+            "quoted_brand": "TEST-BRAND",
+            "inquiry_qty": 100,
+            "quoted_qty": 100,
+            "actual_qty": 100,
+            "cost_price_rmb": cost_price,
+            "date_code": date_code,
+            "delivery_date": delivery_date,
+        }
+        ok, msg = add_offer(data, "001")
+        assert ok, f"插入测试报价失败: {msg}"
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT offer_id FROM uni_offer WHERE inquiry_mpn=? ORDER BY created_at DESC LIMIT 1",
+                (mpn,),
+            ).fetchone()
+            return row["offer_id"] if row else None
+
+    def test_update_cost_parse_and_match_today(self, client, auth_token):
+        """测试：解析多行文本 + 当天型号匹配 + 只取最新一条"""
+        mpn = "TEST-UPDATECOST-001"
+        oid = self._prepare_today_offer(mpn, cost_price=1.0, date_code="24+", delivery_date="1~3days")
+        assert oid is not None
+
+        # 多空格分隔，4字段齐全
+        response = client.post(
+            "/api/offer/preview_update_cost",
+            json={"text": f"{mpn}  3.0   25+  1-3days"},
+            cookies=auth_token,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data["preview"]) == 1
+        item = data["preview"][0]
+        assert item["offer_id"] == oid
+        assert item["update_cost_price"] is True
+        assert float(item["new_cost_price"]) == 3.0
+        assert item["new_date_code"] == "25+"
+        assert item["new_delivery_date"] == "1-3days"
+        test_results.add_result("报价", "更新报价-解析匹配当天", "PASS")
+
+    def test_update_cost_partial_fields(self, client, auth_token):
+        """测试：字段不足按顺序解析，缺的不更新"""
+        mpn = "TEST-UPDATECOST-002"
+        oid = self._prepare_today_offer(mpn, cost_price=2.0, date_code="23+", delivery_date="2days")
+        # 只给 型号 + 成本价，批号/交期应保持不变
+        response = client.post(
+            "/api/offer/preview_update_cost",
+            json={"text": f"{mpn} 5.5"},
+            cookies=auth_token,
+        )
+        data = response.json()
+        item = data["preview"][0]
+        assert item["update_cost_price"] is True
+        assert float(item["new_cost_price"]) == 5.5
+        assert item["update_date_code"] is False
+        assert item["update_delivery_date"] is False
+        test_results.add_result("报价", "更新报价-字段不足解析", "PASS")
+
+    def test_update_cost_execute_updates_db(self, client, auth_token):
+        """测试：确认执行后数据库确实更新，且仅改 cost/date_code/delivery"""
+        mpn = "TEST-UPDATECOST-003"
+        oid = self._prepare_today_offer(mpn, cost_price=9.0, date_code="22+", delivery_date="5days")
+        # 预览
+        resp = client.post(
+            "/api/offer/preview_update_cost",
+            json={"text": f"{mpn} 4.5 26+ 1-3days"},
+            cookies=auth_token,
+        )
+        preview = resp.json()["preview"]
+        # 执行
+        resp2 = client.post(
+            "/api/offer/execute_update_cost",
+            json={"preview": preview},
+            cookies=auth_token,
+        )
+        assert resp2.status_code == 200
+        r = resp2.json()
+        assert r["success"] is True
+        assert r["updated_count"] == 1
+
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT cost_price_rmb, date_code, delivery_date, offer_price_rmb FROM uni_offer WHERE offer_id=?",
+                (oid,),
+            ).fetchone()
+            assert float(row["cost_price_rmb"]) == 4.5
+            assert row["date_code"] == "26+"
+            assert row["delivery_date"] == "1-3days"
+        test_results.add_result("报价", "更新报价-执行落库", "PASS")
+
+    def test_update_cost_history_not_touched(self, client, auth_token):
+        """测试：历史记录（非当天）不被匹配/更新"""
+        # mpn 加时间戳保证唯一，避免历史测试残留数据干扰匹配
+        mpn = f"TEST-UPDATECOST-HIST-{datetime.now().strftime('%H%M%S%f')}"
+        oid = self._prepare_today_offer(mpn, cost_price=1.0)
+        # 手动把 created_at 改成昨天，模拟历史数据
+        # 用 Python 算出昨天 ISO 字符串直接赋值，跨 SQLite/PostgreSQL 兼容
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+        with get_db_connection() as conn:
+            conn.execute(
+                "UPDATE uni_offer SET created_at=? WHERE offer_id=?",
+                (yesterday, oid),
+            )
+            conn.commit()
+
+        response = client.post(
+            "/api/offer/preview_update_cost",
+            json={"text": f"{mpn} 9.9 99+ 9days"},
+            cookies=auth_token,
+        )
+        data = response.json()
+        # 应匹配不到当天记录 -> 进 errors
+        assert len(data["preview"]) == 0
+        assert any("未匹配到当天录入记录" in e for e in data["errors"])
+        # 库里值不变
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT cost_price_rmb FROM uni_offer WHERE offer_id=?", (oid,)
+            ).fetchone()
+            assert float(row["cost_price_rmb"]) == 1.0
+        test_results.add_result("报价", "更新报价-历史数据不动", "PASS")
+
+    def test_update_cost_invalid_cost_skipped(self, client, auth_token):
+        """测试：成本价非数字时该行报错跳过"""
+        mpn = "TEST-UPDATECOST-ERR"
+        self._prepare_today_offer(mpn, cost_price=1.0)
+        response = client.post(
+            "/api/offer/preview_update_cost",
+            json={"text": f"{mpn} abc 25+ 1-3days"},
+            cookies=auth_token,
+        )
+        data = response.json()
+        assert len(data["preview"]) == 0
+        assert any("成本价格式错误" in e for e in data["errors"])
+        test_results.add_result("报价", "更新报价-非法成本价跳过", "PASS")
+
+    def test_update_cost_idor_history_rejected(self, client, auth_token):
+        """安全(IDOR)：篡改 preview 里的 offer_id 指向历史记录，execute 必须拒绝更新"""
+        # 历史记录：created_at 改为昨天
+        hist_mpn = f"TEST-UPDATECOST-IDOR-{datetime.now().strftime('%H%M%S%f')}"
+        hist_oid = self._prepare_today_offer(hist_mpn, cost_price=1.0)
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+        with get_db_connection() as conn:
+            conn.execute("UPDATE uni_offer SET created_at=? WHERE offer_id=?", (yesterday, hist_oid))
+            conn.commit()
+
+        # 伪造 preview：offer_id 指向历史记录，但标记为要更新成本价
+        forged = [{
+            "offer_id": hist_oid,
+            "mpn": hist_mpn,
+            "old_cost_price": 1.0,
+            "new_cost_price": 9.9,
+            "update_cost_price": True,
+            "old_date_code": "24+",
+            "new_date_code": "99+",
+            "update_date_code": True,
+            "old_delivery_date": "1d",
+            "new_delivery_date": "9d",
+            "update_delivery_date": True,
+        }]
+        response = client.post(
+            "/api/offer/execute_update_cost",
+            json={"preview": forged},
+            cookies=auth_token,
+        )
+        data = response.json()
+        assert data["success"] is True
+        assert data["updated_count"] == 0  # 历史记录未被更新
+        assert any("非当天录入记录" in e for e in data["errors"])
+
+        # 库里值确实没变
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT cost_price_rmb FROM uni_offer WHERE offer_id=?", (hist_oid,)
+            ).fetchone()
+            assert float(row["cost_price_rmb"]) == 1.0
+        test_results.add_result("报价", "更新报价-IDOR历史记录防护", "PASS")
 
 
 # ============================================================

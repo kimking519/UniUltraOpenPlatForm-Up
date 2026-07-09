@@ -1861,6 +1861,49 @@ async def offer_batch_price_increase_api(request: Request, current_user: dict = 
 
     return {"success": True, "updated_count": updated_count, "message": f"成功更新 {updated_count} 条报价"}
 
+@app.post("/api/offer/preview_update_cost")
+async def offer_preview_update_cost_api(request: Request, current_user: dict = Depends(login_required)):
+    """预览更新当天录入报价的成本价/批号/交期。
+    输入多行文本，每行：型号 成本价 批号 交期（不足4个按顺序解析，缺的不更新）。
+    只匹配当天录入(created_at)且型号匹配的最新一条记录，历史数据不动。
+    """
+    if current_user['rule'] != '3' and current_user['rule'] != '0':
+        return {"success": False, "message": "无权限执行此操作"}
+
+    data = await request.json()
+    text = data.get("text", "")
+
+    from Sills.db_offer import preview_update_today_cost
+    preview_list, error_lines = preview_update_today_cost(text)
+
+    return {
+        "success": True,
+        "preview": preview_list,
+        "errors": error_lines,
+        "message": f"解析完成：{len(preview_list)} 条待更新，{len(error_lines)} 条跳过"
+    }
+
+@app.post("/api/offer/execute_update_cost")
+async def offer_execute_update_cost_api(request: Request, current_user: dict = Depends(login_required)):
+    """确认执行更新当天录入报价的成本价/批号/交期。
+    仅更新 cost_price_rmb，不联动 KWR/USD。
+    """
+    if current_user['rule'] != '3' and current_user['rule'] != '0':
+        return {"success": False, "message": "无权限执行此操作"}
+
+    data = await request.json()
+    preview_list = data.get("preview", [])
+
+    from Sills.db_offer import execute_update_today_cost
+    success_count, errors = execute_update_today_cost(preview_list)
+
+    return {
+        "success": True,
+        "updated_count": success_count,
+        "errors": errors,
+        "message": f"成功更新 {success_count} 条报价"
+    }
+
 @app.post("/api/offer/batch_send_email")
 async def offer_batch_send_email_api(request: Request, current_user: dict = Depends(login_required)):
     data = await request.json()

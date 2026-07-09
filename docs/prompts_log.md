@@ -233,3 +233,18 @@
 - 数据库表结构未动
 
 ---
+
+## 2026-07-09
+
+### Prompt #N
+**时间**: 2026-07-09
+**内容**: 报价订单增加快捷修改单价功能。在报价订单页面点击新增报价，在"智能带入"下面多一个"更新报价"按钮，输入 型号、成本价、批号、交期 四个字段（分隔规则和插入规则一样），更新当天录入的该型号成本价/批号/交期；点击后弹出预览确认再更新；只更新当天录入的型号，历史数据不动；字段不足时按顺序解析，缺的不更新。确认要点：1.当天多条同型号只更新最新一条 2.匹配 inquiry_mpn 或 quoted_mpn 3.不联动其他币种只更 cost_price_rmb 4.当天判断用 created_at。
+
+**响应**:
+- 新增 3 处代码（不改表结构）：
+  - `Sills/db_offer.py`：`_parse_update_cost_line`（按顺序解析4字段）、`preview_update_today_cost`（当天+型号匹配取最新一条，Python层判定当天）、`execute_update_today_cost`（按 offer_id 执行 UPDATE）
+  - `main.py`：`POST /api/offer/preview_update_cost`、`POST /api/offer/execute_update_cost`
+  - `templates/offer.html`：智能带入区块下新增"更新报价"输入框+按钮；`previewUpdateCost`/`showUpdateCostModal`/`executeUpdateCost` JS（预览表显示旧值->新值，确认后 reload）
+- 回归测试：`tests/test_all.py` TestOffer 新增 5 用例（解析匹配/字段不足/执行落库/历史不动/非法成本价跳过），全过
+- 调试发现并记录跨库 SQL 兼容 bug（见 errors.md）
+- 文档：features.md OFF-018、regression_tests.md OFF-TC012~016、errors.md

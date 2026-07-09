@@ -510,7 +510,17 @@
                 <p id="smartMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
             </div>
 
-            <!-- 客户选择（选填） -->
+            <!-- 更新报价（仅当天录入）区块 -->
+            <div style="margin-bottom: 0.5rem; padding: 0.75rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
+                <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">更新报价 (仅当天录入) <span style="font-weight:400;color:var(--secondary);font-size:0.78rem;">字段顺序：型号 成本价 批号 交期</span></p>
+                <textarea id="updateCostInput" placeholder="每行：型号 成本价 批号 交期（支持多行，与智能带入分隔规则一致）&#10;示例：&#10;CC0603ZRY5V7BB105  3.0   25+  1-3days&#10;STM32F103 1.5 24+&#10;LM358,0.8,23+,2days"
+                    style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+                <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn" onclick="previewUpdateCost()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: #10b981; color: white;">更新报价</button>
+                </div>
+                <p id="updateCostMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
+                <p style="font-size: 0.75rem; color: var(--secondary); margin-top: 0.3rem; margin-bottom: 0;">说明：只更新当天录入的同型号最新一条记录的历史成本价/批号/交期，历史数据不动；字段不足时按顺序解析，缺的不更新；点击后弹出预览确认再更新。</p>
+            </div>
             <div>
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">客户（选填）</label>
                 <select name="cli_id" id="formCliId"
@@ -1050,6 +1060,177 @@
         if (modal) modal.remove();
         window._previewInsertData = null;
         window._previewMsgEl = null;
+    }
+
+    // ===== 更新报价（仅当天录入）=====
+    // 预览：解析输入 -> 调后端匹配当天记录 -> 弹预览表
+    async function previewUpdateCost() {
+        const input = document.getElementById('updateCostInput').value.trim();
+        const msgEl = document.getElementById('updateCostMsg');
+
+        if (!input) {
+            msgEl.textContent = '请输入数据';
+            msgEl.style.color = 'var(--danger)';
+            return;
+        }
+
+        msgEl.textContent = '正在解析匹配当天记录...';
+        msgEl.style.color = 'var(--primary)';
+
+        try {
+            const response = await fetch('/api/offer/preview_update_cost', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: input })
+            });
+            const data = await response.json();
+
+            if (!data.success) {
+                msgEl.textContent = data.message || '解析失败';
+                msgEl.style.color = 'var(--danger)';
+                return;
+            }
+
+            const preview = data.preview || [];
+            const errors = data.errors || [];
+
+            if (preview.length === 0) {
+                msgEl.textContent = '无有效数据可更新' + (errors.length ? `（跳过 ${errors.length} 行）` : '');
+                msgEl.style.color = 'var(--danger)';
+                if (errors.length) alert('跳过的行：\n' + errors.join('\n'));
+                return;
+            }
+
+            showUpdateCostModal(preview, errors, msgEl);
+        } catch (e) {
+            msgEl.textContent = '请求失败：' + e.message;
+            msgEl.style.color = 'var(--danger)';
+        }
+    }
+
+    // 预览弹窗：显示型号/成本价/批号/交期 + 旧值对比
+    function showUpdateCostModal(preview, errorLines, msgEl) {
+        const modalHtml = `
+            <div id="updateCostModalOverlay" class="modal-overlay" style="display: flex; z-index: 1000;">
+                <div class="card" style="width: 760px; max-height: 80vh; overflow-y: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0; color: #10b981;">更新报价预览确认</h3>
+                        <button class="btn" onclick="closeUpdateCostModal()" style="padding: 0.2rem 0.5rem;">&times;</button>
+                    </div>
+                    ${errorLines.length > 0 ? `
+                        <div style="margin-bottom: 1rem; padding: 0.5rem; background: rgba(239,68,68,0.1); border-radius: 4px; color: #EF4444; font-size: 0.8rem;">
+                            <strong>跳过的行:</strong> ${esc(errorLines.join(' | '))}
+                        </div>
+                    ` : ''}
+                    <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: var(--light); border-radius: 4px; font-size: 0.85rem;">
+                        <strong>共 ${preview.length} 条当天记录待更新</strong> <span style="color: var(--secondary);">（仅更新成本价/批号/交期，历史数据不动；多空格为空表示该字段不更新）</span>
+                    </div>
+                    <table class="data-table" style="margin-bottom: 1rem; font-size: 0.82rem;">
+                        <thead>
+                            <tr>
+                                <th style="padding: 0.4rem;">型号</th>
+                                <th style="padding: 0.4rem;">成本价(旧→新)</th>
+                                <th style="padding: 0.4rem;">批号(旧→新)</th>
+                                <th style="padding: 0.4rem;">交期(旧→新)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${preview.map((item, idx) => `
+                                <tr data-row="${idx}">
+                                    <td style="padding: 0.3rem;">${esc(item.mpn)}</td>
+                                    <td style="padding: 0.3rem;">${item.update_cost_price ? `${esc(fmtVal(item.old_cost_price))} → <strong style="color:#10b981;">${esc(fmtVal(item.new_cost_price))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtVal(item.old_cost_price))}（不变）</span>`}</td>
+                                    <td style="padding: 0.3rem;">${item.update_date_code ? `${esc(fmtStr(item.old_date_code))} → <strong style="color:#10b981;">${esc(fmtStr(item.new_date_code))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtStr(item.old_date_code))}（不变）</span>`}</td>
+                                    <td style="padding: 0.3rem;">${item.update_delivery_date ? `${esc(fmtStr(item.old_delivery_date))} → <strong style="color:#10b981;">${esc(fmtStr(item.new_delivery_date))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtStr(item.old_delivery_date))}（不变）</span>`}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button class="btn" onclick="closeUpdateCostModal()" style="padding: 0.4rem 1rem;">取消</button>
+                        <button class="btn" onclick="executeUpdateCost()" style="padding: 0.4rem 1rem; background: #10b981; color: white;">确认更新</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        window._updateCostPreview = preview;
+        window._updateCostMsgEl = msgEl;
+
+        // 关闭新增报价窗口
+        const addModal = document.getElementById('addModal');
+        if (addModal) addModal.style.display = 'none';
+
+        const existing = document.getElementById('updateCostModalOverlay');
+        if (existing) existing.remove();
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    }
+
+    // HTML 转义，防止 XSS
+    function esc(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    function fmtVal(v) {
+        return (v === null || v === undefined || v === '') ? '-' : v;
+    }
+    function fmtStr(v) {
+        return (v === null || v === undefined || v === '') ? '-' : v;
+    }
+
+    function closeUpdateCostModal() {
+        const modal = document.getElementById('updateCostModalOverlay');
+        if (modal) modal.remove();
+        window._updateCostPreview = null;
+        window._updateCostMsgEl = null;
+    }
+
+    // 执行更新
+    async function executeUpdateCost() {
+        const previewList = window._updateCostPreview;
+        const msgEl = window._updateCostMsgEl;
+        if (!previewList || previewList.length === 0) return;
+
+        closeUpdateCostModal();
+        if (msgEl) {
+            msgEl.textContent = `正在更新 ${previewList.length} 条记录...`;
+            msgEl.style.color = 'var(--primary)';
+        }
+
+        try {
+            const response = await fetch('/api/offer/execute_update_cost', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ preview: previewList })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                if (msgEl) {
+                    msgEl.textContent = data.message || `成功更新 ${data.updated_count} 条`;
+                    msgEl.style.color = '#10b981';
+                }
+                if (data.errors && data.errors.length) {
+                    alert('部分失败：\n' + data.errors.join('\n'));
+                }
+                // 清空输入框并刷新列表
+                document.getElementById('updateCostInput').value = '';
+                window.location.reload();
+            } else {
+                if (msgEl) {
+                    msgEl.textContent = data.message || '更新失败';
+                    msgEl.style.color = 'var(--danger)';
+                }
+            }
+        } catch (e) {
+            if (msgEl) {
+                msgEl.textContent = '请求失败：' + e.message;
+                msgEl.style.color = 'var(--danger)';
+            }
+        }
     }
 
     // 执行批量插入

@@ -597,3 +597,215 @@ def get_offer_combined_info(offer_ids):
             return [row['combined_info'] for row in rows]
     except Exception as e:
         return []
+
+
+def _parse_update_cost_line(line):
+    """解析单行更新报价文本，返回 (mpn, cost_price, date_code, delivery_date, fields_to_update, error)
+
+    字段顺序：型号 成本价 批号 交期
+    分隔规则与 batch_import_offer_text 一致（逗号/分号/Tab/竖线/≥2空格）
+    不足4个时按顺序解析，缺的字段不更新。
+    """
+    import re
+    SEP_RE = re.compile(r'[，;；\t|]+|\s{2,}')
+
+    if ',' in line:
+        # 走 csv.reader 保留逗号语义
+        import csv, io
+        parsed = next(csv.reader(io.StringIO(line)))
+        parts = [p.strip() for p in parsed]
+    else:
+        parts = [p.strip() for p in SEP_RE.split(line) if p.strip()]
+        # 兜底：强分隔符切不出多段时，回退到任意空格切分
+        # （与前端 splitOfferLine 行为一致，兼容用户单空格输入）
+        if len(parts) < 2:
+            parts = [p.strip() for p in line.split() if p.strip()]
+
+    if not parts:
+        return None, None, None, None, [], "空行"
+
+    mpn = parts[0]
+    if not mpn:
+        return None, None, None, None, [], "缺少型号"
+
+    cost_price = None
+    date_code = None
+    delivery_date = None
+    fields = []
+
+    # 第2字段：成本价
+    if len(parts) > 1 and parts[1]:
+        try:
+            cost_price = float(parts[1])
+            fields.append('cost_price_rmb')
+        except ValueError:
+            return mpn, None, None, None, [], f"成本价格式错误: {parts[1]}"
+
+    # 第3字段：批号
+    if len(parts) > 2 and parts[2]:
+        date_code = parts[2]
+        fields.append('date_code')
+
+    # 第4字段：交期
+    if len(parts) > 3 and parts[3]:
+        delivery_date = parts[3]
+        fields.append('delivery_date')
+
+    if not fields:
+        return mpn, None, None, None, [], "无可更新字段（仅型号）"
+
+    return mpn, cost_price, date_code, delivery_date, fields, None
+
+
+def preview_update_today_cost(text):
+    """预览更新当天录入报价的成本价/批号/交期。
+
+    匹配规则：当天录入(created_at 是今天) 且 inquiry_mpn 或 quoted_mpn 匹配，
+    多条时只取最新一条(created_at 倒序)。历史数据不动。
+    返回 (preview_list, error_lines)
+
+    注：当天判断放在 Python 层（复用 is_today 逻辑），避免 SQLite/PostgreSQL
+    日期函数差异及 SQL 翻译器(? -> %s)与 LIKE '%' 冲突。
+    """
+    if not text or not text.strip():
+        return [], []
+
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    preview_list = []
+    error_lines = []
+
+    def _is_today(created_at):
+        """created_at 是否为当天（兼容字符串与 datetime）"""
+        if created_at is None:
+            return False
+        if isinstance(created_at, datetime):
+            return created_at.strftime('%Y-%m-%d') == today_str
+        s = str(created_at)
+        date_str = s.split(' ')[0] if ' ' in s else s.split('T')[0]
+        return date_str == today_str
+
+    with get_db_connection() as conn:
+        for idx, raw_line in enumerate(text.strip().splitlines(), start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            mpn, cost_price, date_code, delivery_date, fields, err = _parse_update_cost_line(line)
+            if err:
+                error_lines.append(f"第 {idx} 行: {err}")
+                continue
+
+            # 按型号查出候选（按 created_at 倒序），Python 层过滤当天，取最新一条
+            rows = conn.execute("""
+                SELECT offer_id, inquiry_mpn, quoted_mpn, cost_price_rmb, date_code, delivery_date, created_at
+                FROM uni_offer
+                WHERE LOWER(TRIM(inquiry_mpn)) = LOWER(TRIM(?))
+                   OR LOWER(TRIM(quoted_mpn)) = LOWER(TRIM(?))
+                ORDER BY created_at DESC
+            """, (mpn, mpn)).fetchall()
+
+            row = None
+            for r in rows:
+                if _is_today(r['created_at']):
+                    row = r
+                    break
+
+            if not row:
+                error_lines.append(f"第 {idx} 行 ({mpn}): 未匹配到当天录入记录")
+                continue
+
+            new_values = {}
+            if 'cost_price_rmb' in fields:
+                new_values['cost_price_rmb'] = cost_price
+            if 'date_code' in fields:
+                new_values['date_code'] = date_code
+            if 'delivery_date' in fields:
+                new_values['delivery_date'] = delivery_date
+
+            preview_list.append({
+                'offer_id': row['offer_id'],
+                'mpn': mpn,
+                'old_cost_price': row['cost_price_rmb'],
+                'new_cost_price': new_values.get('cost_price_rmb'),
+                'update_cost_price': 'cost_price_rmb' in fields,
+                'old_date_code': row['date_code'],
+                'new_date_code': new_values.get('date_code'),
+                'update_date_code': 'date_code' in fields,
+                'old_delivery_date': row['delivery_date'],
+                'new_delivery_date': new_values.get('delivery_date'),
+                'update_delivery_date': 'delivery_date' in fields,
+            })
+
+    return preview_list, error_lines
+
+
+def execute_update_today_cost(preview_list):
+    """根据预览确认列表执行更新。返回 (success_count, errors)
+
+    安全：不信任前端回传的 offer_id。执行前重新查询该记录 created_at 并用 Python
+    判定当天录入，仅当天记录才执行 UPDATE，防止 IDOR 改历史数据。
+    """
+    if not preview_list:
+        return 0, ["无数据"]
+
+    today_str = datetime.now().strftime('%Y-%m-%d')
+
+    def _is_today(created_at):
+        if created_at is None:
+            return False
+        if isinstance(created_at, datetime):
+            return created_at.strftime('%Y-%m-%d') == today_str
+        s = str(created_at)
+        date_str = s.split(' ')[0] if ' ' in s else s.split('T')[0]
+        return date_str == today_str
+
+    success_count = 0
+    errors = []
+    with get_db_connection() as conn:
+        for item in preview_list:
+            offer_id = item.get('offer_id')
+            if not offer_id:
+                errors.append(f"{item.get('mpn','?')}: 缺少 offer_id")
+                continue
+
+            # 安全校验：重新查询该记录，确认仍为当天录入（防 IDOR/篡改 offer_id）
+            chk = conn.execute(
+                "SELECT created_at FROM uni_offer WHERE offer_id = ?",
+                (offer_id,),
+            ).fetchone()
+            if not chk:
+                errors.append(f"{item.get('mpn','?')}: 记录不存在")
+                continue
+            if not _is_today(chk['created_at']):
+                errors.append(f"{item.get('mpn','?')}: 非当天录入记录，已跳过（历史数据不动）")
+                continue
+
+            set_parts = []
+            params = []
+            if item.get('update_cost_price'):
+                set_parts.append("cost_price_rmb = ?")
+                params.append(item.get('new_cost_price'))
+            if item.get('update_date_code'):
+                set_parts.append("date_code = ?")
+                params.append(item.get('new_date_code'))
+            if item.get('update_delivery_date'):
+                set_parts.append("delivery_date = ?")
+                params.append(item.get('new_delivery_date'))
+
+            if not set_parts:
+                errors.append(f"{item.get('mpn','?')}: 无可更新字段")
+                continue
+
+            params.append(offer_id)
+            sql = f"""
+                UPDATE uni_offer
+                SET {', '.join(set_parts)}
+                WHERE offer_id = ?
+            """
+            cur = conn.execute(sql, params)
+            if cur.rowcount > 0:
+                success_count += 1
+            else:
+                errors.append(f"{item.get('mpn','?')}: 更新失败（可能记录已变）")
+        conn.commit()
+    return success_count, errors

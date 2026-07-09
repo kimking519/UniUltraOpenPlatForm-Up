@@ -564,3 +564,50 @@ return f"PK{timestamp}{rand_suffix}"
 #### 模式 A: 静默吞错（出现 2 次）
 - Bug 1（联系人导出 500）和 Bug 3 都因为后端把异常归到不显眼的字段，前端没显示
 - **预防原则**: 后端任何 errors 字段，前端必须显示出来；toast 只用 success 表示真正全部成功
+
+## 2026-07-09: 更新报价-当天判断跨库SQL不兼容
+
+### 问题描述
+新增"更新报价"功能，最初用 `date(created_at) = date('now','localtime')` 判断当天，PostgreSQL 下报 `UndefinedFunction: function date(unknown, unknown) does not exist`。
+
+### 根本原因
+**项目同时支持 SQLite 和 PostgreSQL，但 `base.py` 的 SQL 翻译器只翻译 `datetime()`、`IFNULL`、`GROUP_CONCAT` 等部分函数，不翻译 `date()` 函数**。`date()` 是 SQLite 专有语法，PG 不支持。
+
+后续尝试也踩坑：
+1. `created_at LIKE ? || '%'` → SQL 翻译器把 `?` 换成 `%s` 后，psycopg 把 `'%'` 误识别为占位符 → `only '%s', '%b', '%t' are allowed as placeholders`
+2. `SUBSTR(created_at, 1, 10) = ?` → PG 的 `SUBSTR` 不能直接作用于 `timestamp` 类型 → `function substr(timestamp without time zone, integer, integer) does not exist`
+
+### 最终修复方案
+**当天判断完全放到 Python 层**：SQL 只按型号查候选（`ORDER BY created_at DESC`），用 Python 的 `isinstance(created_at, datetime)` + `strftime` 比较日期（参考 `db_task_board.is_today`）。彻底规避 SQL 日期函数方言与 SQL 翻译器占位符冲突。
+
+### 经验（跨库兼容规则）
+- ❌ 禁用：`date()`、`SUBSTR(timestamp,...)`、`LIKE ? || '%'`（带 `%` 的拼接）
+- ✅ 推荐：日期类过滤尽量在 Python 层做；SQL 里只做等值/范围比较
+- ✅ 跨库安全：`LOWER(TRIM(col))`、`COALESCE`、`ORDER BY`、`LIMIT`、普通 `=` 比较
+- 测试里改 created_at 也不要用 `datetime('now','-1 day')`，改用 Python 算昨天 ISO 字符串直接赋值
+
+### ⚠️ 重复 bug 警示（CLAUDE.md：出现 2 次以上的 bug 要记录）
+| 时间 | 现象 | 根因 |
+|---|---|---|
+| 2026-06 多次 | 各类跨库 SQL 不兼容 | 写了 SQLite 专有语法，PG 不认 |
+| **2026-07-09 (本次)** | date()/SUBSTR(timestamp)/LIKE拼接 三连失败 | 同属"SQL 日期函数方言"问题族 |
+
+**教训**：跨库项目写 SQL 日期逻辑前，先确认该函数在翻译器覆盖范围内（base.py 翻译表），不在范围内的日期/字符串函数一律移到 Python 层处理。
+
+## 2026-07-09: 更新报价-安全审查修复(XSS+IDOR)
+
+### 安全审查发现 2 个问题
+
+#### 1. XSS (templates/offer.html) - MEDIUM
+**问题**：`showUpdateCostModal` 用模板字符串把 `item.mpn`/批号/交期等直接 innerHTML 插入，型号含 `<script>` 等会被执行。
+**修复**：新增 `esc(v)` HTML 转义函数（`& < > " '`），所有动态文本插值经 `esc()` 包裹。
+**影响**：仅本次新增的更新报价预览弹窗，既有代码不动。
+
+#### 2. IDOR (Sills/db_offer.py) - MEDIUM
+**问题**：`execute_update_today_cost` 直接信任前端回传 `preview_list` 里的 `offer_id`，不校验是否当天记录。攻击者可篡改 offer_id 指向任意历史报价，绕过"只更新当天"核心约束，改历史成本价。
+**修复**：执行 UPDATE 前重新 `SELECT created_at FROM uni_offer WHERE offer_id=?`，用 Python 判定当天（`_is_today`），非当天直接拒绝并计入 errors，不执行 UPDATE。
+**验证**：新增 `test_update_cost_idor_history_rejected` 用例，伪造 offer_id 指向昨天记录，断言 updated_count=0 且库值不变。
+
+### 经验
+- 任何"按前端传 ID 执行写操作"的接口，必须服务端重新校验该 ID 满足业务约束（如"当天""本人""特定状态"），不能假设前端传来的就是 preview 当时的合法值。
+- 模板字符串 innerHTML 拼接动态数据，一律先转义；尤其型号/批号这类用户可输入字段。
