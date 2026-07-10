@@ -473,14 +473,14 @@
         <span style="color: var(--secondary); font-size: 0.9rem;">共 {{ total }} 条记录</span>
         <div style="display: flex; gap: 0.5rem;">
             {% if page > 1 %}
-            <a href="/offer?page={{ page - 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}&is_transferred={{ is_transferred }}&status={{ status }}"
+            <a href="/offer?page={{ page - 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}&is_transferred={{ is_transferred }}&status={{ status }}&cli_id={{ cli_id }}"
                 class="btn"
                 style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">上一页</a>
             {% endif %}
             <span style="padding: 0.3rem 0.8rem; background: var(--primary); color: white; border-radius: 4px;">{{ page
                 }} / {{ total_pages if total_pages > 0 else 1 }}</span>
             {% if page < total_pages %} <a
-                href="/offer?page={{ page + 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}&is_transferred={{ is_transferred }}&status={{ status }}"
+                href="/offer?page={{ page + 1 }}&search={{ search }}&start_date={{ start_date }}&end_date={{ end_date }}&page_size={{ page_size }}&is_transferred={{ is_transferred }}&status={{ status }}&cli_id={{ cli_id }}"
                 class="btn"
                 style="padding: 0.3rem 0.8rem; text-decoration: none; color: var(--text); border: 1px solid var(--border);">
                 下一页</a>
