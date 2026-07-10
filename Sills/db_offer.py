@@ -25,7 +25,9 @@ def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="
         base_query += " AND o.offer_date <= ?"
         params.append(end_date)
     if cli_id:
-        base_query += " AND q.cli_id = ?"
+        # 与页面展示一致：优先报价自己的客户(o.cli_id)，回退到询价表的客户(q.cli_id)
+        # 修复：4月后直接录入的报价无 quote_id，仅 q.cli_id 会漏掉它们
+        base_query += " AND COALESCE(o.cli_id, q.cli_id) = ?"
         params.append(cli_id)
     if is_transferred:
         base_query += " AND o.is_transferred = ?"
