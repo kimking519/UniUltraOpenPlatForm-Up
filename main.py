@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 import threading
-from Sills.base import init_db, get_db_connection, get_exchange_rates
+from Sills.base import init_db, get_db_connection, get_exchange_rates, get_default_rate, get_all_default_rates, set_default_rates
 from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
@@ -1834,11 +1834,11 @@ async def offer_batch_price_increase_api(request: Request, current_user: dict = 
         try:
             krw_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
             usd_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
-            krw_rate = float(krw_row[0]) if krw_row else 180.0
-            usd_rate = float(usd_row[0]) if usd_row else 7.0
+            krw_rate = float(krw_row[0]) if krw_row else get_default_rate(2)
+            usd_rate = float(usd_row[0]) if usd_row else get_default_rate(1)
         except:
-            krw_rate = 180.0
-            usd_rate = 7.0
+            krw_rate = get_default_rate(2)
+            usd_rate = get_default_rate(1)
 
         # 批量更新：新报价RMB = 成本价 × (1 + ratio/100)
         for offer_id in ids:
@@ -1918,8 +1918,8 @@ async def offer_batch_send_email_api(request: Request, current_user: dict = Depe
         # Get KRW rate for calculation
         try:
             rate_row = conn.execute("SELECT exchange_rate FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
-            krw_rate = float(rate_row[0]) if rate_row else 180.0
-        except: krw_rate = 180.0
+            krw_rate = float(rate_row[0]) if rate_row else get_default_rate(2)
+        except: krw_rate = get_default_rate(2)
 
         query = f"""
             SELECT o.*, v.vendor_name, c.cli_name
@@ -3778,12 +3778,53 @@ async def settings_page(request: Request, current_user: dict = Depends(login_req
     is_windows = platform.system() == "Windows"
     backup_root = r"E:\WorkPlace\1_AIemployee\备份目录" if is_windows else "/home/kim/workspace/DbBackup"
 
+    # 默认原始汇率（fallback），供设置页面展示
+    # currency_code: 1=USD, 2=KRW, 3=JPY, 4=EUR
+    default_rates = get_all_default_rates()
+
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "active_page": "settings",
         "current_user": current_user,
-        "backup_path": backup_root
+        "backup_path": backup_root,
+        "default_rates": default_rates
     })
+
+@app.post("/api/settings/default-rates")
+async def api_save_default_rates(request: Request, current_user: dict = Depends(login_required)):
+    """保存默认原始汇率（fallback）。仅管理员。
+    前端 POST JSON: {rates: {"1": 7.0, "2": 180.0, "3": 20.0, "4": 7.8}}
+    currency_code: 1=USD, 2=KRW, 3=JPY, 4=EUR
+    """
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可修改默认汇率"}
+
+    try:
+        data = await request.json()
+    except Exception:
+        return {"success": False, "message": "请求体不是合法 JSON"}
+
+    rates = data.get("rates") if isinstance(data, dict) else None
+    if not isinstance(rates, dict) or not rates:
+        return {"success": False, "message": "缺少 rates 参数或为空"}
+
+    # 校验每个币种的值
+    allowed = {"1", "2", "3", "4"}
+    cleaned = {}
+    for k, v in rates.items():
+        if str(k) not in allowed:
+            continue
+        try:
+            cleaned[str(k)] = float(v)
+        except (TypeError, ValueError):
+            return {"success": False, "message": f"币种 {k} 的汇率值非法: {v}"}
+
+    if not cleaned:
+        return {"success": False, "message": "没有有效的币种汇率"}
+
+    success, msg = set_default_rates(cleaned)
+    return {"success": success, "message": msg, "default_rates": get_all_default_rates()}
+
 
 @app.post("/api/backup")
 async def api_backup(current_user: dict = Depends(login_required)):

@@ -185,6 +185,7 @@
 | EXR-002 | 添加汇率 | 添加每日汇率 (currency_code: 1=USD, 2=KRW) | ✅ |
 | EXR-003 | 更新汇率 | 更新已有汇率 | ✅ |
 | EXR-004 | 实时换算 | 报价/订单自动按最新汇率换算 KRW/USD | ✅ |
+| EXR-005 | 默认原始汇率设置 | /settings 页面为韩元/日元/美元/欧元独立配置 fallback 默认汇率（数据库查不到时回退用），保存后清除 LRU 缓存立即生效 | ✅ 新增 (2026-07-14) |
 
 ---
 
@@ -262,6 +263,7 @@
 | SYS-012 | 服务器环境查询 | 查看服务器环境信息 | ✅ |
 | SYS-013 | 内存使用查询 | 查看服务器内存使用情况 | ✅ |
 | SYS-014 | Gemini API配置 | 配置AI服务API密钥 | ✅ |
+| SYS-015 | 默认原始汇率配置 | /settings 页面配置 4 币种 fallback 默认汇率（存 Sills/default_rates.json，不改表） | ✅ 新增 (2026-07-14) |
 
 ---
 
@@ -353,6 +355,7 @@ uni_order_manager (客户订单管理器)
 | 服务器 | `/api/server/` | env, memory |
 | AI服务 | `/api/gemini/` | config, suggest-reply |
 | 备份 | `/api/backup/` | list, restore, delete |
+| 设置 | `/api/settings/default-rates` | POST 保存 4 币种默认原始汇率（仅管理员） |
 
 ---
 
@@ -411,4 +414,4 @@ uni_order_manager (客户订单管理器)
 
 ---
 
-*最后更新：2026-07-03*
+*最后更新：2026-07-14*

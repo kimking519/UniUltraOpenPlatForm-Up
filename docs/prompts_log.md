@@ -248,3 +248,21 @@
 - 回归测试：`tests/test_all.py` TestOffer 新增 5 用例（解析匹配/字段不足/执行落库/历史不动/非法成本价跳过），全过
 - 调试发现并记录跨库 SQL 兼容 bug（见 errors.md）
 - 文档：features.md OFF-018、regression_tests.md OFF-TC012~016、errors.md
+
+---
+
+## 2026-07-14
+
+### Prompt #N
+**时间**: 2026-07-14
+**内容**: 把韩元、美元、欧元、日元默认原始汇率设置项添加到 http://127.0.0.1:8001/settings，每个货币都要支持独立修改和保存。补充：显示顺序参照总控制台实时汇率（韩元→日元→美元→欧元）。
+
+**响应**:
+- 需求理解与计划先沟通确认，用户确认 2 点（EUR 默认 7.8、用 `Sills/default_rates.json` 文件存储不改表）后开始实施
+- 新增 1 个文件、不改表结构：
+  - `Sills/default_rates.json`：存 4 币种 fallback 默认原始汇率（1=USD:7.0, 2=KRW:180.0, 3=JPY:20.0, 4=EUR:7.8）
+  - `Sills/base.py`：`get_default_rate/get_all_default_rates/set_default_rates/_load_default_rates` 读写函数；`get_cached_rate` 与 `get_exchange_rates` 异常分支、main.py 两处 180.0 兜底全部改为调 `get_default_rate`；保存后自动 `clear_cache()`
+  - `main.py`：`settings_page` 传 `default_rates`；新增 `POST /api/settings/default-rates`（仅 rule=3，校验非法值/空参数）
+  - `templates/settings.html`：新增"默认原始汇率设置"卡片（4 输入框按 韩元→日元→美元→欧元 顺序，保存全部按钮，状态提示）
+- 回归测试（TestClient 端到端）：读写生效、缓存清除后立即生效、非法值拦截、空参数拦截、非管理员 303+拒保存、未登录 401，全过
+- 文档：features.md EXR-005/SYS-015、regression_tests.md TC-DR-001~007

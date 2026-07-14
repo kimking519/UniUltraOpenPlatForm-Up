@@ -1,0 +1,7 @@
+{
+  "1": 6.6,
+  "2": 230.0,
+  "3": 20.0,
+  "4": 7.8,
+  "_comment": "默认原始汇率(fallback)：当 uni_daily 表查不到某币种汇率时使用。currency_code: 1=USD,2=KRW,3=JPY,4=EUR。USD/EUR=1外币→RMB；KRW/JPY=1RMB→外币"
+}

@@ -608,6 +608,20 @@ return f"PK{timestamp}{rand_suffix}"
 **修复**：执行 UPDATE 前重新 `SELECT created_at FROM uni_offer WHERE offer_id=?`，用 Python 判定当天（`_is_today`），非当天直接拒绝并计入 errors，不执行 UPDATE。
 **验证**：新增 `test_update_cost_idor_history_rejected` 用例，伪造 offer_id 指向昨天记录，断言 updated_count=0 且库值不变。
 
+## 2026-07-14: 默认原始汇率可配置化（关联 LRU 缓存坑）
+
+### 背景
+用户要求在 /settings 为韩元/美元/欧元/日元独立配置 fallback 默认原始汇率。原默认值（180.0/7.0/20.0 等）硬编码散落于多处。
+
+### 关键风险点：LRU 缓存
+`get_cached_rate` 带 `@lru_cache`，保存默认汇率后若不清缓存，`get_cached_rate` 会持续返回旧值（7/13 总控制台汇率显示问题同源）。
+
+### 处理
+`set_default_rates` 保存 JSON 后主动调 `clear_cache()`，确保新默认值立即生效。回归测试 TC-DR-001/003 验证"保存后立即读到新值"。
+
+### 本次未引入新 bug
+所有用例（读写、缓存清除、非法值、空参数、非管理员、未登录）一次通过。仅记录 LRU 缓存这个已知关联坑，供后续涉及汇率默认值修改时注意。
+
 ### 经验
 - 任何"按前端传 ID 执行写操作"的接口，必须服务端重新校验该 ID 满足业务约束（如"当天""本人""特定状态"），不能假设前端传来的就是 preview 当时的合法值。
 - 模板字符串 innerHTML 拼接动态数据，一律先转义；尤其型号/批号这类用户可输入字段。

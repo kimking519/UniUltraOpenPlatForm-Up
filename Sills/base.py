@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 import platform
 from functools import lru_cache
 from datetime import datetime
@@ -414,6 +415,70 @@ def batch_execute(conn, sql, params_list):
     conn.executemany(sql, params_list)
 
 
+# ===== 默认原始汇率（可配置 fallback） =====
+# 当 uni_daily 表查不到某币种汇率时使用。存储于 Sills/default_rates.json，
+# 管理员可在 /settings 页面独立修改并保存。currency_code: 1=USD,2=KRW,3=JPY,4=EUR
+_DEFAULT_RATES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'default_rates.json')
+# 硬编码兜底初值（JSON 文件丢失/损坏时使用）
+_DEFAULT_RATES_FALLBACK = {1: 7.0, 2: 180.0, 3: 20.0, 4: 7.8}
+_default_rates_lock = threading.Lock()
+
+
+def _load_default_rates():
+    """从 JSON 文件读取默认汇率 dict，失败时回退到硬编码初值。"""
+    try:
+        with open(_DEFAULT_RATES_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        rates = {}
+        for k, v in data.items():
+            if k.startswith('_'):  # 跳过 _comment 等说明字段
+                continue
+            rates[int(k)] = float(v)
+        # 合并兜底，确保 4 个币种齐全
+        merged = dict(_DEFAULT_RATES_FALLBACK)
+        merged.update(rates)
+        return merged
+    except Exception:
+        return dict(_DEFAULT_RATES_FALLBACK)
+
+
+def get_default_rate(currency_code):
+    """获取某币种的默认原始汇率（fallback）。"""
+    return _load_default_rates().get(int(currency_code), _DEFAULT_RATES_FALLBACK.get(int(currency_code), 7.0))
+
+
+def get_all_default_rates():
+    """获取全部默认原始汇率 dict {currency_code: rate}，供设置页面展示。"""
+    return _load_default_rates()
+
+
+def set_default_rates(rates_dict):
+    """保存默认原始汇率到 JSON 文件。
+    rates_dict: {currency_code(int or str): rate(float)}
+    保存成功后返回 (True, msg)；失败返回 (False, err)。
+    """
+    try:
+        current = _load_default_rates()
+        for k, v in rates_dict.items():
+            code = int(k)
+            if code not in _DEFAULT_RATES_FALLBACK:
+                continue  # 仅允许 4 个已知币种
+            current[code] = float(v)
+        with _default_rates_lock:
+            out = {str(k): v for k, v in current.items()}
+            out['_comment'] = "默认原始汇率(fallback)：当 uni_daily 表查不到某币种汇率时使用。currency_code: 1=USD,2=KRW,3=JPY,4=EUR。USD/EUR=1外币→RMB；KRW/JPY=1RMB→外币"
+            with open(_DEFAULT_RATES_FILE, 'w', encoding='utf-8') as f:
+                json.dump(out, f, ensure_ascii=False, indent=2)
+        # 保存后清除汇率缓存，使新默认值立即生效
+        try:
+            clear_cache()
+        except Exception:
+            pass
+        return True, "默认原始汇率保存成功"
+    except Exception as e:
+        return False, str(e)
+
+
 @lru_cache(maxsize=100)
 def get_cached_rate(currency_code):
     """缓存汇率查询结果"""
@@ -422,7 +487,7 @@ def get_cached_rate(currency_code):
             "SELECT exchange_rate FROM uni_daily WHERE currency_code=? ORDER BY record_date DESC LIMIT 1",
             (currency_code,)
         ).fetchone()
-        return float(row[0]) if row else (180.0 if currency_code == 2 else 7.0)
+        return float(row[0]) if row else get_default_rate(currency_code)
 
 
 def get_exchange_rates():
@@ -434,7 +499,8 @@ def get_exchange_rates():
     try:
         return get_cached_rate(2), get_cached_rate(1), get_cached_rate(3)
     except:
-        return 180.0, 7.0, 20.0  # 默认值：KRW=180, USD=7, JPY=20
+        # 回退到可配置默认原始汇率
+        return get_default_rate(2), get_default_rate(1), get_default_rate(3)
 
 
 def clear_cache():

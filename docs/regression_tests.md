@@ -476,4 +476,46 @@ LM358  TI  50  LG
 
 ---
 
-*最后更新：2026-07-03*
+## 默认原始汇率设置 (2026-07-14 新增)
+
+### TC-DR-001: 默认汇率读写与缓存清除生效
+**模块**: `Sills/base.py::get_default_rate/get_all_default_rates/set_default_rates`
+**步骤**:
+1. 调 `get_all_default_rates()` 读初始值（USD=7.0,KRW=180.0,JPY=20.0,EUR=7.8）
+2. 调 `set_default_rates({'1':7.33,'4':7.6})`
+3. 调 `get_default_rate(1)`、`get_default_rate(4)`
+**预期**: 保存返回 True；保存后 USD=7.33、EUR=7.6（`clear_cache` 已执行，新值立即生效）；测试后还原回初值。
+
+### TC-DR-002: settings 页面卡片渲染
+**模块**: `main.py::settings_page` + `templates/settings.html`
+**步骤**: 管理员登录后 GET `/settings`
+**预期**: 页面含"默认原始汇率设置"卡片；4 个输入框顺序为 韩元(data-code=2)→日元(3)→美元(1)→欧元(4)，与总控制台实时汇率卡片顺序一致；各输入框 value 与 default_rates 对应。
+
+### TC-DR-003: 保存接口正常保存
+**模块**: `main.py::api_save_default_rates` (POST `/api/settings/default-rates`)
+**步骤**: 管理员 POST `{"rates":{"1":7.33,"2":180.0,"3":20.0,"4":7.8}}`
+**预期**: 返回 `{"success":true,"message":"默认原始汇率保存成功",...}`；`get_default_rate(1)` 立即返回 7.33。
+
+### TC-DR-004: 非法值拦截
+**模块**: `main.py::api_save_default_rates`
+**步骤**: 管理员 POST `{"rates":{"1":"abc"}}`
+**预期**: 返回 `{"success":false,"message":"币种 1 的汇率值非法: abc"}`，文件不被修改。
+
+### TC-DR-005: 空参数拦截
+**模块**: `main.py::api_save_default_rates`
+**步骤**: 管理员 POST `{}`
+**预期**: 返回 `{"success":false,"message":"缺少 rates 参数或为空"}`。
+
+### TC-DR-006: 非管理员拦截
+**模块**: `main.py::api_save_default_rates` + `settings_page`
+**步骤**: rule=2 用户访问
+**预期**: GET `/settings` 返回 303 重定向；POST `/api/settings/default-rates` 返回 `{"success":false,"message":"仅管理员可修改默认汇率"}`。
+
+### TC-DR-007: 未登录拦截
+**模块**: `main.py::api_save_default_rates`
+**步骤**: 不带 cookie POST `/api/settings/default-rates`
+**预期**: 返回 401 `{"success":false,"message":"登录已过期，请重新登录"}`。
+
+---
+
+*最后更新：2026-07-14*
