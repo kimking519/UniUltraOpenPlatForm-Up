@@ -106,6 +106,9 @@
 | OFF-TC014 | 更新报价-执行落库 | 预览确认后调 execute_update_cost | 库中 cost_price_rmb/date_code/delivery_date 更新，offer_price 不联动 | ✅ |
 | OFF-TC015 | 更新报价-历史数据不动 | 把记录 created_at 改为昨天再 preview | 匹配不到当天记录，进 errors，库值不变 | ✅ |
 | OFF-TC016 | 更新报价-非法成本价跳过 | 成本价填非数字(abc) | 该行报"成本价格式错误"跳过，不更新 | ✅ |
+| OFF-TC017 | 更新报价-韩元列全字段更新 | 输入"型号 成本价 批号 交期 韩元"(5字段)调 preview_update_cost | preview_list 含 update_price_kwr=True，old/new_price_kwr 正确；执行后 price_kwr 落库 | ✅ 新增 (2026-07-14) |
+| OFF-TC018 | 更新报价-韩元列缺省不更新 | 输入仅4字段(无韩元)或占位"型号 成本价,,,韩元" | 韩元留空时 update_price_kwr=False，price_kwr 保持原值不变 | ✅ 新增 (2026-07-14) |
+| OFF-TC019 | 更新报价-韩元非法值跳过 | 韩元位填非数字(abc) | 该行报"韩元价格式错误"跳过，不更新 | ✅ 新增 (2026-07-14) |
 
 ---
 

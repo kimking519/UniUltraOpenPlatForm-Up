@@ -602,11 +602,11 @@ def get_offer_combined_info(offer_ids):
 
 
 def _parse_update_cost_line(line):
-    """解析单行更新报价文本，返回 (mpn, cost_price, date_code, delivery_date, fields_to_update, error)
+    """解析单行更新报价文本，返回 (mpn, cost_price, date_code, delivery_date, price_kwr, fields_to_update, error)
 
-    字段顺序：型号 成本价 批号 交期
+    字段顺序：型号 成本价(RMB) 批号 交期 韩元(price_kwr)
     分隔规则与 batch_import_offer_text 一致（逗号/分号/Tab/竖线/≥2空格）
-    不足4个时按顺序解析，缺的字段不更新。
+    不足5个时按顺序解析，缺的字段不更新（韩元=报价韩元 price_kwr）。
     """
     import re
     SEP_RE = re.compile(r'[，;；\t|]+|\s{2,}')
@@ -624,24 +624,25 @@ def _parse_update_cost_line(line):
             parts = [p.strip() for p in line.split() if p.strip()]
 
     if not parts:
-        return None, None, None, None, [], "空行"
+        return None, None, None, None, None, [], "空行"
 
     mpn = parts[0]
     if not mpn:
-        return None, None, None, None, [], "缺少型号"
+        return None, None, None, None, None, [], "缺少型号"
 
     cost_price = None
     date_code = None
     delivery_date = None
+    price_kwr = None
     fields = []
 
-    # 第2字段：成本价
+    # 第2字段：成本价(RMB)
     if len(parts) > 1 and parts[1]:
         try:
             cost_price = float(parts[1])
             fields.append('cost_price_rmb')
         except ValueError:
-            return mpn, None, None, None, [], f"成本价格式错误: {parts[1]}"
+            return mpn, None, None, None, None, [], f"成本价格式错误: {parts[1]}"
 
     # 第3字段：批号
     if len(parts) > 2 and parts[2]:
@@ -653,10 +654,18 @@ def _parse_update_cost_line(line):
         delivery_date = parts[3]
         fields.append('delivery_date')
 
-    if not fields:
-        return mpn, None, None, None, [], "无可更新字段（仅型号）"
+    # 第5字段：韩元(price_kwr)
+    if len(parts) > 4 and parts[4]:
+        try:
+            price_kwr = float(parts[4])
+            fields.append('price_kwr')
+        except ValueError:
+            return mpn, None, None, None, None, [], f"韩元价格式错误: {parts[4]}"
 
-    return mpn, cost_price, date_code, delivery_date, fields, None
+    if not fields:
+        return mpn, None, None, None, None, [], "无可更新字段（仅型号）"
+
+    return mpn, cost_price, date_code, delivery_date, price_kwr, fields, None
 
 
 def preview_update_today_cost(text):
@@ -692,14 +701,14 @@ def preview_update_today_cost(text):
             if not line:
                 continue
 
-            mpn, cost_price, date_code, delivery_date, fields, err = _parse_update_cost_line(line)
+            mpn, cost_price, date_code, delivery_date, price_kwr, fields, err = _parse_update_cost_line(line)
             if err:
                 error_lines.append(f"第 {idx} 行: {err}")
                 continue
 
             # 按型号查出候选（按 created_at 倒序），Python 层过滤当天，取最新一条
             rows = conn.execute("""
-                SELECT offer_id, inquiry_mpn, quoted_mpn, cost_price_rmb, date_code, delivery_date, created_at
+                SELECT offer_id, inquiry_mpn, quoted_mpn, cost_price_rmb, date_code, delivery_date, price_kwr, created_at
                 FROM uni_offer
                 WHERE LOWER(TRIM(inquiry_mpn)) = LOWER(TRIM(?))
                    OR LOWER(TRIM(quoted_mpn)) = LOWER(TRIM(?))
@@ -723,6 +732,8 @@ def preview_update_today_cost(text):
                 new_values['date_code'] = date_code
             if 'delivery_date' in fields:
                 new_values['delivery_date'] = delivery_date
+            if 'price_kwr' in fields:
+                new_values['price_kwr'] = price_kwr
 
             preview_list.append({
                 'offer_id': row['offer_id'],
@@ -736,6 +747,9 @@ def preview_update_today_cost(text):
                 'old_delivery_date': row['delivery_date'],
                 'new_delivery_date': new_values.get('delivery_date'),
                 'update_delivery_date': 'delivery_date' in fields,
+                'old_price_kwr': row['price_kwr'],
+                'new_price_kwr': new_values.get('price_kwr'),
+                'update_price_kwr': 'price_kwr' in fields,
             })
 
     return preview_list, error_lines
@@ -793,6 +807,9 @@ def execute_update_today_cost(preview_list):
             if item.get('update_delivery_date'):
                 set_parts.append("delivery_date = ?")
                 params.append(item.get('new_delivery_date'))
+            if item.get('update_price_kwr'):
+                set_parts.append("price_kwr = ?")
+                params.append(item.get('new_price_kwr'))
 
             if not set_parts:
                 errors.append(f"{item.get('mpn','?')}: 无可更新字段")

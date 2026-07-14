@@ -512,14 +512,14 @@
 
             <!-- 更新报价（仅当天录入）区块 -->
             <div style="margin-bottom: 0.5rem; padding: 0.75rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
-                <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">更新报价 (仅当天录入) <span style="font-weight:400;color:var(--secondary);font-size:0.78rem;">字段顺序：型号 成本价 批号 交期</span></p>
-                <textarea id="updateCostInput" placeholder="每行：型号 成本价 批号 交期（支持多行，与智能带入分隔规则一致）&#10;示例：&#10;CC0603ZRY5V7BB105  3.0   25+  1-3days&#10;STM32F103 1.5 24+&#10;LM358,0.8,23+,2days"
+                <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">更新报价 (仅当天录入) <span style="font-weight:400;color:var(--secondary);font-size:0.78rem;">字段顺序：型号 成本价 批号 交期 韩元</span></p>
+                <textarea id="updateCostInput" placeholder="每行：型号 成本价 批号 交期 韩元（支持多行，与智能带入分隔规则一致）&#10;示例：&#10;CC0603ZRY5V7BB105  3.0   25+  1-3days  550&#10;STM32F103 1.5 24+&#10;LM358,0.8,23+,2days"
                     style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
                 <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
                     <button type="button" class="btn" onclick="previewUpdateCost()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: #10b981; color: white;">更新报价</button>
                 </div>
                 <p id="updateCostMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
-                <p style="font-size: 0.75rem; color: var(--secondary); margin-top: 0.3rem; margin-bottom: 0;">说明：只更新当天录入的同型号最新一条记录的历史成本价/批号/交期，历史数据不动；字段不足时按顺序解析，缺的不更新；点击后弹出预览确认再更新。</p>
+                <p style="font-size: 0.75rem; color: var(--secondary); margin-top: 0.3rem; margin-bottom: 0;">说明：只更新当天录入的同型号最新一条记录的成本价/批号/交期/韩元(报价)，历史数据不动；字段不足时按顺序解析，缺的不更新（韩元留空=不更新）；点击后弹出预览确认再更新。</p>
             </div>
             <div>
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">客户（选填）</label>
@@ -1123,7 +1123,7 @@
                         </div>
                     ` : ''}
                     <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: var(--light); border-radius: 4px; font-size: 0.85rem;">
-                        <strong>共 ${preview.length} 条当天记录待更新</strong> <span style="color: var(--secondary);">（仅更新成本价/批号/交期，历史数据不动；多空格为空表示该字段不更新）</span>
+                        <strong>共 ${preview.length} 条当天记录待更新</strong> <span style="color: var(--secondary);">（仅更新成本价/批号/交期/韩元，历史数据不动；多空格为空表示该字段不更新）</span>
                     </div>
                     <table class="data-table" style="margin-bottom: 1rem; font-size: 0.82rem;">
                         <thead>
@@ -1132,6 +1132,7 @@
                                 <th style="padding: 0.4rem;">成本价(旧→新)</th>
                                 <th style="padding: 0.4rem;">批号(旧→新)</th>
                                 <th style="padding: 0.4rem;">交期(旧→新)</th>
+                                <th style="padding: 0.4rem;">韩元(旧→新)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1141,6 +1142,7 @@
                                     <td style="padding: 0.3rem;">${item.update_cost_price ? `${esc(fmtVal(item.old_cost_price))} → <strong style="color:#10b981;">${esc(fmtVal(item.new_cost_price))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtVal(item.old_cost_price))}（不变）</span>`}</td>
                                     <td style="padding: 0.3rem;">${item.update_date_code ? `${esc(fmtStr(item.old_date_code))} → <strong style="color:#10b981;">${esc(fmtStr(item.new_date_code))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtStr(item.old_date_code))}（不变）</span>`}</td>
                                     <td style="padding: 0.3rem;">${item.update_delivery_date ? `${esc(fmtStr(item.old_delivery_date))} → <strong style="color:#10b981;">${esc(fmtStr(item.new_delivery_date))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtStr(item.old_delivery_date))}（不变）</span>`}</td>
+                                    <td style="padding: 0.3rem;">${item.update_price_kwr ? `${esc(fmtVal(item.old_price_kwr))} → <strong style="color:#10b981;">${esc(fmtVal(item.new_price_kwr))}</strong>` : `<span style="color:var(--secondary);">${esc(fmtVal(item.old_price_kwr))}（不变）</span>`}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

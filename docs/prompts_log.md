@@ -266,3 +266,20 @@
   - `templates/settings.html`：新增"默认原始汇率设置"卡片（4 输入框按 韩元→日元→美元→欧元 顺序，保存全部按钮，状态提示）
 - 回归测试（TestClient 端到端）：读写生效、缓存清除后立即生效、非法值拦截、空参数拦截、非管理员 303+拒保存、未登录 401，全过
 - 文档：features.md EXR-005/SYS-015、regression_tests.md TC-DR-001~007
+
+---
+
+### Prompt #N+1
+**时间**: 2026-07-14
+**内容**: 报价订单 → 新增报价 → "更新报价"输入栏，最后添加一列韩元，有则更新无则不更新。
+
+**响应**:
+- 需求理解与计划先沟通确认，用户确认 2 点（韩元列更新 `price_kwr` 报价韩元、不改表；字段顺序 型号→成本价RMB→批号→交期→韩元）后实施
+- 改动文件（不改表结构）：
+  - `Sills/db_offer.py`：
+    - `_parse_update_cost_line`：返回值增加 `price_kwr`，加第5字段解析（有则入 fields、无则不更新、非数字报"韩元价格式错误"）
+    - `preview_update_today_cost`：SQL 查询加 `price_kwr`；preview_list 增加 `old/new_price_kwr` 与 `update_price_kwr` 标记
+    - `execute_update_today_cost`：增加 `price_kwr = ?` SET 分支
+  - `templates/offer.html`：输入框 placeholder/说明文字加"韩元"列；预览弹窗表格加"韩元(旧→新)"列
+- 回归测试：解析单元测试（全5字段/缺省/占位/非法值）+ 端到端 E2E（预览含韩元、占位仅更新成本+韩元、执行落库、缺省字段不变、测试数据清理残留=0）；既有 10 个报价测试全过无回归
+- 文档：features.md OFF-018 描述更新、regression_tests.md OFF-TC017~019
