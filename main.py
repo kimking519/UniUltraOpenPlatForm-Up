@@ -1039,7 +1039,7 @@ async def quote_page(request: Request, current_user: dict = Depends(login_requir
     results, total = get_quote_list(page=page, page_size=page_size, search_kw=search, start_date=start_date, end_date=end_date, cli_id=cli_id, status=status, is_transferred=is_transferred)
     total_pages = (total + page_size - 1) // page_size
     cli_list, _ = get_cli_list(page=1, page_size=1000)
-    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', '').upper())
     return templates.TemplateResponse("quote.html", {
         "request": request,
         "active_page": "quote",
@@ -1360,7 +1360,7 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
     vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
     vendor_list = vendor_data['items']
     cli_data = get_paginated_list('uni_cli', page=1, page_size=1000)
-    cli_list = sorted(cli_data['items'], key=lambda x: x.get('cli_name', ''))
+    cli_list = sorted(cli_data['items'], key=lambda x: x.get('cli_name', '').upper())
     return templates.TemplateResponse("offer.html", {
         "request": request,
         "active_page": "offer",
@@ -2201,7 +2201,7 @@ async def order_page(request: Request, current_user: dict = Depends(login_requir
     from Sills.db_cli import get_cli_list
     from Sills.base import get_paginated_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
-    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', '').upper())
     vendor_data = get_paginated_list('uni_vendor', page=1, page_size=1000)
     vendor_list = vendor_data['items']
     return templates.TemplateResponse("order.html", {
@@ -2361,7 +2361,7 @@ async def order_manager_page(request: Request, current_user: dict = Depends(logi
     total_pages = (total + page_size - 1) // page_size
     from Sills.db_cli import get_cli_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
-    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', '').upper())
     return templates.TemplateResponse("order_manager.html", {
         "request": request, "active_page": "order_manager", "current_user": current_user,
         "items": results, "total": total, "page": page, "page_size": page_size,
@@ -2551,7 +2551,7 @@ async def order_manager_detail_page(request: Request, manager_id: str, current_u
     from Sills.db_cli import get_cli_list
     from Sills.db_vendor import get_vendor_list
     cli_list, _ = get_cli_list(page=1, page_size=1000)
-    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', ''))
+    cli_list = sorted(cli_list, key=lambda x: x.get('cli_name', '').upper())
     vendors, _ = get_vendor_list(page=1, page_size=1000)
     return templates.TemplateResponse("order_manager_detail.html", {
         "request": request, "active_page": "order_manager", "current_user": current_user,

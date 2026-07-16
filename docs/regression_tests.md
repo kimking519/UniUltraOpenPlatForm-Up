@@ -110,6 +110,7 @@
 | OFF-TC018 | 更新报价-韩元列缺省不更新 | 输入仅4字段(无韩元)或占位"型号 成本价,,,韩元" | 韩元留空时 update_price_kwr=False，price_kwr 保持原值不变 | ✅ 新增 (2026-07-14) |
 | OFF-TC019 | 更新报价-韩元非法值跳过 | 韩元位填非数字(abc) | 该行报"韩元价格式错误"跳过，不更新 | ✅ 新增 (2026-07-14) |
 | OFF-TC020 | 复制组合-追加明细行 | 选中多行点"复制组合"，粘贴剪贴板 | 前N行为原 combined_info；空一行后追加N行明细，每行 5 字段(报价型号/成本价/批号/交期/报价KRW)以 Tab 分隔；无分隔线；alert 提示条数 | ✅ 新增 (2026-07-15) |
+| OFF-TC021 | 文档生成-行序按列表顺序 | 取3条offer，打乱顺序传入 offer_ids 调 get_offers_for_document / get_offers_for_ci_with_currency (PG环境) | 返回行序 = 列表顺序(offer_date DESC, created_at DESC, offer_id DESC)，不受传入顺序/PG默认乱序影响 | ✅ 新增 (2026-07-16) |
 
 ---
 
@@ -392,6 +393,30 @@ POST /api/task/create {"task_name": "...", "schedule_start": "09:00", ...}
 - 重新执行模式下不按"当前任务已发送"跳过（即旧日志里的 `e1@x.com` 不会被第 470 行误跳过，而是统一走 7 天规则）
 - 单元测试 `tests/test_email_task_reexecute.py` 中 `test_reexecute_skips_recently_sent` / `test_reexecute_skip_disabled_sends_all` / `test_reexecute_ignores_current_task_old_sent` / `test_normal_mode_keeps_current_task_dedup` 4 用例全过
 
+### TC-ETASK-011: SMTP连接增强 - timeout/重试/跳过日限/连续timeout切换
+**模块**: `Sills/email_sender.py::EmailSenderWorker`
+**步骤**:
+1. 准备5个账号，其中2个已达日限(sent_today=1800/1800)
+2. 创建任务并启动
+3. 观察初始化日志
+**预期**:
+- 已达日限的账号被跳过，不尝试连接
+- 可用账号连接时，每个账号最多重试3次(5s/15s/45s指数退避)
+- SMTP timeout为60秒(原20秒)
+- 如果所有可用账号3次重试均失败，任务error并记录所有错误
+
+### TC-ETASK-012: 发送中连续timeout自动切换账号
+**模块**: `Sills/email_sender.py::EmailSenderWorker.run()` 连接错误处理
+**步骤**:
+1. 启动任务，模拟当前账号连续3次发送时出现timeout错误
+2. 观察Worker行为
+**预期**:
+- 连续3次timeout后，自动切换到下一个可用账号
+- 当前邮件记为失败，继续发送下一个联系人
+- 切换成功后consecutive_timeout_count重置为0
+- 不会因timeout直接终止整个任务
+- 发送成功时consecutive_timeout_count重置为0
+
 ---
 
 ## 报价模块 (OFF) 新增
@@ -419,6 +444,17 @@ LM358  TI  50  LG
 ### TC-OFF-016: 多分隔符混合
 **模块**: `Sills/db_offer.py::batch_import_offer_text`
 **步骤**: 输入 `STM32\tST|100；Samsung，备注`
+
+### TC-OFF-017: 客户选项大写排序
+**模块**: `main.py::offer_page/quote_page/order_page/order_manager_page`
+**步骤**:
+1. 数据库中准备客户: `Samsung`, `apple`, `LG`, `samsung`（大小写混合）
+2. 打开报价/询价/订单/客户订单管理页面
+3. 查看客户下拉选项顺序
+**预期**:
+- 排序按cli_name转大写后比较: `apple` → `LG` → `Samsung` → `samsung`
+- 显示保持原始大小写不变(apple/LG/Samsung/samsung)
+- 所有4个页面排序行为一致
 **预期**: 5 列正确切分（Tab / | / ； / ，）。
 
 ---
