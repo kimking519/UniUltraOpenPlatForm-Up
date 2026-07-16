@@ -395,24 +395,24 @@
 
                     <td class="copyable-cell" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_mpn')"><span>{{ row.inquiry_mpn
                             }}</span><button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.inquiry_mpn }}', this)">复制</button></td>
-                    <td class="copyable-cell" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_mpn')"><span>{{ row.quoted_mpn
+                    <td class="copyable-cell" data-field="quoted_mpn" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_mpn')"><span>{{ row.quoted_mpn
                             }}</span><button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.quoted_mpn }}', this)">复制</button></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_brand')"><span>{{ row.quoted_brand
                             }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'quoted_qty', 'number')"><span>{{
                             row.quoted_qty }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'date_code')"><span>{{ row.date_code
+                    <td data-field="date_code" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'date_code')"><span>{{ row.date_code
                             }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'delivery_date')"><span>{{
+                    <td data-field="delivery_date" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'delivery_date')"><span>{{
                             row.delivery_date }}</span></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
+                    <td data-field="cost_price_rmb" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
                             "%.4f"|format(row.cost_price_rmb or 0) }}</span></td>
                     <td style="color: var(--secondary);" class="copyable-cell" data-field="combined_info">{{ row.combined_info }}<button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('{{ row.combined_info }}', this)">复制</button></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'target_price_rmb', 'number')"><span>{{
                             "%.4f"|format(row.target_price_rmb or 0) }}</span></td>
                     <td ondblclick="makeEditableRmb(this, '{{ row.offer_id }}', 'offer_price_rmb', {{ row.offer_price_rmb or 0 }})"><span>{{
                             "%.4f"|format(row.offer_price_rmb or 0) }}</span></td>
-                    <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_kwr', 'KWR', {{ row.price_kwr or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
+                    <td data-field="price_kwr" ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_kwr', 'KWR', {{ row.price_kwr or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ "%.1f"|format(row.price_kwr or 0) }}</span></td>
                     <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_usd', 'USD', {{ row.price_usd or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ "%.3f"|format(row.price_usd or 0) }}</span></td>
@@ -2272,6 +2272,7 @@
         const ids = Array.from(checkboxes).map(cb => cb.value);
         const rows = document.querySelectorAll('tbody tr');
         const combinedInfos = [];
+        const detailLines = [];
 
         rows.forEach(row => {
             const checkbox = row.querySelector('.row-checkbox');
@@ -2282,13 +2283,25 @@
                     const text = combinedCell.textContent.replace('复制', '').trim();
                     combinedInfos.push(text);
                 }
+                // 追加明细行：报价型号 成本价 批号 交期 报价(KRW)，Tab 分隔
+                const qmpn = (row.querySelector('[data-field="quoted_mpn"]')?.textContent || '').replace('复制', '').trim();
+                const cost = (row.querySelector('[data-field="cost_price_rmb"]')?.textContent || '').trim();
+                const dc = (row.querySelector('[data-field="date_code"]')?.textContent || '').trim();
+                const dd = (row.querySelector('[data-field="delivery_date"]')?.textContent || '').trim();
+                const kwr = (row.querySelector('[data-field="price_kwr"]')?.textContent || '').trim();
+                detailLines.push([qmpn, cost, dc, dd, kwr].join('\t'));
             }
         });
 
         if (combinedInfos.length > 0) {
-            const textToCopy = combinedInfos.join('\n');
+            // 现有组合信息 + 空一行 + 追加明细行（报价型号 成本价 批号 交期 报价KRW）
+            const parts = [combinedInfos.join('\n')];
+            if (detailLines.length > 0) {
+                parts.push('', detailLines.join('\n'));
+            }
+            const textToCopy = parts.join('\n');
             navigator.clipboard.writeText(textToCopy).then(() => {
-                alert(`已复制 ${combinedInfos.length} 条组合信息到剪贴板`);
+                alert(`已复制 ${combinedInfos.length} 条组合信息${detailLines.length ? ` + ${detailLines.length} 条明细(型号/成本价/批号/交期/韩元)` : ''}到剪贴板`);
             }).catch(err => {
                 // Fallback for older browsers
                 const textarea = document.createElement('textarea');
@@ -2297,7 +2310,7 @@
                 textarea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textarea);
-                alert(`已复制 ${combinedInfos.length} 条组合信息到剪贴板`);
+                alert(`已复制 ${combinedInfos.length} 条组合信息${detailLines.length ? ` + ${detailLines.length} 条明细(型号/成本价/批号/交期/韩元)` : ''}到剪贴板`);
             });
         }
     }

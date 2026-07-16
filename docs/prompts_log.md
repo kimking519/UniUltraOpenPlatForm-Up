@@ -283,3 +283,18 @@
   - `templates/offer.html`：输入框 placeholder/说明文字加"韩元"列；预览弹窗表格加"韩元(旧→新)"列
 - 回归测试：解析单元测试（全5字段/缺省/占位/非法值）+ 端到端 E2E（预览含韩元、占位仅更新成本+韩元、执行落库、缺省字段不变、测试数据清理残留=0）；既有 10 个报价测试全过无回归
 - 文档：features.md OFF-018 描述更新、regression_tests.md OFF-TC017~019
+
+---
+
+### Prompt #N+2
+**时间**: 2026-07-15
+**内容**: 报价订单-复制组合，在现有复制结果的最下方添加所选行的如下行（注意是添加）：报价型号 成本价 批号 交期 报价(KRW)。
+
+**响应**:
+- 需求理解与计划先沟通确认，用户确认 3 点：字段用 Tab 分隔；不加分隔线/标题行；报价型号取 quoted_mpn（空就空，不回退 inquiry_mpn）
+- 改动文件（不改后端、不改表）：
+  - `templates/offer.html`：
+    - 给 5 列加 `data-field` 标记（quoted_mpn / cost_price_rmb / date_code / delivery_date / price_kwr），便于按属性定位取值（避免列序受 rule 条件渲染影响错位）
+    - `batchCopyCombined`：遍历所选行收集 combined_info（原逻辑保留）+ 明细行（5 字段 Tab join）；输出 = combined_info 行 + 空一行 + 明细行；alert 提示条数（组合 + 明细）
+- 回归测试：Node 模拟拼接格式验证（原2行 + 空行 + 2明细 Tab 5字段）；TestClient 验证 5 列 data-field 渲染 + 追加逻辑存在；既有 10 个报价测试全过无回归
+- 文档：features.md OFF-019、regression_tests.md OFF-TC020
