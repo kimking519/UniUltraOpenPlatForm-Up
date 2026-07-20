@@ -654,7 +654,7 @@ def get_offers_for_ci(offer_ids):
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
             WHERE o.offer_id IN ({placeholders})
-            ORDER BY o.offer_id
+            ORDER BY o.offer_date DESC, o.created_at DESC, o.offer_id DESC
         """, offer_ids).fetchall()
         return [dict(r) for r in rows]
 
@@ -677,7 +677,7 @@ def get_offers_for_ci_with_currency(offer_ids):
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
             WHERE o.offer_id IN ({placeholders})
-            ORDER BY o.offer_id
+            ORDER BY o.offer_date DESC, o.created_at DESC, o.offer_id DESC
         """, offer_ids).fetchall()
         return [dict(r) for r in rows]
 
