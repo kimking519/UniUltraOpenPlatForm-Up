@@ -68,7 +68,7 @@ def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
     """
     生成唯一的发票编号和文件路径
 
-    发票编号格式: UNI%Y%m%d，如果已存在则添加01, 02, 03等后缀
+    发票编号格式: UNI%Y%m%d + 两位序号，从01开始，如 UNI2026072201
     文件名格式: COMMERCIAL INVOICE_{cli_name}_{invoice_no}.xlsx
 
     Args:
@@ -86,16 +86,14 @@ def _generate_unique_invoice_no(output_dir, cli_name, doc_type="CI"):
     # CI固定使用 COMMERCIAL INVOICE 前缀
     doc_prefix = "COMMERCIAL INVOICE"
 
-    # 尝试不带后缀
-    invoice_no = base_invoice_no
-    output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
-    output_path = os.path.join(output_dir, output_filename)
-
+    # 序号从01开始，同名文件已存在则递增为02, 03等
     suffix = 1
-    while os.path.exists(output_path):
+    while True:
         invoice_no = f"{base_invoice_no}{suffix:02d}"
         output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
         output_path = os.path.join(output_dir, output_filename)
+        if not os.path.exists(output_path):
+            break
         suffix += 1
 
     return invoice_no, output_filename, output_path
