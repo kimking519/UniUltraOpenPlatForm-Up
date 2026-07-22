@@ -2355,7 +2355,7 @@
 
     // 应用筛选条件，跳转到指定页
     function applyFilters(page = 1) {
-        const search = encodeURIComponent(document.getElementById('search').value);
+        const search = encodeURIComponent(document.getElementById('search').value.trim());
         const start_date = document.getElementById('start_date').value;
         const end_date = document.getElementById('end_date').value;
         const cli_id = document.getElementById('cli_id').value;

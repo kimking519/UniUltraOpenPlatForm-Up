@@ -1329,6 +1329,8 @@ async def quote_export_offer_csv(request: Request, current_user: dict = Depends(
 # ---------------- Offer Module ----------------
 @app.get("/offer", response_class=HTMLResponse)
 async def offer_page(request: Request, current_user: dict = Depends(login_required), page: int = 1, page_size: int = 20, search: str = "", start_date: str = "", end_date: str = "", cli_id: str = "", is_transferred: str = ""):
+    # 搜索关键字自动去除前后空格
+    search = (search or "").strip()
     # 从 session 获取筛选条件
     session = request.session
     # 检查 URL 中是否有筛选参数（包括空值）
