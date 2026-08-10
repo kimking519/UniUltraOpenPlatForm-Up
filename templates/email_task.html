@@ -44,6 +44,17 @@
         color: var(--text-main);
         font-weight: 600;
     }
+    /* 修复：滚动时数据行覆盖表头的问题。
+       本页 border-collapse: collapse 与全局 sticky thead 组合会触发渲染 bug，
+       改为直接在 th 上吸顶并提高层级。
+       注意：--bg-secondary 未在 style.css 中定义（背景会是透明的），
+       吸顶表头必须使用不透明背景，否则数据行会透出来 */
+    .data-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--bg-secondary, var(--card-bg-solid));
+    }
     .data-table tbody tr:hover {
         background: var(--bg-hover);
     }
@@ -738,7 +749,8 @@
     // 加载联系人组（用于任务创建的选择器）
     async function loadGroupsForTask() {
         try {
-            const res = await fetch('/api/group/list');
+            // 选择器需要全量组列表，显式放大 page_size（默认仅返回前20条）
+            const res = await fetch('/api/group/list?page=1&page_size=1000');
             const result = await res.json();
             const data = result.groups || [];
             renderGroupSelector(data);
@@ -943,18 +955,37 @@
 
     // 创建任务
     async function createTask() {
-        const name = document.getElementById('taskName').value;
+        const name = document.getElementById('taskName').value.trim();
         const account_ids = selectedAccounts.map(a => a.account_id);  // 从selectedAccounts获取（多账号）
         const group_ids = selectedGroups.map(g => g.group_id);  // 从selectedGroups获取
-        const subject = document.getElementById('taskSubject').value;
+        const subject = document.getElementById('taskSubject').value.trim();
         const body = document.getElementById('taskBody').innerHTML;
+        // 正文为富文本，需去掉标签和&nbsp;后判断是否真的有内容（空编辑器可能是 '<br>'）
+        const bodyText = body.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
         const sendInterval = parseInt(document.getElementById('taskSendInterval').value) || 2;
         const skipEnabled = document.getElementById('taskSkipEnabled').checked ? 1 : 0;
         const skipDays = parseInt(document.getElementById('taskSkipDays').value) || 7;
         const dailyLimitPerAccount = parseInt(document.getElementById('taskDailyLimit').value) || 1800;
 
-        if (!name || account_ids.length === 0 || group_ids.length === 0 || !subject || !body) {
-            alert('请填写完整任务信息并选择至少一个发件账号和联系人组');
+        // 逐项校验并给出具体提示，避免笼统提示误导用户以为账号/组选择丢失
+        if (!name) {
+            alert('请填写任务名称');
+            return;
+        }
+        if (account_ids.length === 0) {
+            alert('请选择至少一个发件账号');
+            return;
+        }
+        if (group_ids.length === 0) {
+            alert('请选择至少一个联系人组');
+            return;
+        }
+        if (!subject) {
+            alert('请填写邮件主题');
+            return;
+        }
+        if (!bodyText) {
+            alert('请填写邮件内容（可在上方选择模板后点击"使用模板"快速填充）');
             return;
         }
 
