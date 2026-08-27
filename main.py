@@ -2043,6 +2043,7 @@ async def offer_export_csv(request: Request, current_user: dict = Depends(login_
             LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
             LEFT JOIN uni_cli c ON q.cli_id = c.cli_id
             WHERE o.offer_id IN ({placeholders})
+            ORDER BY o.offer_date DESC, o.created_at DESC, o.offer_id DESC
         """
         rows = conn.execute(query, ids).fetchall()
 
