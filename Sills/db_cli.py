@@ -264,7 +264,7 @@ def export_cli_to_excel(output_path=None):
             clients = conn.execute("""
                 SELECT cli_id, cli_name, cli_full_name, cli_name_en, contact_name,
                        address, region, credit_level, margin_rate, emp_id, website,
-                       payment_terms, email, phone, remark, domain,
+                       payment_terms, email, send_mail, phone, remark, domain,
                        is_contacted, has_inquiry, has_order, created_at
                 FROM uni_cli
                 ORDER BY created_at DESC
@@ -291,7 +291,7 @@ def export_cli_to_excel(output_path=None):
         headers = [
             '客户编号', '客户名称', '公司全名', '公司英文名', '联系人',
             '地址', '所属区域', '信用等级', '利润率(%)', '负责员工',
-            '网站', '账期', '邮箱', '电话', '备注', '域名',
+            '网站', '账期', '邮箱', '发送邮箱', '电话', '备注', '域名',
             '有联系人', '有询价', '有订单', '创建时间'
         ]
 
@@ -319,13 +319,14 @@ def export_cli_to_excel(output_path=None):
                 client[10] or '',  # website
                 client[11] or '',  # payment_terms
                 client[12] or '',  # email
-                client[13] or '',  # phone
-                client[14] or '',  # remark
-                client[15] or '',  # domain
-                '是' if client[16] else '否',  # is_contacted
-                '是' if client[17] else '否',  # has_inquiry
-                '是' if client[18] else '否',  # has_order
-                client[19] or ''   # created_at
+                client[13] or '',  # send_mail
+                client[14] or '',  # phone
+                client[15] or '',  # remark
+                client[16] or '',  # domain
+                '是' if client[17] else '否',  # is_contacted
+                '是' if client[18] else '否',  # has_inquiry
+                '是' if client[19] else '否',  # has_order
+                client[20] or ''   # created_at
             ]
 
             for col, value in enumerate(data, 1):
@@ -334,7 +335,7 @@ def export_cli_to_excel(output_path=None):
                 cell.alignment = Alignment(vertical='center')
 
         # 调整列宽
-        column_widths = [12, 20, 30, 25, 15, 30, 10, 10, 12, 12, 25, 15, 30, 20, 30, 25, 10, 10, 10, 20]
+        column_widths = [12, 20, 30, 25, 15, 30, 10, 10, 12, 12, 25, 15, 30, 30, 20, 30, 25, 10, 10, 10, 20]
         for col, width in enumerate(column_widths, 1):
             col_letter = chr(64 + col) if col <= 26 else 'A' + chr(64 + col - 26)
             ws.column_dimensions[col_letter].width = width
