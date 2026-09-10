@@ -1765,7 +1765,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
         row = first_data_row + idx
 
         ws.cell(row, 1).value = idx + 1
-        ws.cell(row, 2).value = offer.get("inquiry_mpn", "") or offer.get("quoted_mpn", "")
+        ws.cell(row, 2).value = offer.get("quoted_mpn", "") or offer.get("inquiry_mpn", "")
         ws.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
         ws.cell(row, 4).value = offer.get("date_code", "") or ""
 
@@ -1952,7 +1952,7 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, i
     adapted_offers = []
     for offer in offers:
         adapted = {
-            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_mpn": offer.get("quoted_mpn") or offer.get("inquiry_mpn", ""),
             "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
             "date_code": offer.get("date_code", ""),
             "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
@@ -2044,7 +2044,7 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, i
     adapted_offers = []
     for offer in offers:
         adapted = {
-            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_mpn": offer.get("quoted_mpn") or offer.get("inquiry_mpn", ""),
             "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
             "date_code": offer.get("date_code", ""),
             "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
@@ -2130,7 +2130,7 @@ def generate_pi_jp_from_offers(offer_ids, output_base=None, template_dir=None, i
     adapted_offers = []
     for offer in offers:
         adapted = {
-            "inquiry_mpn": offer.get("inquiry_mpn") or offer.get("quoted_mpn", ""),
+            "inquiry_mpn": offer.get("quoted_mpn") or offer.get("inquiry_mpn", ""),
             "inquiry_brand": offer.get("quoted_brand") or offer.get("inquiry_brand", ""),
             "date_code": offer.get("date_code", ""),
             "quoted_qty": offer.get("quoted_qty") or offer.get("inquiry_qty", 0),
@@ -2228,7 +2228,7 @@ def _generate_pi_jp_excel(offers, template_dir, output_path, invoice_no, invoice
         row = first_data_row + idx
 
         ws.cell(row, 1).value = idx + 1
-        ws.cell(row, 2).value = offer.get("inquiry_mpn", "") or offer.get("quoted_mpn", "")
+        ws.cell(row, 2).value = offer.get("quoted_mpn", "") or offer.get("inquiry_mpn", "")
         ws.cell(row, 3).value = offer.get("quoted_brand", "") or offer.get("inquiry_brand", "")
         ws.cell(row, 4).value = offer.get("date_code", "") or ""
 

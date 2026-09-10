@@ -1,5 +1,30 @@
 # 错误记录与修复方案
 
+## 2026-09-09: 报价生成的 PI/CI 文件型号为询价型号，应为报价型号
+
+### 问题描述
+/offer 报价页生成 PI（韩国版/美国版）和 CI（韩国版/美国版）时，文件中的"型号"列
+取的是询价型号(inquiry_mpn)，而不是报价型号(quoted_mpn)。
+
+### 根因分析
+报价数据适配/写入时型号字段的取值优先级写反：
+`offer.get("inquiry_mpn") or offer.get("quoted_mpn")` —— 询价型号优先，
+报价型号只在询价型号为空时才兜底使用。正确逻辑应与品牌字段一致：报价型号优先。
+
+### 修复方案
+将优先级统一改为 `quoted_mpn or inquiry_mpn`：
+- `Sills/ci_generator.py`：CI韩国版、CI日本版的报价适配（2处）
+- `Sills/document_generator.py`：PI美国版、CI美国版、PI日本版的报价适配（3处），
+  以及 PI韩国版、PI日本版的直接写入单元格处（2处）
+
+订单路径（/order 生成的 PI/CI）不受影响：创建订单时 uni_order.inquiry_mpn
+已按 `quoted_mpn or inquiry_mpn` 写入（db_order_manager.py）。
+
+### 影响模块
+- `Sills/ci_generator.py`、`Sills/document_generator.py`（仅取值优先级，无表结构改动）
+
+---
+
 ## 2026-08-10: 开发信任务创建提示"请选择发件账号和联系人组"，但实际已选择
 
 ### 问题描述
