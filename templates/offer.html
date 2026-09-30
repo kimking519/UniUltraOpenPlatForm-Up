@@ -207,6 +207,12 @@
     [data-theme="dark"] .data-table tbody tr:nth-child(even) {
         background: rgba(30, 41, 59, 0.3);
     }
+
+    /* 汇率刷新按钮旋转动画 */
+    @keyframes rateSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
 </style>
 
 <div class="page-header">
@@ -245,6 +251,14 @@
             <option value="已报价" {% if status=='已报价' %}selected{% endif %}>已报价</option>
             <option value="缺货" {% if status=='缺货' %}selected{% endif %}>缺货</option>
         </select>
+        <!-- 实时汇率条：显示推荐汇率，hover 查看原始汇率和刷新时间 -->
+        <span id="rateTicker" title="汇率加载中..." style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--secondary); padding: 0.3rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); white-space: nowrap; cursor: default;">
+            <span id="rateTickerText">汇率加载中...</span>
+            <span id="rateRefreshTime" style="color: var(--secondary);"></span>
+            <button id="rateRefreshBtn" onclick="refreshRates()" title="刷新实时汇率" style="border: none; background: transparent; cursor: pointer; padding: 0; display: inline-flex; align-items: center; color: #3b82f6;">
+                <svg id="rateRefreshIcon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+        </span>
     </div>
     {% if current_user.rule == '3' or current_user.rule == '0' %}
     <!-- 按钮组：新增报价、加价保持可见，其他整合到加号下拉菜单 -->
@@ -2339,6 +2353,9 @@
         // 初始化顶部同步滚动条
         initTopScrollSync();
 
+        // 加载汇率条
+        loadRates();
+
         // 从页面数据中恢复筛选条件（由后端从 session 读取）
         const search = "{{ search }}";
         const start_date = "{{ start_date }}";
@@ -2371,6 +2388,86 @@
             }
         });
     });
+
+    // ==================== 实时汇率条 ====================
+
+    // 刷新时间格式化为 MM-DD hh:mm（兼容 "2026-09-30 08:56:31" / ISO / 带微秒）
+    function formatRateTime(s) {
+        if (!s) return '';
+        const m = String(s).match(/\d{4}-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+        return m ? `${m[1]}-${m[2]} ${m[3]}:${m[4]}` : '';
+    }
+
+    // 渲染汇率条：显示推荐汇率，title 显示原始汇率+刷新时间
+    function renderRates(exchangeRates, originalRates, refreshTime) {
+        const text = document.getElementById('rateTickerText');
+        const ticker = document.getElementById('rateTicker');
+        if (!text || !ticker) return;
+
+        const parts = [];
+        if (exchangeRates.krw != null) parts.push(`₩ ${exchangeRates.krw}`);
+        if (exchangeRates.jpy != null) parts.push(`¥ ${exchangeRates.jpy}`);
+        if (exchangeRates.usd_to_rmb != null) parts.push(`$ ${exchangeRates.usd_to_rmb}`);
+        if (exchangeRates.eur_to_rmb != null) parts.push(`€ ${exchangeRates.eur_to_rmb}`);
+        text.textContent = parts.length ? parts.join(' · ') : '暂无汇率';
+
+        // 最右侧显示最新刷新时间 MM-DD hh:mm
+        const timeEl = document.getElementById('rateRefreshTime');
+        if (timeEl) timeEl.textContent = formatRateTime(refreshTime);
+
+        // hover 提示：原始汇率 + 刷新时间
+        const tips = ['推荐汇率（报价换算使用）'];
+        if (originalRates) {
+            const orig = [];
+            if (originalRates.krw != null) orig.push(`₩${originalRates.krw}`);
+            if (originalRates.jpy != null) orig.push(`¥${originalRates.jpy}`);
+            if (originalRates.usd_to_rmb != null) orig.push(`$${originalRates.usd_to_rmb}`);
+            if (originalRates.eur_to_rmb != null) orig.push(`€${originalRates.eur_to_rmb}`);
+            if (orig.length) tips.push('原始: ' + orig.join(' '));
+        }
+        if (refreshTime) tips.push('刷新时间: ' + refreshTime);
+        ticker.title = tips.join('\n');
+    }
+
+    // 页面加载时读取数据库缓存汇率（快速，不阻塞）
+    async function loadRates() {
+        try {
+            const res = await fetch('/api/exchange/cached');
+            const data = await res.json();
+            if (data.success) {
+                renderRates(data.exchange_rates || {}, data.original_rates, data.last_refresh_time);
+            } else {
+                document.getElementById('rateTickerText').textContent = '汇率获取失败';
+            }
+        } catch (e) {
+            document.getElementById('rateTickerText').textContent = '汇率获取失败';
+        }
+    }
+
+    // 手动刷新：从网络抓实时汇率并入库，就地更新显示
+    async function refreshRates() {
+        const btn = document.getElementById('rateRefreshBtn');
+        const icon = document.getElementById('rateRefreshIcon');
+        btn.disabled = true;
+        icon.style.animation = 'rateSpin 1s linear infinite';
+        try {
+            const res = await fetch('/api/exchange/save_latest', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                renderRates(data.exchange_rates || {}, data.original_rates, data.update_time || nowStr);
+            } else {
+                alert('汇率刷新失败: ' + (data.message || '未知错误'));
+            }
+        } catch (e) {
+            alert('汇率刷新失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            icon.style.animation = '';
+        }
+    }
 
     // 应用筛选条件，跳转到指定页
     function applyFilters(page = 1) {
