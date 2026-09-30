@@ -6330,7 +6330,8 @@ from Sills.db_email_task import (
 )
 from Sills.db_email_template import (
     get_template_list, get_template_by_id, create_template,
-    update_template, delete_template, delete_templates_batch
+    update_template, delete_template, delete_templates_batch,
+    prune_templates
 )
 from Sills.db_email_log import (
     get_task_logs, get_failed_logs, get_task_stats
@@ -6711,6 +6712,11 @@ async def api_task_create(request: Request, current_user: dict = Depends(login_r
     )
 
     if success:
+        # 自动保存邮件模板（名称：模板-<任务名称>），只保留当前用户最新的10个，先进后出
+        emp_id = current_user.get('emp_id', '')
+        tpl_success, _ = create_template(f"模板-{task_name}", subject, body, emp_id)
+        if tpl_success:
+            prune_templates(emp_id, keep=10)
         # 创建成功，不自动启动，等待用户手动执行
         return {"success": True, "task_id": result}
     else:

@@ -156,6 +156,39 @@ def update_template(template_id, template_name=None, subject=None, body=None):
         return False, str(e)
 
 
+def prune_templates(emp_id, keep=10):
+    """裁剪邮件模板，只保留最新的 keep 个（先进后出，删除最旧的）
+
+    Args:
+        emp_id: 员工ID，只裁剪该用户创建的模板
+        keep: 保留数量，默认10
+
+    Returns:
+        int 删除的模板数量
+    """
+    try:
+        with get_db_connection() as conn:
+            rows = conn.execute("""
+                SELECT template_id FROM uni_email_template
+                WHERE created_by = ?
+                ORDER BY created_at DESC, template_id DESC
+            """, (emp_id,)).fetchall()
+
+            if len(rows) <= keep:
+                return 0
+
+            old_ids = [row['template_id'] for row in rows[keep:]]
+            placeholders = ','.join(['?'] * len(old_ids))
+            conn.execute(
+                f"DELETE FROM uni_email_template WHERE template_id IN ({placeholders})",
+                old_ids
+            )
+            conn.commit()
+            return len(old_ids)
+    except Exception:
+        return 0
+
+
 def delete_template(template_id):
     """删除邮件模板
 
