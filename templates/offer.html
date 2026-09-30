@@ -213,6 +213,32 @@
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
     }
+
+    /* 刷新中：以图标中心为原点持续转圈 */
+    #rateRefreshIcon.rate-spinning {
+        animation: rateSpin 0.8s linear infinite;
+        transform-origin: center;
+        transform-box: fill-box;
+    }
+
+    /* toast 提示 */
+    .toast-tip {
+        position: fixed;
+        top: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        color: #fff;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .toast-tip.show { opacity: 1; }
+    .toast-tip.error { background: #ef4444; }
+    .toast-tip.success { background: #10b981; }
 </style>
 
 <div class="page-header">
@@ -2444,12 +2470,42 @@
         }
     }
 
+    // toast 提示（3秒自动消失）
+    function showToast(msg, type = 'error') {
+        const toast = document.createElement('div');
+        toast.className = `toast-tip ${type}`;
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // JS 驱动旋转（不依赖 CSS 动画，兼容禁用了动画效果的浏览器）
+    let rateSpinTimer = null;
+    function startRateSpin() {
+        const icon = document.getElementById('rateRefreshIcon');
+        icon.style.transformOrigin = 'center';
+        icon.style.transformBox = 'fill-box';
+        let deg = 0;
+        rateSpinTimer = setInterval(() => {
+            deg = (deg + 30) % 360;
+            icon.style.transform = `rotate(${deg}deg)`;
+        }, 50);
+    }
+    function stopRateSpin() {
+        if (rateSpinTimer) { clearInterval(rateSpinTimer); rateSpinTimer = null; }
+        document.getElementById('rateRefreshIcon').style.transform = '';
+    }
+
     // 手动刷新：从网络抓实时汇率并入库，就地更新显示
     async function refreshRates() {
         const btn = document.getElementById('rateRefreshBtn');
-        const icon = document.getElementById('rateRefreshIcon');
+        if (btn.disabled) return;  // 防止重复点击
         btn.disabled = true;
-        icon.style.animation = 'rateSpin 1s linear infinite';
+        startRateSpin();
         try {
             const res = await fetch('/api/exchange/save_latest', { method: 'POST' });
             const data = await res.json();
@@ -2458,14 +2514,15 @@
                 const pad = n => String(n).padStart(2, '0');
                 const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
                 renderRates(data.exchange_rates || {}, data.original_rates, data.update_time || nowStr);
+                showToast('汇率已刷新', 'success');
             } else {
-                alert('汇率刷新失败: ' + (data.message || '未知错误'));
+                showToast('汇率刷新失败: ' + (data.message || '未知错误'));
             }
         } catch (e) {
-            alert('汇率刷新失败: ' + e.message);
+            showToast('汇率刷新失败: ' + e.message);
         } finally {
             btn.disabled = false;
-            icon.style.animation = '';
+            stopRateSpin();
         }
     }
 
