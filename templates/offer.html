@@ -370,9 +370,9 @@
                     <th>需求数量(pcs)</th>
                     <th>负责人</th>
                     <th>状态</th>
-                    <th style="position: sticky; right: 60px; background: white; z-index: 1;">已转</th>
+                    <th>已转</th>
                     {% if current_user.rule == '3' %}
-                    <th style="position: sticky; right: 0; background: white; z-index: 1;">操作</th>
+                    <th style="position: sticky; right: 0; background: white; z-index: 1; width: 100px;">操作</th>
                     {% endif %}
                 </tr>
             </thead>
@@ -436,15 +436,19 @@
                             {{ row.status }}
                         </span>
                     </td>
-                    <td style="position: sticky; right: 60px; background: white; z-index: 1;" ondblclick="makeTransferredEditable(this, '{{ row.offer_id }}', '{{ row.is_transferred }}')">
+                    <td ondblclick="makeTransferredEditable(this, '{{ row.offer_id }}', '{{ row.is_transferred }}')">
                         <span class="badge {% if row.is_transferred == '已转' %}badge-success{% else %}badge-warning{% endif %}">
                             {{ row.is_transferred }}
                         </span>
                     </td>
 
                     {% if current_user.rule == '3' %}
-                    <td style="position: sticky; right: 0; background: white; z-index: 1;">
+                    <td style="position: sticky; right: 0; background: white; z-index: 1; width: 100px;">
                         <div style="display: flex; gap: 0.3rem;">
+                            <button class="btn" style="color: #3b82f6; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #3b82f6; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="置顶"
+                                onclick="pinOffer('{{ row.offer_id }}')">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+                            </button>
                             <button class="btn" style="color: #10b981; padding: 4px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #10b981; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="转入客户订单"
                                 onclick="showCustomerOrderModalForOne('{{ row.offer_id }}')">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
@@ -1630,6 +1634,21 @@
                 if (data.success) alert(data.message);
                 else alert('发送失败: ' + data.message);
             });
+    }
+
+    function pinOffer(offer_id) {
+        if (confirm(`确定要将报价 ${offer_id} 置顶吗？\n（报价日期和录入时间将更新为当前时间）`)) {
+            fetch('/api/offer/pin', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ offer_id: offer_id })
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) window.location.reload();
+                    else alert('置顶失败: ' + data.message);
+                });
+        }
     }
 
     function deleteOffer(offer_id) {
