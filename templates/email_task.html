@@ -139,7 +139,6 @@
                 <option value="">选择模板...</option>
             </select>
             <button class="btn btn-sm" onclick="loadTemplate()">使用模板</button>
-            <button class="btn btn-sm" onclick="showSaveTemplateModal()">保存为模板</button>
             <button class="btn btn-ghost btn-sm" onclick="loadTemplates()">刷新模板</button>
         </div>
         <div style="margin-top: 10px;">
@@ -511,21 +510,6 @@
     </div>
 </div>
 
-<!-- 保存模板弹窗 -->
-<div id="saveTemplateModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
-    <div style="background: var(--card-bg); padding: 20px; border-radius: var(--radius); width: 400px;">
-        <h3 style="margin: 0 0 15px 0;">保存为邮件模板</h3>
-        <div style="margin-bottom: 15px;">
-            <label style="font-size: 13px; color: var(--text-main); display: block; margin-bottom: 5px;">模板名称：</label>
-            <input type="text" id="templateName" placeholder="输入模板名称" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); color: var(--text-main);">
-        </div>
-        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 15px;">将保存当前邮件主题和内容为模板</div>
-        <div style="display: flex; gap: 10px; justify-content: flex-end;">
-            <button class="btn" onclick="closeSaveTemplateModal()">取消</button>
-            <button class="btn btn-primary" onclick="saveAsTemplate()">保存模板</button>
-        </div>
-    </div>
-</div>
 
 <script>
     // Tab切换
@@ -1013,6 +997,7 @@
                 loadGroupsForTask();
                 loadAccounts();
                 loadTaskHistory();
+                loadTemplates();  // 刷新模板列表（创建任务会自动保存模板）
             } else {
                 alert('创建失败: ' + (data.message || '未知错误'));
             }
@@ -2126,59 +2111,6 @@
             }
         } catch (e) {
             alert('加载失败: ' + e.message);
-        }
-    }
-
-    // 显示保存模板弹窗
-    function showSaveTemplateModal() {
-        const subject = document.getElementById('taskSubject').value;
-        const body = document.getElementById('taskBody').innerHTML;
-
-        if (!subject && !body) {
-            alert('请先填写邮件主题和内容');
-            return;
-        }
-
-        document.getElementById('templateName').value = '';
-        document.getElementById('saveTemplateModal').style.display = 'flex';
-    }
-
-    // 关闭保存模板弹窗
-    function closeSaveTemplateModal() {
-        document.getElementById('saveTemplateModal').style.display = 'none';
-    }
-
-    // 保存为模板
-    async function saveAsTemplate() {
-        const templateName = document.getElementById('templateName').value;
-        const subject = document.getElementById('taskSubject').value;
-        const body = document.getElementById('taskBody').innerHTML;
-
-        if (!templateName) {
-            alert('请输入模板名称');
-            return;
-        }
-
-        try {
-            const res = await fetch('/api/template/add', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    template_name: templateName,
-                    subject: subject,
-                    body: body
-                })
-            });
-            const data = await res.json();
-            if (data.success) {
-                alert('模板保存成功');
-                closeSaveTemplateModal();
-                loadTemplates();
-            } else {
-                alert('保存失败: ' + (data.message || '未知错误'));
-            }
-        } catch (e) {
-            alert('保存失败: ' + e.message);
         }
     }
 
