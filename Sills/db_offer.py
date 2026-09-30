@@ -828,3 +828,34 @@ def execute_update_today_cost(preview_list):
                 errors.append(f"{item.get('mpn','?')}: 更新失败（可能记录已变）")
         conn.commit()
     return success_count, errors
+
+
+def pin_offer_to_top(offer_id):
+    """报价一键置顶：将报价日期和插入时间更新为当前时间，
+    利用列表排序（offer_date DESC, created_at DESC）使其排到最前。
+
+    Args:
+        offer_id: 报价ID
+
+    Returns:
+        (success, message) tuple
+    """
+    try:
+        now = datetime.now()
+        with get_db_connection() as conn:
+            row = conn.execute(
+                "SELECT offer_id FROM uni_offer WHERE offer_id = ?",
+                (offer_id,)
+            ).fetchone()
+            if not row:
+                return False, "报价不存在"
+
+            conn.execute(
+                "UPDATE uni_offer SET offer_date = ?, created_at = ? WHERE offer_id = ?",
+                (now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d %H:%M:%S"), offer_id)
+            )
+            conn.commit()
+
+        return True, "已置顶"
+    except Exception as e:
+        return False, f"数据库错误: {str(e)}"

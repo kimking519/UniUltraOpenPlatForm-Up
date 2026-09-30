@@ -1743,6 +1743,19 @@ async def offer_delete_api(offer_id: str = Form(...), current_user: dict = Depen
     success, msg = delete_offer(offer_id)
     return {"success": success, "message": msg}
 
+@app.post("/api/offer/pin")
+async def offer_pin_api(request: Request, current_user: dict = Depends(login_required)):
+    """报价一键置顶：报价日期+插入时间改为当前时间，排到列表最前"""
+    if current_user['rule'] != '3':
+        return {"success": False, "message": "仅管理员可置顶"}
+    data = await request.json()
+    offer_id = data.get('offer_id', '')
+    if not offer_id:
+        return {"success": False, "message": "报价ID不能为空"}
+    from Sills.db_offer import pin_offer_to_top
+    success, msg = pin_offer_to_top(offer_id)
+    return {"success": success, "message": msg}
+
 @app.post("/api/offer/add_simple")
 async def offer_add_simple_api(
     inquiry_mpn: str = Form(...),
