@@ -208,17 +208,200 @@
         background: rgba(30, 41, 59, 0.3);
     }
 
-    /* 汇率刷新按钮旋转动画 */
-    @keyframes rateSpin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+    /* 实时汇率卡片 + 汇率换算器 */
+    .fx-card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.25rem;
+        margin-top: 1rem;
     }
 
-    /* 刷新中：以图标中心为原点持续转圈 */
-    #rateRefreshIcon.rate-spinning {
-        animation: rateSpin 0.8s linear infinite;
-        transform-origin: center;
-        transform-box: fill-box;
+    .fx-card-head {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .fx-card-head h3 {
+        font-size: 1rem;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text);
+    }
+
+    .fx-card-head h3 svg {
+        width: 20px;
+        height: 20px;
+        color: var(--primary);
+    }
+
+    .fx-time {
+        margin-left: auto;
+        font-size: 0.8rem;
+        color: var(--secondary);
+    }
+
+    .fx-hint {
+        font-size: 0.75rem;
+        color: var(--secondary);
+        margin: 0 0 1rem;
+    }
+
+    .rate-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+
+    .rate-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        padding: 0.75rem 1rem;
+        background: var(--light);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+    }
+
+    .rate-item-top, .rate-item-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .rate-label {
+        font-size: 0.9rem;
+        color: var(--secondary);
+    }
+
+    .rate-ratio-edit {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .rate-ratio-edit input {
+        width: 60px;
+        padding: 2px 4px;
+        font-size: 0.8rem;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-main);
+        color: var(--text);
+    }
+
+    .rate-ratio-pct {
+        font-size: 0.75rem;
+        color: var(--secondary);
+    }
+
+    .rate-base {
+        color: #10B981;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    .rate-orig {
+        font-size: 0.85rem;
+        color: var(--secondary);
+        padding: 0.25rem 0.5rem;
+        background: rgba(99, 102, 241, 0.1);
+        border-radius: 4px;
+    }
+
+    .fx-converter {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .fx-side {
+        flex: 0 1 auto;
+        width: 340px;
+        max-width: 100%;
+    }
+
+    .fx-cur-row {
+        display: flex;
+        gap: 0.4rem;
+        margin-top: 1rem;
+        flex-wrap: nowrap;
+    }
+
+    .fx-cur-btn {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-main);
+        color: var(--secondary);
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .fx-cur-btn:hover {
+        border-color: var(--primary);
+        color: var(--text);
+    }
+
+    .fx-cur-btn.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+    }
+
+    .fx-cur-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        border-color: var(--border);
+        color: var(--secondary);
+        background: var(--bg-main);
+    }
+
+    input.fx-input {
+        width: 100%;
+        padding: 1rem 0.75rem;
+        font-size: 1.05rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-main);
+        color: var(--text);
+        box-sizing: border-box;
+    }
+
+    input.fx-input:focus {
+        outline: none;
+        border-color: var(--primary);
+    }
+
+    .fx-adjusted {
+        margin-top: 0.35rem;
+        font-size: 0.8rem;
+        color: #10B981;
+        min-height: 1.1rem;
+    }
+
+    .fx-swap {
+        align-self: center;
+        margin-top: 0.6rem;
+        padding: 0.45rem 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-main);
+        color: var(--primary);
+        font-size: 1.1rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .fx-swap:hover {
+        background: var(--primary);
+        color: #fff;
     }
 
     /* toast 提示 */
@@ -277,14 +460,6 @@
             <option value="已报价" {% if status=='已报价' %}selected{% endif %}>已报价</option>
             <option value="缺货" {% if status=='缺货' %}selected{% endif %}>缺货</option>
         </select>
-        <!-- 实时汇率条：显示推荐汇率，hover 查看原始汇率和刷新时间 -->
-        <span id="rateTicker" title="汇率加载中..." style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--secondary); padding: 0.3rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-main); white-space: nowrap; cursor: default;">
-            <span id="rateTickerText">汇率加载中...</span>
-            <span id="rateRefreshTime" style="color: var(--secondary);"></span>
-            <button id="rateRefreshBtn" onclick="refreshRates()" title="刷新实时汇率" style="border: none; background: transparent; cursor: pointer; padding: 0; display: inline-flex; align-items: center; color: #3b82f6;">
-                <svg id="rateRefreshIcon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-            </button>
-        </span>
     </div>
     {% if current_user.rule == '3' or current_user.rule == '0' %}
     <!-- 按钮组：新增报价、加价保持可见，其他整合到加号下拉菜单 -->
@@ -531,6 +706,63 @@
                 {% endif %}
         </div>
     </div>
+</div>
+
+<!-- 汇率换算 -->
+<div class="fx-card">
+    <div class="fx-card-head">
+        <h3>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+            </svg>
+            汇率换算
+        </h3>
+    </div>
+    <div class="fx-converter">
+        <div class="fx-side">
+            <input class="fx-input" id="fxInputLeft" type="text" inputmode="decimal" placeholder="输入金额" oninput="fxOnInput('left')">
+            <div class="fx-cur-row" id="fxCurRowLeft">
+                <button class="fx-cur-btn" data-cur="rmb" onclick="setFxCur('left','rmb')">¥ 人民币</button>
+                <button class="fx-cur-btn" data-cur="krw" onclick="setFxCur('left','krw')">₩ 韩元</button>
+                <button class="fx-cur-btn" data-cur="usd" onclick="setFxCur('left','usd')">$ 美元</button>
+                <button class="fx-cur-btn" data-cur="jpy" onclick="setFxCur('left','jpy')">円 日元</button>
+                <button class="fx-cur-btn" data-cur="eur" onclick="setFxCur('left','eur')">€ 欧元</button>
+            </div>
+            <div class="fx-adjusted" id="fxAdjLeft"></div>
+        </div>
+        <button class="fx-swap" onclick="fxSwap()" title="互换币种">⇄</button>
+        <div class="fx-side">
+            <input class="fx-input" id="fxInputRight" type="text" inputmode="decimal" placeholder="输入金额" oninput="fxOnInput('right')">
+            <div class="fx-cur-row" id="fxCurRowRight">
+                <button class="fx-cur-btn" data-cur="rmb" onclick="setFxCur('right','rmb')">¥ 人民币</button>
+                <button class="fx-cur-btn" data-cur="krw" onclick="setFxCur('right','krw')">₩ 韩元</button>
+                <button class="fx-cur-btn" data-cur="usd" onclick="setFxCur('right','usd')">$ 美元</button>
+                <button class="fx-cur-btn" data-cur="jpy" onclick="setFxCur('right','jpy')">円 日元</button>
+                <button class="fx-cur-btn" data-cur="eur" onclick="setFxCur('right','eur')">€ 欧元</button>
+            </div>
+            <div class="fx-adjusted" id="fxAdjRight"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 实时汇率卡片 -->
+<div class="fx-card">
+    <div class="fx-card-head">
+        <h3>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            实时汇率
+        </h3>
+        <span class="fx-time" id="rateUpdateTime">汇率加载中...</span>
+        <button class="btn btn-primary" id="rateRefreshBtn" onclick="refreshRates()" title="刷新实时汇率" style="padding: 0.5rem 0.6rem;">
+            <svg width="28" height="28" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+        </button>
+    </div>
+    <p class="fx-hint">1 RMB 对应外币 | 建议: 韩元/日元×1.025, 美元/欧元×0.975</p>
+    <div class="rate-grid" id="rateGrid"></div>
 </div>
 
 <!-- Add Modal -->
@@ -2415,60 +2647,7 @@
         });
     });
 
-    // ==================== 实时汇率条 ====================
-
-    // 刷新时间格式化为 MM-DD hh:mm（兼容 "2026-09-30 08:56:31" / ISO / 带微秒）
-    function formatRateTime(s) {
-        if (!s) return '';
-        const m = String(s).match(/\d{4}-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-        return m ? `${m[1]}-${m[2]} ${m[3]}:${m[4]}` : '';
-    }
-
-    // 渲染汇率条：显示推荐汇率，title 显示原始汇率+刷新时间
-    function renderRates(exchangeRates, originalRates, refreshTime) {
-        const text = document.getElementById('rateTickerText');
-        const ticker = document.getElementById('rateTicker');
-        if (!text || !ticker) return;
-
-        const parts = [];
-        if (exchangeRates.krw != null) parts.push(`₩ ${exchangeRates.krw}`);
-        if (exchangeRates.jpy != null) parts.push(`¥ ${exchangeRates.jpy}`);
-        if (exchangeRates.usd_to_rmb != null) parts.push(`$ ${exchangeRates.usd_to_rmb}`);
-        if (exchangeRates.eur_to_rmb != null) parts.push(`€ ${exchangeRates.eur_to_rmb}`);
-        text.textContent = parts.length ? parts.join(' · ') : '暂无汇率';
-
-        // 最右侧显示最新刷新时间 MM-DD hh:mm
-        const timeEl = document.getElementById('rateRefreshTime');
-        if (timeEl) timeEl.textContent = formatRateTime(refreshTime);
-
-        // hover 提示：原始汇率 + 刷新时间
-        const tips = ['推荐汇率（报价换算使用）'];
-        if (originalRates) {
-            const orig = [];
-            if (originalRates.krw != null) orig.push(`₩${originalRates.krw}`);
-            if (originalRates.jpy != null) orig.push(`¥${originalRates.jpy}`);
-            if (originalRates.usd_to_rmb != null) orig.push(`$${originalRates.usd_to_rmb}`);
-            if (originalRates.eur_to_rmb != null) orig.push(`€${originalRates.eur_to_rmb}`);
-            if (orig.length) tips.push('原始: ' + orig.join(' '));
-        }
-        if (refreshTime) tips.push('刷新时间: ' + refreshTime);
-        ticker.title = tips.join('\n');
-    }
-
-    // 页面加载时读取数据库缓存汇率（快速，不阻塞）
-    async function loadRates() {
-        try {
-            const res = await fetch('/api/exchange/cached');
-            const data = await res.json();
-            if (data.success) {
-                renderRates(data.exchange_rates || {}, data.original_rates, data.last_refresh_time);
-            } else {
-                document.getElementById('rateTickerText').textContent = '汇率获取失败';
-            }
-        } catch (e) {
-            document.getElementById('rateTickerText').textContent = '汇率获取失败';
-        }
-    }
+    // ==================== 实时汇率卡片 + 汇率换算 ====================
 
     // toast 提示（3秒自动消失）
     function showToast(msg, type = 'error') {
@@ -2483,10 +2662,102 @@
         }, 3000);
     }
 
+    // 汇率状态（由 /api/exchange/cached 填充）
+    let currentRatios = { krw: 0.03, jpy: 0.03, usd: 0.03, eur: 0.03 };
+    let FX_RAW = { krw: 0, jpy: 0, usd: 0, eur: 0 };  // 原始汇率
+
+    // 目标币种精度与比例方向：KRW/JPY 加比例，USD/EUR 减比例，RMB 无比例
+    const FX_META = {
+        krw: { decimals: 2, sign: 1 },
+        jpy: { decimals: 2, sign: 1 },
+        usd: { decimals: 4, sign: -1 },
+        eur: { decimals: 4, sign: -1 },
+        rmb: { decimals: 2, sign: 0 }
+    };
+    const FX_CUR_NAMES = { rmb: '人民币', krw: '韩元', usd: '美元', jpy: '日元', eur: '欧元' };
+
+    // 每单位外币对应的 RMB
+    // KRW/JPY 存的是 1 RMB → X 外币，取倒数；
+    // USD/EUR 的原始值可能是 1 RMB → X 外币（<1）或 1 外币 → X RMB（>1），按大小自动判断
+    function fxToRmb() {
+        return {
+            krw: FX_RAW.krw ? 1 / FX_RAW.krw : 0,
+            jpy: FX_RAW.jpy ? 1 / FX_RAW.jpy : 0,
+            usd: FX_RAW.usd ? (FX_RAW.usd < 1 ? 1 / FX_RAW.usd : FX_RAW.usd) : 0,
+            eur: FX_RAW.eur ? (FX_RAW.eur < 1 ? 1 / FX_RAW.eur : FX_RAW.eur) : 0,
+            rmb: 1
+        };
+    }
+
+    // 渲染汇率卡片
+    function renderRateCard(data) {
+        const er = data.exchange_rates || {};
+        const or = data.original_rates || {};
+        if (data.rate_ratios) Object.assign(currentRatios, data.rate_ratios);
+        FX_RAW = {
+            krw: or.krw || er.krw || 0,
+            jpy: or.jpy || er.jpy || 0,
+            usd: or.usd_to_rmb || er.usd_to_rmb || 0,
+            eur: or.eur_to_rmb || er.eur_to_rmb || 0
+        };
+        document.getElementById('rateUpdateTime').textContent =
+            data.last_refresh_time || data.update_time || '暂无刷新记录';
+
+        const items = [
+            { key: 'krw', code: 2, label: '1 RMB → ₩ 韩元 (KRW)', rec: er.krw, orig: or.krw, sign: '+' },
+            { key: 'jpy', code: 3, label: '1 RMB → 円 日元 (JPY)', rec: er.jpy, orig: or.jpy, sign: '+' },
+            { key: 'usd', code: 1, label: '$ 1 美元 (USD) → RMB', rec: er.usd_to_rmb, orig: or.usd_to_rmb, sign: '-' },
+            { key: 'eur', code: 4, label: '€ 1 欧元 (EUR) → RMB', rec: er.eur_to_rmb, orig: or.eur_to_rmb, sign: '-' }
+        ];
+        const grid = document.getElementById('rateGrid');
+        grid.innerHTML = '';
+        let any = false;
+        items.forEach(it => {
+            if (it.rec == null) return;
+            any = true;
+            const ratio = currentRatios[it.key];
+            const div = document.createElement('div');
+            div.className = 'rate-item';
+            div.innerHTML =
+                '<div class="rate-item-top">' +
+                    '<span class="rate-label">' + it.label + '</span>' +
+                    '<span class="rate-ratio-edit">' +
+                        '<input type="number" step="0.01" min="0" max="1" value="' + ratio + '" onchange="updateRatio(' + it.code + ', this.value)" title="推荐增量比例">' +
+                        '<span class="rate-ratio-pct">' + it.sign + (ratio * 100).toFixed(1) + '%</span>' +
+                    '</span>' +
+                '</div>' +
+                '<div class="rate-item-bottom">' +
+                    '<span class="rate-base">' + it.rec + '</span>' +
+                    (it.orig != null ? '<span class="rate-orig">原始: ' + it.orig + '</span>' : '') +
+                '</div>';
+            grid.appendChild(div);
+        });
+        if (!any) {
+            grid.innerHTML = '<div class="rate-item" style="align-items:center;color:var(--secondary);">暂无汇率数据</div>';
+        }
+        fxRecalc();
+    }
+
+    // 页面加载时读取数据库缓存汇率（快速，不阻塞）
+    async function loadRates() {
+        try {
+            const res = await fetch('/api/exchange/cached');
+            const data = await res.json();
+            if (data.success) {
+                renderRateCard(data);
+            } else {
+                document.getElementById('rateUpdateTime').textContent = '汇率获取失败';
+            }
+        } catch (e) {
+            document.getElementById('rateUpdateTime').textContent = '汇率获取失败';
+        }
+    }
+
     // JS 驱动旋转（不依赖 CSS 动画，兼容禁用了动画效果的浏览器）
     let rateSpinTimer = null;
     function startRateSpin() {
-        const icon = document.getElementById('rateRefreshIcon');
+        const icon = document.querySelector('#rateRefreshBtn svg');
+        if (!icon) return;
         icon.style.transformOrigin = 'center';
         icon.style.transformBox = 'fill-box';
         let deg = 0;
@@ -2497,10 +2768,11 @@
     }
     function stopRateSpin() {
         if (rateSpinTimer) { clearInterval(rateSpinTimer); rateSpinTimer = null; }
-        document.getElementById('rateRefreshIcon').style.transform = '';
+        const icon = document.querySelector('#rateRefreshBtn svg');
+        if (icon) icon.style.transform = '';
     }
 
-    // 手动刷新：从网络抓实时汇率并入库，就地更新显示
+    // 刷新/保存：从网络抓实时汇率并入库，然后重新加载缓存数据
     async function refreshRates() {
         const btn = document.getElementById('rateRefreshBtn');
         if (btn.disabled) return;  // 防止重复点击
@@ -2510,11 +2782,8 @@
             const res = await fetch('/api/exchange/save_latest', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
-                const now = new Date();
-                const pad = n => String(n).padStart(2, '0');
-                const nowStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-                renderRates(data.exchange_rates || {}, data.original_rates, data.update_time || nowStr);
                 showToast('汇率已刷新', 'success');
+                await loadRates();
             } else {
                 showToast('汇率刷新失败: ' + (data.message || '未知错误'));
             }
@@ -2525,6 +2794,125 @@
             stopRateSpin();
         }
     }
+
+    // 更新币种的推荐增量比例
+    async function updateRatio(currencyCode, newRatio) {
+        try {
+            const response = await fetch('/api/exchange/update_ratio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ currency_code: currencyCode, rate_ratio: parseFloat(newRatio) })
+            });
+            const result = await response.json();
+            if (result.success) {
+                const key = currencyCode === 1 ? 'usd' : currencyCode === 2 ? 'krw' : currencyCode === 3 ? 'jpy' : 'eur';
+                currentRatios[key] = parseFloat(newRatio);
+                fxRecalc();
+            } else {
+                showToast('更新失败: ' + result.message);
+            }
+        } catch (error) {
+            showToast('请求失败: ' + error.message);
+        }
+    }
+
+    // ===== 汇率换算器 =====
+    // 恢复上次选择的币种（默认 美元 → 韩元）
+    let fxLeft = localStorage.getItem('fx_left') || 'usd';
+    let fxRight = localStorage.getItem('fx_right') || 'krw';
+    if (!FX_META[fxLeft]) fxLeft = 'usd';
+    if (!FX_META[fxRight]) fxRight = 'krw';
+
+    function fxRenderButtons() {
+        // 当前侧选中的币种高亮；对面侧与当前币种相同的按钮置灰禁用
+        document.querySelectorAll('#fxCurRowLeft .fx-cur-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cur === fxLeft);
+            b.disabled = (b.dataset.cur === fxRight);
+        });
+        document.querySelectorAll('#fxCurRowRight .fx-cur-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.cur === fxRight);
+            b.disabled = (b.dataset.cur === fxLeft);
+        });
+    }
+
+    function setFxCur(side, cur) {
+        // 与对面币种相同的按钮已禁用，这里只做兜底
+        if (side === 'left') {
+            if (cur === fxRight) return;
+            fxLeft = cur;
+        } else {
+            if (cur === fxLeft) return;
+            fxRight = cur;
+        }
+        localStorage.setItem('fx_left', fxLeft);
+        localStorage.setItem('fx_right', fxRight);
+        fxRenderButtons();
+        fxConvert('left');
+    }
+
+    function fxSwap() {
+        // 只互换币种，两边数字保持不变，然后以左框为源重新计算右框
+        const tmpCur = fxLeft;
+        fxLeft = fxRight;
+        fxRight = tmpCur;
+        document.getElementById('fxAdjLeft').textContent = '';
+        localStorage.setItem('fx_left', fxLeft);
+        localStorage.setItem('fx_right', fxRight);
+        fxRenderButtons();
+        fxConvert('left');
+    }
+
+    function fxOnInput(side) {
+        const input = document.getElementById(side === 'left' ? 'fxInputLeft' : 'fxInputRight');
+        // 去掉前后空格，只保留数字和小数点
+        input.value = input.value.trim().replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
+        fxConvert(side);
+    }
+
+    // 从某一侧换算到另一侧：目标框显示原始汇率结果，框下方显示加/减比例后的结果
+    function fxConvert(fromSide) {
+        const srcCur = fromSide === 'left' ? fxLeft : fxRight;
+        const dstCur = fromSide === 'left' ? fxRight : fxLeft;
+        const srcInput = document.getElementById(fromSide === 'left' ? 'fxInputLeft' : 'fxInputRight');
+        const dstInput = document.getElementById(fromSide === 'left' ? 'fxInputRight' : 'fxInputLeft');
+        const dstAdj = document.getElementById(fromSide === 'left' ? 'fxAdjRight' : 'fxAdjLeft');
+
+        const val = parseFloat(srcInput.value);
+        if (isNaN(val) || srcInput.value === '') {
+            dstInput.value = '';
+            dstAdj.textContent = '';
+            return;
+        }
+        const toRmb = fxToRmb();
+        if (!toRmb[srcCur] || !toRmb[dstCur]) {
+            dstInput.value = '';
+            dstAdj.textContent = '暂无汇率数据';
+            return;
+        }
+
+        // 经 RMB 中转的原始汇率换算
+        const raw = val * toRmb[srcCur] / toRmb[dstCur];
+        const meta = FX_META[dstCur];
+        // 加/减比例后的结果
+        const ratio = currentRatios[dstCur] || 0;
+        const adjusted = raw * (1 + meta.sign * ratio);
+
+        dstInput.value = raw.toFixed(meta.decimals);
+        if (dstCur === 'rmb') {
+            dstAdj.textContent = ''; // RMB 无比例
+        } else {
+            dstAdj.textContent = '比例后: ' + adjusted.toFixed(meta.decimals) +
+                ' (' + (meta.sign > 0 ? '+' : '-') + (ratio * 100).toFixed(1) + '% ' + FX_CUR_NAMES[dstCur] + ')';
+        }
+    }
+
+    // 比例修改后重新换算
+    function fxRecalc() {
+        fxConvert('left');
+    }
+
+    // 页面加载时初始化币种按钮状态
+    document.addEventListener('DOMContentLoaded', fxRenderButtons);
 
     // 应用筛选条件，跳转到指定页
     function applyFilters(page = 1) {

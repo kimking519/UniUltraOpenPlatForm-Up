@@ -358,44 +358,6 @@ async def index(request: Request, current_user: dict = Depends(get_current_user)
         emp_count = conn.execute("SELECT COUNT(*) FROM uni_emp").fetchone()[0]
         order_sum = conn.execute("SELECT COALESCE(SUM(paid_amount), 0) FROM uni_order").fetchone()[0]
 
-        # 获取各币种汇率和比例 (存储的是 1 RMB = X 外币)
-        krw_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=2 ORDER BY record_date DESC LIMIT 1").fetchone()
-        jpy_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=3 ORDER BY record_date DESC LIMIT 1").fetchone()
-        usd_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=1 ORDER BY record_date DESC LIMIT 1").fetchone()
-        eur_row = conn.execute("SELECT exchange_rate, original_rate, rate_ratio, last_refresh_time FROM uni_daily WHERE currency_code=4 ORDER BY record_date DESC LIMIT 1").fetchone()
-
-        # 推荐汇率 (exchange_rate)
-        exchange_rates = {
-            "krw": float(krw_row[0]) if krw_row and krw_row[0] else None,
-            "jpy": float(jpy_row[0]) if jpy_row and jpy_row[0] else None,
-            "usd_to_rmb": float(usd_row[0]) if usd_row and usd_row[0] else None,  # 存的是 1 USD = X RMB
-            "eur_to_rmb": float(eur_row[0]) if eur_row and eur_row[0] else None,  # 存的是 1 EUR = X RMB
-        }
-
-        # 原始汇率 (original_rate)
-        original_rates = {
-            "krw": float(krw_row[1]) if krw_row and krw_row[1] else None,
-            "jpy": float(jpy_row[1]) if jpy_row and jpy_row[1] else None,
-            "usd_to_rmb": float(usd_row[1]) if usd_row and usd_row[1] else None,
-            "eur_to_rmb": float(eur_row[1]) if eur_row and eur_row[1] else None,
-        }
-
-        # 比例 (rate_ratio)
-        rate_ratios = {
-            "krw": float(krw_row[2]) if krw_row and krw_row[2] else 0.03,
-            "jpy": float(jpy_row[2]) if jpy_row and jpy_row[2] else 0.03,
-            "usd": float(usd_row[2]) if usd_row and usd_row[2] else 0.03,
-            "eur": float(eur_row[2]) if eur_row and eur_row[2] else 0.03,
-        }
-
-        # 最新刷新时间
-        refresh_times = []
-        if krw_row and krw_row[3]: refresh_times.append(krw_row[3])
-        if jpy_row and jpy_row[3]: refresh_times.append(jpy_row[3])
-        if usd_row and usd_row[3]: refresh_times.append(usd_row[3])
-        if eur_row and eur_row[3]: refresh_times.append(eur_row[3])
-        last_refresh_time = max(refresh_times) if refresh_times else None
-
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "active_page": "dashboard",
@@ -404,11 +366,7 @@ async def index(request: Request, current_user: dict = Depends(get_current_user)
             "cli_count": cli_count,
             "emp_count": emp_count,
             "order_sum": order_sum
-        },
-        "exchange_rates": exchange_rates,
-        "original_rates": original_rates,
-        "rate_ratios": rate_ratios,
-        "last_refresh_time": last_refresh_time
+        }
     })
 
 # ============ Task Board API (任务看板) ============
