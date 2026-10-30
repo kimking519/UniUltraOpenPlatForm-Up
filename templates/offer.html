@@ -767,7 +767,7 @@
 
 <!-- Add Modal -->
 <div id="addModal" class="modal-overlay" style="display: none;">
-    <div class="card" style="width: 500px; max-height: 90vh; overflow-y: auto;">
+    <div class="card" style="width: 750px; max-width: calc(100vw - 2rem); max-height: 90vh; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
             <h3 style="margin: 0;">新增报价</h3>
             <button class="btn" onclick="toggleModal('addModal')" style="padding: 0.2rem 0.5rem;">&times;</button>
@@ -777,8 +777,8 @@
             <!-- 智能带入区块 -->
             <div style="margin-bottom: 0.5rem; padding: 0.75rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
                 <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">智能带入 (选填)</p>
-                <textarea id="smartInput" placeholder="输入：型号 品牌 数量 客户（支持多行，任意分隔符）&#10;示例：&#10;STM32F103, ST, 100, Samsung&#10;LM358 TI 50&#10;NE555|TI|200"
-                    style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+                <textarea id="smartInput" rows="5" placeholder="输入：型号 品牌 数量 客户（支持多行，分号/Tab/竖线/空格分隔，逗号不分隔）&#10;示例：&#10;STM32F103; ST; 100; Samsung&#10;LM358 TI 50&#10;NE555|TI|200"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
                 <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
                     <button type="button" class="btn btn-primary" onclick="parseSmartInput()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem;">解析填入</button>
                     <button type="button" class="btn" onclick="batchInsertSmart()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: #f59e0b; color: white;">直接插入</button>
@@ -789,7 +789,7 @@
             <!-- 更新报价（仅当天录入）区块 -->
             <div style="margin-bottom: 0.5rem; padding: 0.75rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
                 <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">更新报价 (仅当天录入) <span style="font-weight:400;color:var(--secondary);font-size:0.78rem;">字段顺序：型号 成本价 批号 交期 韩元</span></p>
-                <textarea id="updateCostInput" placeholder="每行：型号 成本价 批号 交期 韩元（支持多行，与智能带入分隔规则一致）&#10;示例：&#10;CC0603ZRY5V7BB105  3.0   25+  1-3days  550&#10;STM32F103 1.5 24+&#10;LM358,0.8,23+,2days"
+                <textarea id="updateCostInput" placeholder="每行：型号 成本价 批号 交期 韩元（支持多行，逗号/分号/Tab/竖线/空格分隔）&#10;示例：&#10;CC0603ZRY5V7BB105  3.0   25+  1-3days  550&#10;STM32F103 1.5 24+&#10;LM358,0.8,23+,2days"
                     style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
                 <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
                     <button type="button" class="btn" onclick="previewUpdateCost()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: #10b981; color: white;">更新报价</button>
@@ -891,6 +891,30 @@
 </div>
 
 <script>
+    // 恢复并记忆智能带入输入框的手动调整高度
+    const smartInputElement = document.getElementById('smartInput');
+    const savedSmartInputHeight = localStorage.getItem('offer_smart_input_height');
+    if (savedSmartInputHeight) {
+        smartInputElement.style.height = savedSmartInputHeight;
+    }
+
+    let smartInputResizeTimeout;
+    const smartInputResizeObserver = new ResizeObserver(() => {
+        clearTimeout(smartInputResizeTimeout);
+        smartInputResizeTimeout = setTimeout(() => {
+            if (smartInputElement.style.height) {
+                localStorage.setItem('offer_smart_input_height', smartInputElement.style.height);
+            }
+        }, 200);
+    });
+    smartInputResizeObserver.observe(smartInputElement);
+
+    document.getElementById('addModal').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) {
+            event.currentTarget.style.display = 'none';
+        }
+    });
+
     // 简化新增报价提交函数
     function submitAddOffer(e) {
         e.preventDefault();
@@ -942,7 +966,7 @@
     // 方案C行解析：强分隔符能拆出≥3段就用它(保护含空格型号)，否则退到空格分割(含单个空格)
     function splitOfferLine(line) {
         if (!line) return [];
-        const strong = line.split(/[,，;；\t|]+/).filter(p => p.trim());
+        const strong = line.split(/[;；\t|]+/).filter(p => p.trim());
         if (strong.length >= 3) return strong;
         return line.split(/\s+/).filter(p => p.trim());
     }
@@ -968,8 +992,8 @@
 
         const firstLine = lines[0].trim();
 
-        // 方案C解析：强分隔符(逗号/分号/Tab/竖线)能拆出≥3段就用它(保护含空格型号)，
-        // 否则退到空格分割(含单个空格)，兼容无空格型号如 "LM358 TI 50"
+        // 方案C解析：强分隔符(分号/Tab/竖线)能拆出≥3段就用它(保护含空格型号)，
+        // 否则退到空格分割(含单个空格)，中英文逗号保留在字段内容中
         const parts = splitOfferLine(firstLine);
 
         if (parts.length < 3) {
@@ -1936,9 +1960,36 @@
         }
     }
 
+    let lastRowCheckbox = null;
+    let shouldClearRowSelection = false;
+    const offerTable = document.getElementById('offerTable');
+
+    offerTable.addEventListener('click', (event) => {
+        const checkbox = event.target.closest('.row-checkbox');
+        if (!checkbox) return;
+
+        const checkboxes = Array.from(offerTable.querySelectorAll('.row-checkbox'));
+        if (event.shiftKey && lastRowCheckbox && checkboxes.includes(lastRowCheckbox)) {
+            const start = checkboxes.indexOf(lastRowCheckbox);
+            const end = checkboxes.indexOf(checkbox);
+            const from = Math.min(start, end);
+            const to = Math.max(start, end);
+            if (shouldClearRowSelection) {
+                checkboxes.forEach(cb => cb.checked = false);
+            }
+            checkboxes.slice(from, to + 1).forEach(cb => cb.checked = true);
+            shouldClearRowSelection = false;
+        } else {
+            lastRowCheckbox = checkbox;
+            shouldClearRowSelection = true;
+        }
+    });
+
     function toggleAll(source) {
         const checkboxes = document.querySelectorAll('.row-checkbox');
         checkboxes.forEach(cb => cb.checked = source.checked);
+        lastRowCheckbox = null;
+        shouldClearRowSelection = false;
     }
 
     function batchDelete() {

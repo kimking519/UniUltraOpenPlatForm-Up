@@ -343,6 +343,160 @@ class TestOfferPage:
 
         e2e_results.add("报价", "报价页面加载", "PASS")
 
+    def test_offer_shift_select_range(self, authenticated_page):
+        """测试 Shift 当前页范围勾选"""
+        page = authenticated_page
+        page.goto(f"{BASE_URL}/offer?page=1&page_size=20&is_transferred=")
+        page.wait_for_load_state("networkidle")
+
+        checkboxes = page.locator("#offerTable .row-checkbox")
+        if checkboxes.count() < 6:
+            pytest.skip("报价记录不足，无法测试范围勾选")
+
+        checkboxes.nth(5).check()
+        checkboxes.nth(1).check()
+        checkboxes.nth(3).click(modifiers=["Shift"])
+
+        for index in (1, 2, 3):
+            expect(checkboxes.nth(index)).to_be_checked()
+        for index in (0, 4, 5):
+            expect(checkboxes.nth(index)).not_to_be_checked()
+
+        checkboxes.nth(2).click(modifiers=["Shift"])
+
+        for index in (1, 2, 3):
+            expect(checkboxes.nth(index)).to_be_checked()
+        for index in (0, 4, 5):
+            expect(checkboxes.nth(index)).not_to_be_checked()
+
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        checkboxes.nth(0).check()
+        checkboxes.nth(4).check()
+        checkboxes.nth(1).click(modifiers=["Shift"])
+
+        for index in range(1, 5):
+            expect(checkboxes.nth(index)).to_be_checked()
+        for index in (0, 5):
+            expect(checkboxes.nth(index)).not_to_be_checked()
+
+        page.reload()
+        page.wait_for_load_state("networkidle")
+        checkboxes.nth(0).click(modifiers=["Shift"])
+
+        expect(checkboxes.nth(0)).to_be_checked()
+        for index in range(1, 6):
+            expect(checkboxes.nth(index)).not_to_be_checked()
+
+        e2e_results.add("报价", "Shift 当前页范围勾选", "PASS")
+
+    def test_offer_smart_input_preserves_commas(self, authenticated_page):
+        """测试智能带入保留字段中的中英文逗号"""
+        page = authenticated_page
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        smart_input = page.locator("#smartInput")
+        smart_input.fill("MPN,WITH,COMMA|BRAND，NAME|100")
+        page.get_by_role("button", name="解析填入", exact=True).click()
+
+        expect(page.locator("#formMpn")).to_have_value("MPN,WITH,COMMA")
+        expect(page.locator("#formBrand")).to_have_value("BRAND，NAME")
+        expect(page.locator("#formQty")).to_have_value("100")
+
+        smart_input.fill("MPN，FULL,HALF BRAND,NAME 200")
+        page.get_by_role("button", name="解析填入", exact=True).click()
+
+        expect(page.locator("#formMpn")).to_have_value("MPN，FULL,HALF")
+        expect(page.locator("#formBrand")).to_have_value("BRAND,NAME")
+        expect(page.locator("#formQty")).to_have_value("200")
+
+        smart_input.fill("MPN,DIRECT|BRAND，DIRECT|300")
+        page.get_by_role("button", name="直接插入", exact=True).click()
+
+        expect(page.locator('#previewModalOverlay [data-field="mpn"]')).to_have_text("MPN,DIRECT")
+        expect(page.locator('#previewModalOverlay [data-field="brand"]')).to_have_text("BRAND，DIRECT")
+        expect(page.locator('#previewModalOverlay [data-field="qty"]')).to_have_text("300")
+
+        e2e_results.add("报价", "智能带入保留中英文逗号", "PASS")
+
+    def test_offer_smart_input_remembers_height(self, authenticated_page):
+        """测试智能带入默认五行并记忆手动调整高度"""
+        page = authenticated_page
+        page.goto(f"{BASE_URL}/offer")
+        page.evaluate("localStorage.removeItem('offer_smart_input_height')")
+        page.reload()
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        smart_input = page.locator("#smartInput")
+        expect(smart_input).to_have_attribute("rows", "5")
+        initial_box = smart_input.bounding_box()
+
+        page.mouse.move(
+            initial_box["x"] + initial_box["width"] - 4,
+            initial_box["y"] + initial_box["height"] - 4,
+        )
+        page.mouse.down()
+        page.mouse.move(
+            initial_box["x"] + initial_box["width"] - 4,
+            initial_box["y"] + initial_box["height"] + 76,
+            steps=5,
+        )
+        page.mouse.up()
+        page.wait_for_function("localStorage.getItem('offer_smart_input_height') !== null")
+
+        saved_height = page.evaluate("localStorage.getItem('offer_smart_input_height')")
+        assert float(saved_height.removesuffix("px")) > initial_box["height"]
+
+        page.reload()
+        page.get_by_role("button", name="新增报价", exact=True).click()
+        expect(page.locator("#smartInput")).to_have_css("height", saved_height)
+
+        page.get_by_role("button", name="取消", exact=True).click()
+        page.get_by_role("button", name="新增报价", exact=True).click()
+        expect(page.locator("#smartInput")).to_have_css("height", saved_height)
+
+        e2e_results.add("报价", "智能带入默认五行并记忆高度", "PASS")
+
+    def test_offer_add_modal_responsive_width(self, authenticated_page):
+        """测试新增报价弹框宽屏750px及小屏自适应"""
+        page = authenticated_page
+        page.set_viewport_size({"width": 1200, "height": 900})
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        modal = page.locator("#addModal > .card")
+        expect(modal).to_have_css("width", "750px")
+
+        page.set_viewport_size({"width": 600, "height": 900})
+        modal_box = modal.bounding_box()
+        assert 0 < modal_box["width"] <= 568
+        assert modal_box["x"] >= 0
+        assert modal_box["x"] + modal_box["width"] <= 600
+
+        e2e_results.add("报价", "新增报价弹框响应式宽度", "PASS")
+
+    def test_offer_add_modal_closes_on_outside_click(self, authenticated_page):
+        """测试新增报价点击框外关闭并保留未提交内容"""
+        page = authenticated_page
+        page.set_viewport_size({"width": 1200, "height": 900})
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        add_modal = page.locator("#addModal")
+        page.locator("#formMpn").fill("UNSAVED-MPN")
+        page.locator("#formBrand").click()
+        expect(add_modal).to_be_visible()
+
+        page.mouse.click(10, 10)
+        expect(add_modal).to_be_hidden()
+
+        page.get_by_role("button", name="新增报价", exact=True).click()
+        expect(add_modal).to_be_visible()
+        expect(page.locator("#formMpn")).to_have_value("UNSAVED-MPN")
+
+        e2e_results.add("报价", "新增报价框外点击关闭", "PASS")
+
 
 # ============================================================
 # 8. 订单管理页面测试
