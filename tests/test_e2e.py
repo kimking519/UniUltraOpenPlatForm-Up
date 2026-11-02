@@ -206,6 +206,40 @@ class TestDashboard:
 
         e2e_results.add("首页", "首页加载", "PASS")
 
+    def test_dashboard_shortcuts_layout_and_navigation(self, authenticated_page):
+        """测试控制台快捷入口响应式布局及页面跳转"""
+        page = authenticated_page
+        page.set_viewport_size({"width": 1400, "height": 900})
+
+        shortcuts = page.locator(".dashboard-shortcut")
+        expect(shortcuts).to_have_count(4)
+        expect(shortcuts).to_have_text(["报价订单", "客户表", "邮件中心", "开发信任务管理"])
+
+        wide_boxes = [shortcuts.nth(index).bounding_box() for index in range(4)]
+        assert len({round(box["y"]) for box in wide_boxes}) == 1
+        assert max(box["width"] for box in wide_boxes) - min(box["width"] for box in wide_boxes) <= 1
+
+        page.set_viewport_size({"width": 700, "height": 900})
+        medium_boxes = [shortcuts.nth(index).bounding_box() for index in range(4)]
+        assert len({round(box["y"]) for box in medium_boxes}) == 2
+
+        page.set_viewport_size({"width": 480, "height": 900})
+        narrow_boxes = [shortcuts.nth(index).bounding_box() for index in range(4)]
+        assert len({round(box["y"]) for box in narrow_boxes}) == 4
+
+        destinations = [
+            ("报价订单", "/offer"),
+            ("客户表", "/cli"),
+            ("邮件中心", "/mail"),
+            ("开发信任务管理", "/email_task"),
+        ]
+        for label, path in destinations:
+            page.goto(f"{BASE_URL}/")
+            page.locator(".dashboard-shortcut", has_text=label).click()
+            page.wait_for_url(f"{BASE_URL}{path}")
+
+        e2e_results.add("首页", "快捷入口响应式布局及跳转", "PASS")
+
 
 # ============================================================
 # 3. 员工管理页面测试
