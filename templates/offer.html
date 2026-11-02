@@ -786,17 +786,6 @@
                 <p id="smartMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
             </div>
 
-            <!-- 更新报价（仅当天录入）区块 -->
-            <div style="margin-bottom: 0.5rem; padding: 0.75rem; background: var(--light); border-radius: 4px; border: 1px solid var(--border);">
-                <p style="margin-top: 0; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.9rem;">更新报价 (仅当天录入) <span style="font-weight:400;color:var(--secondary);font-size:0.78rem;">字段顺序：型号 成本价 批号 交期 韩元</span></p>
-                <textarea id="updateCostInput" placeholder="每行：型号 成本价 批号 交期 韩元（支持多行，逗号/分号/Tab/竖线/空格分隔）&#10;示例：&#10;CC0603ZRY5V7BB105  3.0   25+  1-3days  550&#10;STM32F103 1.5 24+&#10;LM358,0.8,23+,2days"
-                    style="width: 100%; height: 60px; padding: 0.5rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
-                <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
-                    <button type="button" class="btn" onclick="previewUpdateCost()" style="padding: 0.3rem 0.8rem; font-size: 0.8rem; background: #10b981; color: white;">更新报价</button>
-                </div>
-                <p id="updateCostMsg" style="font-size: 0.8rem; color: var(--secondary); margin-top: 0.5rem; margin-bottom: 0;"></p>
-                <p style="font-size: 0.75rem; color: var(--secondary); margin-top: 0.3rem; margin-bottom: 0;">说明：只更新当天录入的同型号最新一条记录的成本价/批号/交期/韩元(报价)，历史数据不动；字段不足时按顺序解析，缺的不更新（韩元留空=不更新）；点击后弹出预览确认再更新。</p>
-            </div>
             <div>
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">客户（选填）</label>
                 <select name="cli_id" id="formCliId"
@@ -1078,6 +1067,10 @@
             const mpn = parts[0].trim();
             const brand = parts[1].trim();
             const qty = parts[2].replace(/[^\d]/g, '').trim();
+            if (!qty) {
+                errorLines.push(`第 ${idx + 1} 行: 数量无效`);
+                return;
+            }
             let cliName = '';
             let cliId = '';
 
@@ -1117,6 +1110,16 @@
             });
         });
 
+        if (previewList.some(item => !item.cliId) && cliSelect.value) {
+            const fallbackCliId = cliSelect.value;
+            const fallbackCliName = cliSelect.selectedOptions[0].text;
+            previewList.forEach(item => {
+                item.cliId = fallbackCliId;
+                item.cliName = fallbackCliName;
+                item.formData.cli_id = fallbackCliId;
+            });
+        }
+
         if (previewList.length === 0) {
             msgEl.textContent = '无有效数据可插入';
             msgEl.style.color = 'var(--danger)';
@@ -1141,7 +1144,7 @@
                 <div class="card" style="width: 650px; max-height: 80vh; overflow-y: auto;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0; color: #f59e0b;">插入预览确认</h3>
-                        <button class="btn" onclick="closePreviewModal()" style="padding: 0.2rem 0.5rem;">&times;</button>
+                        <button class="btn" onclick="closePreviewModal(true)" style="padding: 0.2rem 0.5rem;">&times;</button>
                     </div>
                     ${errorLines.length > 0 ? `
                         <div style="margin-bottom: 1rem; padding: 0.5rem; background: rgba(239,68,68,0.1); border-radius: 4px; color: #EF4444;">
@@ -1181,7 +1184,7 @@
                         </tbody>
                     </table>
                     <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-                        <button class="btn" onclick="closePreviewModal()" style="padding: 0.4rem 1rem;">取消</button>
+                        <button class="btn" onclick="closePreviewModal(true)" style="padding: 0.4rem 1rem;">取消</button>
                         <button class="btn" onclick="executeBatchInsert()" style="padding: 0.4rem 1rem; background: #f59e0b; color: white;">确认插入</button>
                     </div>
                 </div>
@@ -1354,12 +1357,15 @@
         // 保持原数据不变，已在 escape 处理中恢复显示
     }
 
-    // 关闭预览弹窗
-    function closePreviewModal() {
+    // 关闭预览弹窗，取消时恢复新增报价窗口
+    function closePreviewModal(reopenAdd = false) {
         const modal = document.getElementById('previewModalOverlay');
         if (modal) modal.remove();
         window._previewInsertData = null;
         window._previewMsgEl = null;
+        if (reopenAdd) {
+            document.getElementById('addModal').style.display = 'flex';
+        }
     }
 
     // ===== 更新报价（仅当天录入）=====

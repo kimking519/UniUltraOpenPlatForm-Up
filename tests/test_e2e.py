@@ -531,6 +531,131 @@ class TestOfferPage:
 
         e2e_results.add("报价", "新增报价框外点击关闭", "PASS")
 
+    def test_offer_update_cost_entry_removed(self, authenticated_page):
+        """测试新增报价弹框已移除更新报价区域"""
+        page = authenticated_page
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        expect(page.locator("#smartInput")).to_be_visible()
+        expect(page.locator("#updateCostInput")).to_have_count(0)
+        expect(page.locator("#updateCostMsg")).to_have_count(0)
+        expect(page.get_by_role("button", name="更新报价", exact=True)).to_have_count(0)
+        expect(page.get_by_text("更新报价 (仅当天录入)", exact=False)).to_have_count(0)
+
+        e2e_results.add("报价", "新增报价移除更新报价区域", "PASS")
+
+    def test_offer_smart_batch_sanitizes_quantity(self, authenticated_page):
+        """测试直接插入预览及提交使用纯数字数量"""
+        page = authenticated_page
+        submitted = []
+
+        def capture_submission(route):
+            submitted.append(route.request.post_data)
+            route.fulfill(status=200, json={"success": False, "message": "测试拦截"})
+
+        page.route("**/api/offer/add_simple", capture_submission)
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        page.locator("#smartInput").fill(
+            "MPN,QTY|BRAND|1,000pcs\n"
+            "MPN,DECIMAL|BRAND|1.5\n"
+            "MPN,INVALID|BRAND|abc"
+        )
+        page.get_by_role("button", name="直接插入", exact=True).click()
+
+        quantities = page.locator('#previewModalOverlay [data-field="qty"]')
+        expect(quantities).to_have_count(2)
+        expect(quantities).to_have_text(["1000", "15"])
+        expect(page.locator("#previewModalOverlay")).to_contain_text("第 3 行: 数量无效")
+        expect(page.locator('#previewModalOverlay [data-field="mpn"]')).to_have_text(
+            ["MPN,QTY", "MPN,DECIMAL"]
+        )
+
+        page.get_by_role("button", name="确认插入", exact=True).click()
+        expect(page.locator("#smartMsg")).to_have_text("插入完成：成功 0 条，失败 2 条")
+        expect(page.locator("#addModal")).to_be_hidden()
+        assert len(submitted) == 2
+        assert any('name="inquiry_qty"\r\n\r\n1000\r\n' in body for body in submitted)
+        assert any('name="inquiry_qty"\r\n\r\n15\r\n' in body for body in submitted)
+
+        e2e_results.add("报价", "直接插入数量清理及无效行跳过", "PASS")
+
+    def test_offer_cancel_preview_reopens_add_modal(self, authenticated_page):
+        """测试取消预览后恢复新增报价并保留输入"""
+        page = authenticated_page
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        smart_input = page.locator("#smartInput")
+        smart_input.fill("MPN,PREVIEW|BRAND|100")
+        page.get_by_role("button", name="直接插入", exact=True).click()
+        expect(page.locator("#addModal")).to_be_hidden()
+        expect(page.locator("#previewModalOverlay")).to_be_visible()
+
+        page.get_by_role("button", name="取消", exact=True).click()
+        expect(page.locator("#previewModalOverlay")).to_have_count(0)
+        expect(page.locator("#addModal")).to_be_visible()
+        expect(smart_input).to_have_value("MPN,PREVIEW|BRAND|100")
+
+        page.get_by_role("button", name="直接插入", exact=True).click()
+        page.locator('#previewModalOverlay button[onclick="closePreviewModal(true)"]').first.click()
+        expect(page.locator("#previewModalOverlay")).to_have_count(0)
+        expect(page.locator("#addModal")).to_be_visible()
+        expect(smart_input).to_have_value("MPN,PREVIEW|BRAND|100")
+
+        e2e_results.add("报价", "取消预览恢复新增报价", "PASS")
+
+    def test_offer_smart_batch_fallback_customer(self, authenticated_page):
+        """测试任一空客户行触发所有有效行使用表单客户"""
+        page = authenticated_page
+        page.goto(f"{BASE_URL}/offer")
+        page.get_by_role("button", name="新增报价", exact=True).click()
+
+        options = page.locator("#formCliId option").evaluate_all(
+            "opts => opts.filter(o => o.value).map(o => ({value: o.value, name: o.text}))"
+        )
+        if len(options) < 2:
+            pytest.skip("客户记录不足，无法测试直接插入客户回退")
+
+        matched, fallback = options[:2]
+        cli_select = page.locator("#formCliId")
+        smart_input = page.locator("#smartInput")
+        cli_select.select_option(fallback["value"])
+        smart_input.fill(
+            f"MPN,MATCH|BRAND|100|{matched['name']}\n"
+            "MPN,EMPTY|BRAND|200\n"
+            "MPN,UNKNOWN|BRAND|300|NO_SUCH_CLIENT"
+        )
+        page.get_by_role("button", name="直接插入", exact=True).click()
+
+        preview_customers = page.locator('#previewModalOverlay [data-field="cliName"]')
+        expect(preview_customers).to_have_text([fallback["name"]] * 3)
+        preview_cli_ids = page.evaluate(
+            "window._previewInsertData.map(item => [item.cliId, item.formData.cli_id])"
+        )
+        assert preview_cli_ids == [[fallback["value"], fallback["value"]]] * 3
+
+        page.get_by_role("button", name="取消", exact=True).click()
+        smart_input.fill(
+            f"MPN,MATCH1|BRAND|100|{matched['name']}\n"
+            f"MPN,MATCH2|BRAND|200|{matched['name']}"
+        )
+        page.get_by_role("button", name="直接插入", exact=True).click()
+        expect(preview_customers).to_have_text([matched["name"]] * 2)
+
+        page.get_by_role("button", name="取消", exact=True).click()
+        cli_select.select_option("")
+        smart_input.fill(
+            f"MPN,MATCH|BRAND|100|{matched['name']}\n"
+            "MPN,EMPTY|BRAND|200"
+        )
+        page.get_by_role("button", name="直接插入", exact=True).click()
+        expect(preview_customers).to_have_text([matched["name"], "-"])
+
+        e2e_results.add("报价", "直接插入空客户统一使用表单客户", "PASS")
+
 
 # ============================================================
 # 8. 订单管理页面测试
