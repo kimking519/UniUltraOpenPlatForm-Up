@@ -12,7 +12,7 @@ from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_l
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
 from Sills.db_cli import get_cli_list, add_cli, batch_import_cli_text, update_cli, delete_cli
 from Sills.db_quote import get_quote_list, add_quote, batch_import_quote_text, batch_import_quote_from_rows, delete_quote, update_quote, batch_delete_quote, batch_copy_quote, batch_add_quotes
-from Sills.db_offer import get_offer_list, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
+from Sills.db_offer import get_offer_list, get_recent_offer_clients, add_offer, batch_import_offer_text, update_offer, delete_offer, batch_delete_offer, batch_convert_from_quote
 from Sills.db_order import get_order_list, add_order, update_order_status, update_order, delete_order, batch_import_order, batch_delete_order, batch_convert_from_offer, get_order_by_id
 from Sills.db_buy import get_buy_list, add_buy, update_buy_node, update_buy, delete_buy, batch_import_buy, batch_delete_buy, batch_convert_from_order
 from Sills.db_order_manager import (
@@ -1321,6 +1321,7 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
     vendor_list = vendor_data['items']
     cli_data = get_paginated_list('uni_cli', page=1, page_size=1000)
     cli_list = sorted(cli_data['items'], key=lambda x: x.get('cli_name', '').upper())
+    recent_client_list = get_recent_offer_clients()
     return templates.TemplateResponse("offer.html", {
         "request": request,
         "active_page": "offer",
@@ -1336,7 +1337,8 @@ async def offer_page(request: Request, current_user: dict = Depends(login_requir
         "cli_id": cli_id,
         "is_transferred": is_transferred,
         "vendor_list": vendor_list,
-        "cli_list": cli_list
+        "cli_list": cli_list,
+        "recent_client_list": recent_client_list
     })
 
 @app.post("/offer/add")

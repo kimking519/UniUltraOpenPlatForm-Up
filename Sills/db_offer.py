@@ -5,6 +5,23 @@ import io
 from datetime import datetime
 from Sills.base import get_db_connection, get_exchange_rates
 
+def get_recent_offer_clients(limit=5):
+    """查询全系统最近新增报价使用过的客户，去重后按最近时间排序"""
+    with get_db_connection() as conn:
+        rows = conn.execute("""
+            SELECT COALESCE(o.cli_id, q.cli_id) AS cli_id, c.cli_name,
+                   MAX(o.created_at) AS last_used_at
+            FROM uni_offer o
+            LEFT JOIN uni_quote q ON o.quote_id = q.quote_id
+            JOIN uni_cli c ON COALESCE(o.cli_id, q.cli_id) = c.cli_id
+            WHERE o.created_at IS NOT NULL
+            GROUP BY COALESCE(o.cli_id, q.cli_id), c.cli_name
+            ORDER BY last_used_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(row) for row in rows]
+
+
 def get_offer_list(page=1, page_size=10, search_kw="", start_date="", end_date="", cli_id="", is_transferred="", status=""):
     offset = (page - 1) * page_size
 

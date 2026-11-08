@@ -795,6 +795,16 @@
                     <option value="{{ c.cli_id }}">{{ c.cli_name }}</option>
                     {% endfor %}
                 </select>
+                {% if recent_client_list %}
+                <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; font-size: 0.8rem;">
+                    <span style="color: var(--secondary);">最近使用：</span>
+                    {% for c in recent_client_list %}
+                    <button type="button" class="btn recent-client-btn" data-cli-id="{{ c.cli_id }}"
+                        onclick="document.getElementById('formCliId').value = '{{ c.cli_id }}'"
+                        style="padding: 0.25rem 0.6rem; font-size: 0.8rem;">{{ c.cli_name }}</button>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
 
             <!-- 型号（必填） -->
@@ -1364,6 +1374,7 @@
         window._previewInsertData = null;
         window._previewMsgEl = null;
         if (reopenAdd) {
+            document.getElementById('formCliId').value = '';
             document.getElementById('addModal').style.display = 'flex';
         }
     }
@@ -1679,7 +1690,11 @@
 
     function toggleModal(id) {
         const modal = document.getElementById(id);
-        modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+        const isOpening = modal.style.display === 'none';
+        if (isOpening && id === 'addModal') {
+            document.getElementById('formCliId').value = '';
+        }
+        modal.style.display = isOpening ? 'flex' : 'none';
     }
 
     // 编辑RMB价格字段，完成后自动计算 KWR 和 USD
