@@ -70,19 +70,20 @@ def _get_output_base():
     return _get_default_output_base()
 
 
-def _generate_unique_invoice_no(output_dir, cli_name, doc_type="PI"):
+def _generate_unique_invoice_no(output_dir, cli_name, doc_type="PI", file_suffix=""):
     """
     生成唯一的发票编号和文件路径
 
     发票编号格式: UNI%Y%m%d + 两位序号，从01开始，如 UNI2026072201
     文件名格式:
-      - PI: Proforma Invoice_{cli_name}_{invoice_no}.xlsx
-      - CI: COMMERCIAL INVOICE_{cli_name}_{invoice_no}.xlsx
+      - PI: Proforma Invoice_{cli_name}_{invoice_no}{file_suffix}.xlsx
+      - CI: COMMERCIAL INVOICE_{cli_name}_{invoice_no}{file_suffix}.xlsx
 
     Args:
         output_dir: 输出目录
         cli_name: 客户名称
         doc_type: 文档类型 (PI, CI_KR, CI_US)
+        file_suffix: 文件名后缀，不影响发票编号
 
     Returns:
         tuple: (invoice_no, output_filename, output_path)
@@ -101,7 +102,7 @@ def _generate_unique_invoice_no(output_dir, cli_name, doc_type="PI"):
     suffix = 1
     while True:
         invoice_no = f"{base_invoice_no}{suffix:02d}"
-        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}.xlsx"
+        output_filename = f"{doc_prefix}_{cli_name}_{invoice_no}{file_suffix}.xlsx"
         output_path = os.path.join(output_dir, output_filename)
         if not os.path.exists(output_path):
             break
@@ -1649,7 +1650,9 @@ def generate_pi_from_offers(offer_ids, output_base=None, template_dir=None, invo
 
     # 如果未传入invoice_no，则自动生成
     if not invoice_no:
-        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(
+            output_dir, cli_name, "PI", file_suffix="_K"
+        )
     else:
         # 使用传入的invoice_no生成文件路径
         doc_prefix = "Proforma Invoice"
@@ -1932,7 +1935,9 @@ def generate_pi_us_from_offers(offer_ids, output_base=None, template_dir=None, i
 
     # 如果未传入invoice_no，则自动生成
     if not invoice_no:
-        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "PI")
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(
+            output_dir, cli_name, "PI", file_suffix="_U"
+        )
     else:
         # 使用传入的invoice_no生成文件路径
         doc_prefix = "Proforma Invoice"
@@ -2024,7 +2029,9 @@ def generate_ci_us_from_offers(offer_ids, output_base=None, template_dir=None, i
 
     # 如果未传入invoice_no，则自动生成
     if not invoice_no:
-        invoice_no, output_filename, output_path = _generate_unique_invoice_no(output_dir, cli_name, "CI_US")
+        invoice_no, output_filename, output_path = _generate_unique_invoice_no(
+            output_dir, cli_name, "CI_US", file_suffix="_U"
+        )
     else:
         # 使用传入的invoice_no生成文件路径
         doc_prefix = "COMMERCIAL INVOICE"
