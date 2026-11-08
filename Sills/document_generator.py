@@ -995,6 +995,7 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no, invoice
         style_row = first_data_row
         for i in range(rows_diff):
             new_row = first_data_row + template_data_rows + i
+            ws1.row_dimensions[new_row].height = 18.0
             for col in range(1, 9):
                 src_cell = ws1.cell(row=style_row, column=col)
                 dest_cell = ws1.cell(row=new_row, column=col)
@@ -1078,6 +1079,11 @@ def _generate_pi_us_excel(orders, template_dir, output_path, invoice_no, invoice
                 dest_cell.fill = copy(src_cell.fill)
                 dest_cell.number_format = src_cell.number_format
                 dest_cell.alignment = copy(src_cell.alignment)
+
+    for src_row_idx in range(1, ws2.max_row + 1):
+        dest_row_idx = insert_start_row + src_row_idx - 1
+        if ws2.row_dimensions[src_row_idx].height:
+            ws1.row_dimensions[dest_row_idx].height = ws2.row_dimensions[src_row_idx].height
 
     # 处理 template2 的合并单元格
     for merged_range in ws2.merged_cells.ranges:
@@ -1749,6 +1755,7 @@ def _generate_pi_excel_legacy_from_offers(offers, template_dir, output_path, inv
         # 复制样式
         for i in range(rows_diff):
             new_row = first_data_row + template_data_rows + i
+            ws.row_dimensions[new_row].height = 18.0
             for col in range(1, 9):
                 src_cell = ws.cell(row=first_data_row + template_data_rows - 1, column=col)
                 dest_cell = ws.cell(row=new_row, column=col)
