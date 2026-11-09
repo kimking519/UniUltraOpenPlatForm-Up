@@ -573,17 +573,17 @@
                     <th>交期(LT)</th>
                     <th>成本价</th>
                     <th>组合信息</th>
-                    <th>目标价</th>
+                    <th style="display: none;">目标价</th>
                     <th>报价(RMB)</th>
                     <th>报价(KWR)</th>
                     <th>报价(USD)</th>
-                    <th>报价(JPY)</th>
+                    <th style="display: none;">报价(JPY)</th>
                     <th>利润</th>
                     <th>总利润</th>
                     <th>供应商</th>
                     <th>需求品牌</th>
                     <th>需求数量(pcs)</th>
-                    <th>负责人</th>
+                    <th style="display: none;">负责人</th>
                     <th>状态</th>
                     <th>已转</th>
                     {% if current_user.rule == '3' %}
@@ -623,7 +623,7 @@
                     <td data-field="cost_price_rmb" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'cost_price_rmb', 'number')"><span>{{
                             "%.4f"|format(row.cost_price_rmb or 0) }}</span></td>
                     <td style="color: var(--secondary);" class="copyable-cell" data-field="combined_info">{{ row.combined_info }}<button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('你好，{{ row.combined_info }}，这个料有吗？', this)">复制</button></td>
-                    <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'target_price_rmb', 'number')"><span>{{
+                    <td style="display: none;" ondblclick="makeEditable(this, '{{ row.offer_id }}', 'target_price_rmb', 'number')"><span>{{
                             "%.4f"|format(row.target_price_rmb or 0) }}</span></td>
                     <td ondblclick="makeEditableRmb(this, '{{ row.offer_id }}', 'offer_price_rmb', {{ row.offer_price_rmb or 0 }})"><span>{{
                             "%.4f"|format(row.offer_price_rmb or 0) }}</span></td>
@@ -631,7 +631,7 @@
                             style="color:var(--primary);">{{ "%.1f"|format(row.price_kwr or 0) }}</span></td>
                     <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_usd', 'USD', {{ row.price_usd or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ "%.3f"|format(row.price_usd or 0) }}</span></td>
-                    <td ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_jpy', 'JPY', {{ row.price_jpy or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
+                    <td style="display: none;" ondblclick="makeEditablePrice(this, '{{ row.offer_id }}', 'price_jpy', 'JPY', {{ row.price_jpy or 0 }}, {{ row.offer_price_rmb or 0 }})"><span
                             style="color:var(--primary);">{{ "%.2f"|format(row.price_jpy or 0) }}</span></td>
                     <td><span style="color:#10b981; font-weight:500;">{{ row.profit }}</span></td>
                     <td><span style="color:#10b981; font-weight:bold;">{{ row.total_profit }}</span></td>
@@ -645,7 +645,7 @@
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_brand')"><span>{{ row.inquiry_brand }}</span></td>
                     <td ondblclick="makeEditable(this, '{{ row.offer_id }}', 'inquiry_qty', 'number')"><span>{{
                             row.inquiry_qty }}</span></td>
-                    <td>{{ row.emp_name }}</td>
+                    <td style="display: none;">{{ row.emp_name }}</td>
                     <td ondblclick="makeStatusEditable(this, '{{ row.offer_id }}', '{{ row.status }}')">
                         <span class="badge {% if row.status == '已报价' %}badge-success{% elif row.status == '缺货' %}badge-warning{% else %}badge-info{% endif %}">
                             {{ row.status }}
