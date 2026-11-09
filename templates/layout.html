@@ -159,18 +159,18 @@
         .logo-icon {
             width: 40px;
             height: 40px;
-            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
             border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
             box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
         }
 
-        .logo-icon svg {
-            width: 24px;
-            height: 24px;
-            color: white;
+        .logo-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         .logo-text {
@@ -724,9 +724,7 @@
             </button>
             <a href="/" class="sidebar-logo" style="text-decoration: none; cursor: pointer;">
                 <div class="logo-icon">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                    </svg>
+                    <img src="{{ url_for('static', path='/images/unicorn_icon.png') }}" alt="Unicorn Logo">
                 </div>
                 <span class="logo-text">UniUltra</span>
             </a>
