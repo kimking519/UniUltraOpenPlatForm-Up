@@ -576,4 +576,28 @@ LM358  TI  50  LG
 
 ---
 
-*最后更新：2026-07-16*
+## 汇率缓存与报价联动 (2026-11-14)
+
+### TC-EXR-001: 实时刷新后所有币种缓存失效
+**模块**: `Sills/exchange_fetcher.py::save_exchange_rates_to_db`
+**步骤**: 先读取并缓存 KRW/USD/JPY/EUR，再保存一组新汇率并重新读取。
+**预期**: 四种币种均立即返回最新比例后汇率。
+
+### TC-EXR-002: 比例及手工汇率修改后缓存失效
+**模块**: `main.py::update_rate_ratio_api/update_rate_ratio_by_id_api` + `Sills/db_daily.py`
+**步骤**: 分别调整推荐比例、新增汇率、修改汇率，然后重新读取缓存汇率。
+**预期**: 每次写入后均返回数据库最新值。
+
+### TC-EXR-003: 修改 RMB 只重算当前报价
+**模块**: `Sills/db_offer.py::update_offer` + `main.py::offer_update_api`
+**步骤**: 准备两条已有外币价格的报价，只修改其中一条 RMB。
+**预期**: 当前记录按最新比例后汇率重算 KRW/USD/JPY，接口返回新价格；另一条记录保持不变。
+
+### TC-EXR-004: 报价页即时刷新外币价格
+**模块**: `templates/offer.html::makeEditableRmb`
+**步骤**: 修改 RMB 并确认，检查同行 KRW/USD/JPY。
+**预期**: 页面无需手工刷新即显示接口返回的最新换算值，比例与底部“比例后”结果一致。
+
+---
+
+*最后更新：2026-11-14*
