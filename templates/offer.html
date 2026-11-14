@@ -1729,6 +1729,23 @@
                     td.innerHTML = `<span>${newValue}</span>`;
                     td.style.backgroundColor = '#dcfce7';
                     setTimeout(() => td.style.backgroundColor = 'transparent', 1000);
+
+                    if (data.prices) {
+                        const row = td.closest('tr');
+                        const priceCells = [
+                            ['price_kwr', data.prices.price_kwr.toFixed(1)],
+                            ['price_usd', data.prices.price_usd.toFixed(3)],
+                            ['price_jpy', data.prices.price_jpy.toFixed(2)]
+                        ];
+                        priceCells.forEach(([priceField, displayValue]) => {
+                            const priceCell = row.querySelector(`td[ondblclick*="'${priceField}'"]`);
+                            if (priceCell) {
+                                priceCell.innerHTML = `<span style="color:var(--primary);">${displayValue}</span>`;
+                                priceCell.style.backgroundColor = '#dcfce7';
+                                setTimeout(() => priceCell.style.backgroundColor = 'transparent', 1000);
+                            }
+                        });
+                    }
                 } else {
                     alert('更新失败：' + data.message);
                     td.innerHTML = `<span>${originalValue}</span>`;

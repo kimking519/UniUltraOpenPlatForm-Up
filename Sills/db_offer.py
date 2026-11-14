@@ -265,29 +265,12 @@ def update_offer(offer_id, data):
         # 获取推荐汇率
         krw_val, usd_val, jpy_val = get_exchange_rates()
 
-        # 如果更新了 offer_price_rmb，只有外币价格为空或0时才计算
+        # 修改 RMB 报价时，仅重算当前记录的各外币价格
         if 'offer_price_rmb' in data:
             offer_price = float(data.get('offer_price_rmb') or 0)
-
-            # 先查询当前报价的外币价格
-            with get_db_connection() as conn:
-                current = conn.execute(
-                    "SELECT price_kwr, price_usd, price_jpy FROM uni_offer WHERE offer_id = ?",
-                    (offer_id,)
-                ).fetchone()
-
-            if current:
-                current_kwr = float(current['price_kwr'] or 0)
-                current_usd = float(current['price_usd'] or 0)
-                current_jpy = float(current['price_jpy'] or 0)
-
-                # 只有外币价格为空或0时才计算
-                if current_kwr == 0:
-                    data['price_kwr'] = round(offer_price * krw_val, 1) if krw_val else 0.0
-                if current_usd == 0:
-                    data['price_usd'] = round(offer_price / usd_val, 3) if usd_val else 0.0
-                if current_jpy == 0:
-                    data['price_jpy'] = round(offer_price * jpy_val, 2) if jpy_val else 0.0
+            data['price_kwr'] = round(offer_price * krw_val, 1) if krw_val else 0.0
+            data['price_usd'] = round(offer_price / usd_val, 3) if usd_val else 0.0
+            data['price_jpy'] = round(offer_price * jpy_val, 2) if jpy_val else 0.0
 
         # 如果更新了 price_kwr，反向计算 RMB
         if 'price_kwr' in data and 'offer_price_rmb' not in data:

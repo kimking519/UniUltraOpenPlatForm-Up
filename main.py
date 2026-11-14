@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 import threading
-from Sills.base import init_db, get_db_connection, get_exchange_rates, get_default_rate, get_all_default_rates, set_default_rates
+from Sills.base import init_db, get_db_connection, get_exchange_rates, get_default_rate, get_all_default_rates, set_default_rates, clear_cache
 from Sills.db_daily import get_daily_list, add_daily, update_daily
 from Sills.db_emp import get_emp_list, add_employee, batch_import_text, verify_login, change_password, update_employee, delete_employee
 from Sills.db_vendor import add_vendor, batch_import_vendor_text, update_vendor, delete_vendor
@@ -1558,6 +1558,7 @@ async def update_rate_ratio_api(request: Request, current_user: dict = Depends(l
             )
             conn.commit()
 
+    clear_cache()
     return {"success": True, "message": "比例已更新", "rate_ratio": rate_ratio}
 
 @app.post("/api/exchange/update_ratio_by_id")
@@ -1602,6 +1603,7 @@ async def update_rate_ratio_by_id_api(request: Request, current_user: dict = Dep
 
         conn.commit()
 
+    clear_cache()
     return {"success": True, "message": "比例已更新", "rate_ratio": rate_ratio}
 
 @app.get("/api/server/env")
@@ -1677,11 +1679,11 @@ async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), va
         
     allowed_fields = ['quote_id', 'inquiry_mpn', 'quoted_mpn', 'inquiry_brand', 'quoted_brand',
                       'inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb',
-                      'price_kwr', 'price_usd', 'vendor_id', 'cli_id', 'date_code', 'delivery_date', 'offer_statement', 'is_transferred', 'remark', 'status', 'target_price_rmb']
+                      'price_kwr', 'price_usd', 'price_jpy', 'vendor_id', 'cli_id', 'date_code', 'delivery_date', 'offer_statement', 'is_transferred', 'remark', 'status', 'target_price_rmb']
     if field not in allowed_fields:
         return {"success": False, "message": f"非法字段: {field}"}
         
-    if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 'price_kwr', 'price_usd']:
+    if field in ['inquiry_qty', 'actual_qty', 'quoted_qty', 'cost_price_rmb', 'offer_price_rmb', 'price_kwr', 'price_usd', 'price_jpy']:
         # 允许清空字段（空字符串转为 None）
         if value == '' or value is None:
             success, msg = update_offer(offer_id, {field: None})
@@ -1689,6 +1691,23 @@ async def offer_update_api(offer_id: str = Form(...), field: str = Form(...), va
         try:
             val = float(value) if 'price' in field else int(value)
             success, msg = update_offer(offer_id, {field: val})
+            if success and field in ['offer_price_rmb', 'price_kwr', 'price_usd', 'price_jpy']:
+                with get_db_connection() as conn:
+                    row = conn.execute(
+                        "SELECT offer_price_rmb, price_kwr, price_usd, price_jpy FROM uni_offer WHERE offer_id = ?",
+                        (offer_id,)
+                    ).fetchone()
+                    if row:
+                        return {
+                            "success": True,
+                            "message": msg,
+                            "prices": {
+                                "offer_price_rmb": round(float(row['offer_price_rmb'] or 0), 4),
+                                "price_kwr": round(float(row['price_kwr'] or 0), 1),
+                                "price_usd": round(float(row['price_usd'] or 0), 3),
+                                "price_jpy": round(float(row['price_jpy'] or 0), 2)
+                            }
+                        }
             return {"success": success, "message": msg}
         except:
             return {"success": False, "message": "必须是数字"}
