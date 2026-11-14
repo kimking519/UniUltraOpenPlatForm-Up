@@ -1,4 +1,4 @@
-from Sills.base import get_db_connection
+from Sills.base import get_db_connection, clear_cache
 
 def get_daily_list(page=1, page_size=10):
     offset = (page - 1) * page_size
@@ -19,6 +19,7 @@ def add_daily(record_date, currency_code, exchange_rate):
                 VALUES (?, ?, ?)
             """, (record_date, currency_code, exchange_rate))
             conn.commit()
+            clear_cache()
             return True, "成功添加"
     except Exception as e:
         return False, str(e)
@@ -30,6 +31,7 @@ def update_daily(id, exchange_rate):
                 UPDATE uni_daily SET exchange_rate = ? WHERE id = ?
             """, (exchange_rate, id))
             conn.commit()
+            clear_cache()
             return True, "更新成功"
     except Exception as e:
         return False, str(e)

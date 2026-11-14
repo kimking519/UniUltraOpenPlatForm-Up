@@ -7,7 +7,7 @@ Exchange Rate Fetcher - 实时汇率获取模块
 import httpx
 from datetime import datetime
 from typing import Optional, Dict, Any
-from Sills.base import get_db_connection
+from Sills.base import get_db_connection, clear_cache
 
 
 def fetch_from_frankfurter() -> tuple[bool, Dict[str, Any]]:
@@ -189,6 +189,7 @@ def save_exchange_rates_to_db(rates: Dict[str, Any]) -> tuple[bool, str]:
                             )
             conn.commit()
 
+        clear_cache()
         return True, "汇率已更新"
     except Exception as e:
         return False, str(e)
