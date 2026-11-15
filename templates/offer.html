@@ -2982,16 +2982,20 @@
         // 经 RMB 中转的原始汇率换算
         const raw = val * toRmb[srcCur] / toRmb[dstCur];
         const meta = FX_META[dstCur];
-        // 加/减比例后的结果
-        const ratio = currentRatios[dstCur] || 0;
-        const adjusted = raw * (1 + meta.sign * ratio);
+        // 目标是 RMB 时应用来源外币的比例，否则应用目标外币的比例
+        const ratioCur = dstCur === 'rmb' ? srcCur : dstCur;
+        const ratioMeta = FX_META[ratioCur];
+        const ratio = currentRatios[ratioCur] || 0;
+        const adjusted = dstCur === 'rmb'
+            ? (ratioMeta.sign > 0 ? raw / (1 + ratio) : raw * (1 - ratio))
+            : raw * (1 + ratioMeta.sign * ratio);
 
         dstInput.value = raw.toFixed(meta.decimals);
-        if (dstCur === 'rmb') {
-            dstAdj.textContent = ''; // RMB 无比例
+        if (ratioCur === 'rmb') {
+            dstAdj.textContent = '';
         } else {
             dstAdj.textContent = '比例后: ' + adjusted.toFixed(meta.decimals) +
-                ' (' + (meta.sign > 0 ? '+' : '-') + (ratio * 100).toFixed(1) + '% ' + FX_CUR_NAMES[dstCur] + ')';
+                ' (' + (ratioMeta.sign > 0 ? '+' : '-') + (ratio * 100).toFixed(1) + '% ' + FX_CUR_NAMES[ratioCur] + ')';
         }
     }
 
